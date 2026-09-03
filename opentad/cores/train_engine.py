@@ -395,7 +395,7 @@ def train_one_epoch(
                 blocks.append(selector_diagnostics)
             logger.info("  ".join(blocks))
         if max_train_iters is not None and (iter_idx + 1) >= max_train_iters:
-            logger.info("[Train]: max_train_iters=%d reached; ending smoke epoch early", max_train_iters)
+            logger.info("[Train]: max_train_iters=%d reached; ending epoch", max_train_iters)
             break
     _write_update_audit_snapshot(
         update_audit_json,

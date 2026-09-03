@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from mmengine.config import Config
@@ -78,4 +79,64 @@ def test_evidence_cfg_override_allowlist():
         duca_evidence_training.assert_safe_cfg_options(
             {"model": {"frame_selector": {"use_coverage": False}}},
             entrypoint="tools/train.py",
+        )
+
+
+def test_evidence_loader_contract_exposes_exact_epoch_prefix():
+    class Dataset:
+        def __len__(self):
+            return 438
+
+    class Loader:
+        sampler = object()
+
+        def __len__(self):
+            return 219
+
+    cfg = SimpleNamespace(
+        solver=SimpleNamespace(
+            train=SimpleNamespace(batch_size=2, num_workers=2)
+        )
+    )
+    contract = duca_evidence_training.formal_training_contract(
+        Config.fromfile(C0_CONFIG)
+    )
+
+    bound, manifest = duca_evidence_training.bind_train_loader_contract(
+        contract,
+        cfg=cfg,
+        train_dataset=Dataset(),
+        train_loader=Loader(),
+        world_size=1,
+    )
+
+    assert bound["allow_train_loader_prefix"] is True
+    assert bound["available_train_batches_per_epoch"] == 219
+    assert manifest["available_batches_per_epoch"] == 219
+    assert manifest["exposed_batches_per_epoch"] == 100
+
+
+def test_evidence_loader_contract_rejects_too_few_batches():
+    class TooShortLoader:
+        sampler = object()
+
+        def __len__(self):
+            return 99
+
+    cfg = SimpleNamespace(
+        solver=SimpleNamespace(
+            train=SimpleNamespace(batch_size=2, num_workers=2)
+        )
+    )
+    contract = duca_evidence_training.formal_training_contract(
+        Config.fromfile(C0_CONFIG)
+    )
+
+    with pytest.raises(RuntimeError, match="only 99 batches"):
+        duca_evidence_training.bind_train_loader_contract(
+            contract,
+            cfg=cfg,
+            train_dataset=range(198),
+            train_loader=TooShortLoader(),
+            world_size=1,
         )

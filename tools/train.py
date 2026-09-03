@@ -365,6 +365,8 @@ def main():
         drop_last=True,
         **cfg.solver.train,
     )
+    train_batches_per_epoch = len(train_loader)
+    formal_max_train_iters = None
 
     seal_eval_loaders = bool(
         cfg.workflow.get("seal_eval_dataloaders_during_training", False)
@@ -427,10 +429,25 @@ def main():
         expected_batches = int(
             duca_formal_contract["expected_train_batches_per_epoch"]
         )
-        if len(train_loader) != expected_batches:
+        available_batches = len(train_loader)
+        allow_prefix = bool(
+            duca_formal_contract.get("allow_train_loader_prefix", False)
+        )
+        if available_batches < expected_batches or (
+            available_batches != expected_batches and not allow_prefix
+        ):
             raise RuntimeError(
-                f"formal DUCA loader has {len(train_loader)} batches, "
+                f"formal DUCA loader has {available_batches} batches, "
                 f"expected {expected_batches}"
+            )
+        train_batches_per_epoch = expected_batches
+        if available_batches > expected_batches:
+            formal_max_train_iters = expected_batches
+            logger.info(
+                "Formal training exposes a deterministic %d-batch prefix "
+                "from %d available batches per epoch.",
+                expected_batches,
+                available_batches,
             )
 
     # build model
@@ -509,7 +526,7 @@ def main():
     # build optimizer and scheduler
     optimizer = build_optimizer(copy.deepcopy(cfg.optimizer), model, logger)
     scheduler, max_epoch = build_scheduler(
-        copy.deepcopy(cfg.scheduler), optimizer, len(train_loader)
+        copy.deepcopy(cfg.scheduler), optimizer, train_batches_per_epoch
     )
 
     # override the max_epoch
@@ -566,7 +583,7 @@ def main():
             duca_training.validate_update_state(
                 contract=duca_formal_contract,
                 epoch=resume_epoch,
-                train_batches_per_epoch=len(train_loader),
+                train_batches_per_epoch=train_batches_per_epoch,
                 update_audit=update_audit,
                 scheduler_last_epoch=scheduler.last_epoch,
                 selector_step=duca_training.selector_schedule_step(model),
@@ -613,7 +630,11 @@ def main():
             clip_grad_l2norm=cfg.solver.clip_grad_norm,
             logging_interval=cfg.workflow.logging_interval,
             scaler=scaler,
-            max_train_iters=cfg.workflow.get("max_train_iters", None),
+            max_train_iters=(
+                formal_max_train_iters
+                if formal_max_train_iters is not None
+                else cfg.workflow.get("max_train_iters", None)
+            ),
             collect_training_probe=bool(training_probe_json),
             max_amp_retries_per_batch=max_amp_retries_per_batch,
             max_nonfinite_loss_retries=max_nonfinite_loss_retries,
@@ -630,7 +651,7 @@ def main():
             duca_training.validate_update_state(
                 contract=duca_formal_contract,
                 epoch=epoch,
-                train_batches_per_epoch=len(train_loader),
+                train_batches_per_epoch=train_batches_per_epoch,
                 update_audit=update_audit,
                 scheduler_last_epoch=scheduler.last_epoch,
                 selector_step=duca_training.selector_schedule_step(model),
@@ -667,7 +688,7 @@ def main():
                 contract=duca_formal_contract,
                 bindings=duca_runtime_bindings,
                 epoch=epoch,
-                train_batches_per_epoch=len(train_loader),
+                train_batches_per_epoch=train_batches_per_epoch,
                 update_audit=update_audit,
                 epoch_records=epoch_records,
                 scheduler_last_epoch=scheduler.last_epoch,

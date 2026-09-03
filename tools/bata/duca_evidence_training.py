@@ -102,6 +102,47 @@ def formal_training_contract(cfg) -> dict[str, Any] | None:
     return contract
 
 
+def bind_train_loader_contract(
+    contract: Mapping[str, Any],
+    *,
+    cfg,
+    train_dataset,
+    train_loader,
+    world_size: int,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    expected = int(contract["expected_train_batches_per_epoch"])
+    available = int(len(train_loader))
+    if available < expected:
+        raise RuntimeError(
+            f"Evidence-Recovery loader exposes only {available} batches; "
+            f"{expected} are required"
+        )
+    manifest = {
+        "schema": "duca_evidence_recovery_train_loader_contract_v1",
+        "dataset_class": train_dataset.__class__.__name__,
+        "dataset_length": int(len(train_dataset)),
+        "available_batches_per_epoch": available,
+        "exposed_batches_per_epoch": expected,
+        "exposure": "deterministic_epoch_prefix",
+        "batch_size_per_process": int(cfg.solver.train.batch_size),
+        "num_workers_per_process": int(cfg.solver.train.num_workers),
+        "world_size": int(world_size),
+        "drop_last": True,
+        "shuffle": True,
+        "sampler_class": train_loader.sampler.__class__.__name__,
+    }
+    manifest["contract_sha256"] = canonical_sha256(manifest)
+    bound = dict(contract)
+    bound.update(
+        {
+            "allow_train_loader_prefix": True,
+            "available_train_batches_per_epoch": available,
+            "train_loader_exposure": "deterministic_epoch_prefix",
+        }
+    )
+    return bound, manifest
+
+
 def _bound_file(path: str | Path, label: str) -> tuple[str, str]:
     resolved = Path(path).expanduser().resolve()
     if not resolved.is_file():
@@ -279,6 +320,10 @@ def build_training_audit(
         "expected_successful_optimizer_updates": int(
             contract["expected_successful_optimizer_updates"]
         ),
+        "available_train_batches_per_epoch": int(
+            contract["available_train_batches_per_epoch"]
+        ),
+        "train_loader_exposure": str(contract["train_loader_exposure"]),
         "last_completed_epoch": int(epoch),
         "epochs_completed": int(epoch) + 1,
         "train_batches_per_epoch": int(train_batches_per_epoch),
