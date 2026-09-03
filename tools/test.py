@@ -24,6 +24,7 @@ from opentad.utils.training_guard import (
     assert_safe_cfg_options_for_gated_config,
 )
 from tools.bata.duca_p0_training import atomic_write_json, sha256_file
+from tools.bata import duca_p0_training
 from tools.bata import duca_cellcf_training
 from tools.bata import duca_evidence_training
 from tools.bata import duca_protected_physical_training
@@ -70,7 +71,9 @@ def main():
     )
     evidence_formal = formal_protocol == duca_evidence_training.FORMAL_PROTOCOL
     r5_formal = formal_protocol == duca_selected_axis_training.R5_FORMAL_PROTOCOL
-    source_resolved_config_sha256 = _canonical_sha256(cfg.to_dict())
+    source_resolved_config_sha256 = duca_p0_training.canonical_sha256(
+        cfg.to_dict()
+    )
     if cellcf_formal:
         duca_cellcf_training.assert_safe_cfg_options(
             cfg, args.cfg_options, entrypoint="tools/test.py"
@@ -242,7 +245,10 @@ def main():
                 duca_selected_axis_training.validate_terminal_checkpoint_binding(
                     checkpoint_path=checkpoint_path,
                     checkpoint=checkpoint,
-                    git_commit=os.environ["DUCA_EXPECTED_COMMIT"],
+                    git_commit=os.environ.get(
+                        "DUCA_TRAINING_COMMIT",
+                        os.environ["DUCA_EXPECTED_COMMIT"],
+                    ),
                     variant=os.environ.get("DUCA_SELECTED_OPT_VARIANT", ""),
                     seed=args.seed,
                     slurm_job_id=os.environ.get("SLURM_JOB_ID"),
@@ -273,7 +279,10 @@ def main():
                 duca_evidence_training.validate_terminal_checkpoint_binding(
                     checkpoint_path=checkpoint_path,
                     checkpoint=checkpoint,
-                    git_commit=os.environ["DUCA_EXPECTED_COMMIT"],
+                    git_commit=os.environ.get(
+                        "DUCA_TRAINING_COMMIT",
+                        os.environ["DUCA_EXPECTED_COMMIT"],
+                    ),
                     arm_id=str(cfg.arm_id),
                     arm_name=str(cfg.arm_name),
                     seed=args.seed,
@@ -404,6 +413,10 @@ def main():
                 {
                     "seed": int(args.seed),
                     "variant": os.environ.get("DUCA_SELECTED_OPT_VARIANT"),
+                    "training_git_commit": os.environ.get(
+                        "DUCA_TRAINING_COMMIT",
+                        os.environ["DUCA_EXPECTED_COMMIT"],
+                    ),
                     "training_identity": selected_axis_terminal_identity,
                 }
             )
@@ -415,6 +428,10 @@ def main():
                     "seed": int(args.seed),
                     "arm_id": str(cfg.arm_id),
                     "arm_name": str(cfg.arm_name),
+                    "training_git_commit": os.environ.get(
+                        "DUCA_TRAINING_COMMIT",
+                        os.environ["DUCA_EXPECTED_COMMIT"],
+                    ),
                     "training_identity": evidence_terminal_identity,
                 }
             )

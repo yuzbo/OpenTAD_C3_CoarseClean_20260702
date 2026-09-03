@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
+
 import pytest
 from mmengine.config import Config
 
@@ -18,6 +20,22 @@ ARM_CONFIGS = {
 }
 
 FORMAL_SEEDS = [8261, 19237, 31153]
+
+
+def test_eval_uses_runtime_workdir_and_preserves_training_identity():
+    eval_source = Path(
+        "scripts/run_duca_evidence_recovery_eval_array_n16r4.sbatch"
+    ).read_text(encoding="utf-8")
+    test_source = Path("tools/test.py").read_text(encoding="utf-8")
+
+    assert 'CHECKPOINT="${WORK_DIR}/gpu1_id0/checkpoint/epoch_59.pth"' in eval_source
+    assert (
+        'TRAINING_COMMIT="${DUCA_EVIDENCE_TRAINING_COMMIT:-$EXPECTED_COMMIT}"'
+        in eval_source
+    )
+    assert 'export DUCA_TRAINING_COMMIT="$TRAINING_COMMIT"' in eval_source
+    assert "duca_p0_training.canonical_sha256" in test_source
+    assert '"DUCA_TRAINING_COMMIT"' in test_source
 
 
 def test_24_matrix_cell_uniqueness():

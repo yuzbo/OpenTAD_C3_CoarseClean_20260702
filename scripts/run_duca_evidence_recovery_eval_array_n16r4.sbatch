@@ -18,10 +18,12 @@ fail() { echo "[DUCA_EVIDENCE_EVAL][FAIL] $*" >&2; exit 1; }
 
 PROJECT_DIR="${DUCA_REPO_ROOT:?DUCA_REPO_ROOT is required}"
 EXPECTED_COMMIT="${DUCA_EVIDENCE_EXPECTED_COMMIT:?DUCA_EVIDENCE_EXPECTED_COMMIT is required}"
+TRAINING_COMMIT="${DUCA_EVIDENCE_TRAINING_COMMIT:-$EXPECTED_COMMIT}"
 cd "$PROJECT_DIR"
 [[ "$(git rev-parse HEAD)" == "$EXPECTED_COMMIT" ]] || fail "checkout is not the expected commit"
 git diff --quiet && git diff --cached --quiet || fail "tracked source checkout is dirty"
 export DUCA_EXPECTED_COMMIT="$EXPECTED_COMMIT"
+export DUCA_TRAINING_COMMIT="$TRAINING_COMMIT"
 
 module load cuda/11.8
 module load miniforge3/24.11
@@ -84,7 +86,7 @@ SEED="${SEEDS[$SEED_IDX]}"
 
 CONFIG_PATH="$PROJECT_DIR/configs/adatad/thumos/${CFG_NAME}"
 WORK_DIR="${RUN_ROOT}/${ARM_NAME}/seed_${SEED}"
-CHECKPOINT="${WORK_DIR}/checkpoint/epoch_59.pth"
+CHECKPOINT="${WORK_DIR}/gpu1_id0/checkpoint/epoch_59.pth"
 EVAL_DIR="${WORK_DIR}/official_eval"
 
 mkdir -p "${EVAL_DIR}"
