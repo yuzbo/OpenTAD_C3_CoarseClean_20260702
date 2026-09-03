@@ -47,6 +47,13 @@ def train_one_epoch(
     max_successful_updates=None,
     successful_updates_start=0,
     update_audit=None,
+    collect_training_probe=False,
+    max_nonfinite_loss_retries=0,
+    fail_on_amp_replay_exhaustion=False,
+    require_finite_loss=True,
+    force_amp_overflow_attempts=0,
+    update_audit_json=None,
+    **kwargs,
 ):
     """Training the model for one epoch"""
 
