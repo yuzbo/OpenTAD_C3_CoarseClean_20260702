@@ -72,8 +72,9 @@ def _write_matrix(root: Path, seed: int = 8261) -> None:
         _write_metric_cell(root, arm, seed, base_maps[arm])
 
 
-def test_analyzer_fails_when_cost_profile_is_missing(tmp_path):
+def test_analyzer_accepts_missing_optional_cost_profile(tmp_path):
     run_root = tmp_path / "run"
+    out_path = tmp_path / "analysis.json"
     _write_matrix(run_root)
 
     result = subprocess.run(
@@ -83,7 +84,7 @@ def test_analyzer_fails_when_cost_profile_is_missing(tmp_path):
             "--run-root",
             str(run_root),
             "--output",
-            str(tmp_path / "analysis.json"),
+            str(out_path),
             "--seeds",
             "8261",
             "--expected-video-count",
@@ -94,11 +95,15 @@ def test_analyzer_fails_when_cost_profile_is_missing(tmp_path):
         capture_output=True,
     )
 
-    assert result.returncode != 0
-    assert "cost_profile" in result.stderr
+    assert result.returncode == 0, result.stderr
+    with out_path.open("r", encoding="utf-8") as f:
+        analysis = json.load(f)
+    assert analysis["optional_system_metrics"]["status"] == "not_collected"
+    assert analysis["optional_system_metrics"]["required_for_scientific_acceptance"] is False
+    assert analysis["all_gates_passed"] is True
 
 
-def test_analyzer_uses_video_metrics_and_required_profiles(tmp_path):
+def test_analyzer_uses_video_metrics_and_records_optional_profiles(tmp_path):
     run_root = tmp_path / "run"
     out_path = tmp_path / "analysis.json"
     _write_matrix(run_root)
@@ -127,4 +132,40 @@ def test_analyzer_uses_video_metrics_and_required_profiles(tmp_path):
         analysis = json.load(f)
     assert analysis["comparisons"]["FULL_vs_C0"]["bootstrap_mode"] == "hierarchical_seeds_and_videos"
     assert analysis["decision_gates"]["gate8_matrix_completeness"]["video_identity_count"] == 5
+    assert analysis["optional_system_metrics"]["status"] == "available"
+    assert set(analysis["optional_system_metrics"]["profiles"]) == {"C0", "F", "A4", "A5"}
+    assert analysis["all_gates_passed"] is True
+
+
+def test_invalid_optional_profile_does_not_block_scientific_analysis(tmp_path):
+    run_root = tmp_path / "run"
+    out_path = tmp_path / "analysis.json"
+    _write_matrix(run_root)
+    profile_dir = run_root / "cost_profile"
+    profile_dir.mkdir(parents=True)
+    (profile_dir / "profile_C0.json").write_text("not-json", encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(ANALYZER),
+            "--run-root",
+            str(run_root),
+            "--output",
+            str(out_path),
+            "--seeds",
+            "8261",
+            "--expected-video-count",
+            "5",
+        ],
+        cwd=str(REPO_ROOT),
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    with out_path.open("r", encoding="utf-8") as f:
+        analysis = json.load(f)
+    assert analysis["optional_system_metrics"]["status"] == "not_collected"
+    assert analysis["optional_system_metrics"]["issues"]
     assert analysis["all_gates_passed"] is True

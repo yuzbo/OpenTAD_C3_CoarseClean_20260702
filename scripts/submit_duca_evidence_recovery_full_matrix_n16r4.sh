@@ -46,7 +46,6 @@ echo "================================================================="
 export DUCA_RUN_ROOT="${RUN_ROOT}"
 export DUCA_SEEDS="${SEEDS}"
 
-COST_JOB_ID=""
 TRAIN_JOB_ID=""
 EVAL_JOB_ID=""
 STATS_JOB_ID=""
@@ -65,7 +64,6 @@ cleanup_submitted_jobs() {
   cancel_if_active "${STATS_JOB_ID}"
   cancel_if_active "${EVAL_JOB_ID}"
   cancel_if_active "${TRAIN_JOB_ID}"
-  cancel_if_active "${COST_JOB_ID}"
   echo "[ERROR] DUCA full-matrix DAG failed (status=${status}); active submitted jobs were cancelled." >&2
   exit "${status}"
 }
@@ -96,7 +94,6 @@ write_manifest() {
     printf 'DUCA_H65_TEST_LEDGER_PATH=%q\n' "${DUCA_H65_TEST_LEDGER_PATH}"
     printf 'DUCA_SEEDS=%q\n' "${SEEDS}"
     printf 'ARRAY_MAX=%q\n' "23"
-    printf 'COST_JOB_ID=%q\n' "${COST_JOB_ID}"
     printf 'TRAIN_JOB_ID=%q\n' "${TRAIN_JOB_ID}"
     printf 'EVAL_JOB_ID=%q\n' "${EVAL_JOB_ID}"
     printf 'STATS_JOB_ID=%q\n' "${STATS_JOB_ID}"
@@ -107,20 +104,9 @@ is_qos_limit() {
   [[ "$1" == *AssocMaxSubmitJobLimit* || "$1" == *QOS* || "$1" == *job.submit.limit* ]]
 }
 
-# 1. Submit required cost profiling gate
-echo "[1/4] Submitting Cost Profiling Gate..."
-COST_JOB_OUT=$(submit_job "Cost profiling" \
-  --output="${RUN_ROOT}/slurm_logs/%x_%j.out" \
-  --error="${RUN_ROOT}/slurm_logs/%x_%j.err" \
-  --export=ALL,DUCA_RUN_ROOT="${RUN_ROOT}",DUCA_SEEDS="${SEEDS}",DUCA_REPO_ROOT="${REPO_ROOT}",YUZIBO_ROOT="${YUZIBO_ROOT}",DUCA_VIDEOMAE_PRETRAIN="${DUCA_VIDEOMAE_PRETRAIN}",DUCA_H65_LEDGER_ROOT="${DUCA_H65_LEDGER_ROOT}",DUCA_H65_TRAIN_LEDGER_PATH="${DUCA_H65_TRAIN_LEDGER_PATH}",DUCA_H65_VAL_LEDGER_PATH="${DUCA_H65_VAL_LEDGER_PATH}",DUCA_H65_TEST_LEDGER_PATH="${DUCA_H65_TEST_LEDGER_PATH}" \
-  scripts/run_duca_evidence_recovery_cost_array_n16r4.sbatch)
-COST_JOB_ID="${COST_JOB_OUT}"
-echo "Cost Profiling Job ID: ${COST_JOB_ID}"
-
-# 2. Submit 24-task Training Array (afterok:COST_JOB_ID)
-echo "[2/4] Submitting 24-task Training Array..."
+# 1. Submit 24-task Training Array
+echo "[1/3] Submitting 24-task Training Array..."
 TRAIN_JOB_OUT=$(submit_job "Training array" \
-  --dependency="afterok:${COST_JOB_ID}" \
   --array=0-23 \
   --output="${RUN_ROOT}/slurm_logs/%x_%A_%a.out" \
   --error="${RUN_ROOT}/slurm_logs/%x_%A_%a.err" \
@@ -130,8 +116,8 @@ TRAIN_JOB_ID="${TRAIN_JOB_OUT}"
 echo "Training Array Job ID: ${TRAIN_JOB_ID}"
 write_manifest "TRAIN_SUBMITTED"
 
-# 3. Submit 24-task Evaluation Array (afterok:TRAIN_JOB_ID)
-echo "[3/4] Submitting 24-task Evaluation Array..."
+# 2. Submit 24-task Evaluation Array (afterok:TRAIN_JOB_ID)
+echo "[2/3] Submitting 24-task Evaluation Array..."
 if EVAL_JOB_OUT="$(sbatch --parsable \
   --dependency="afterok:${TRAIN_JOB_ID}" \
   --array=0-23 \
@@ -152,10 +138,10 @@ else
   false
 fi
 
-# 4. Submit Statistical Analysis (afterok:EVAL_JOB_ID and COST_JOB_ID)
-echo "[4/4] Submitting Statistical Analysis..."
+# 3. Submit Statistical Analysis (afterok:EVAL_JOB_ID)
+echo "[3/3] Submitting Statistical Analysis..."
 if STATS_JOB_OUT="$(sbatch --parsable \
-  --dependency="afterok:${EVAL_JOB_ID}:${COST_JOB_ID}" \
+  --dependency="afterok:${EVAL_JOB_ID}" \
   --output="${RUN_ROOT}/slurm_logs/%x_%j.out" \
   --error="${RUN_ROOT}/slurm_logs/%x_%j.err" \
   --export=ALL,DUCA_RUN_ROOT="${RUN_ROOT}",DUCA_SEEDS="${SEEDS}",DUCA_REPO_ROOT="${REPO_ROOT}",YUZIBO_ROOT="${YUZIBO_ROOT}",DUCA_VIDEOMAE_PRETRAIN="${DUCA_VIDEOMAE_PRETRAIN}",DUCA_H65_LEDGER_ROOT="${DUCA_H65_LEDGER_ROOT}",DUCA_H65_TRAIN_LEDGER_PATH="${DUCA_H65_TRAIN_LEDGER_PATH}",DUCA_H65_VAL_LEDGER_PATH="${DUCA_H65_VAL_LEDGER_PATH}",DUCA_H65_TEST_LEDGER_PATH="${DUCA_H65_TEST_LEDGER_PATH}" \
@@ -176,7 +162,6 @@ fi
 
 echo "================================================================="
 echo "ALL DAG JOBS SUCCESSFULLY SUBMITTED TO SLURM"
-echo "Cost Gate Job ID:       ${COST_JOB_ID}"
 echo "Train Array Job ID:     ${TRAIN_JOB_ID}"
 echo "Eval Array Job ID:      ${EVAL_JOB_ID}"
 echo "Stats Job ID:           ${STATS_JOB_ID}"

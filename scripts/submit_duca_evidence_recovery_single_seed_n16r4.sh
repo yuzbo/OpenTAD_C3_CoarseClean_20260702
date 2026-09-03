@@ -3,10 +3,9 @@
 # DUCA Evidence Recovery 8-Arm Single-Seed (Seed 8261) Deployment Pipeline
 # =============================================================================
 # Deploys 8-Arm full matrix on single seed 8261 on N16R4 cluster with Slurm DAG.
-# 1. Cost profiling gate
-# 2. 8-Arm Training Array (--array=0-7)
-# 3. 8-Arm Evaluation Array (--array=0-7)
-# 4. Statistical Analysis & Decision Gate Output
+# 1. 8-Arm Training Array (--array=0-7)
+# 2. 8-Arm Evaluation Array (--array=0-7)
+# 3. Statistical Analysis & Decision Gate Output
 # =============================================================================
 
 source /etc/profile
@@ -57,7 +56,6 @@ echo "================================================================="
 export DUCA_RUN_ROOT="${RUN_ROOT}"
 export DUCA_SEEDS="${PRIMARY_SEED}"
 
-COST_JOB_ID=""
 TRAIN_JOB_ID=""
 EVAL_JOB_ID=""
 STATS_JOB_ID=""
@@ -76,7 +74,6 @@ cleanup_submitted_jobs() {
   cancel_if_active "${STATS_JOB_ID}"
   cancel_if_active "${EVAL_JOB_ID}"
   cancel_if_active "${TRAIN_JOB_ID}"
-  cancel_if_active "${COST_JOB_ID}"
   echo "[ERROR] DUCA single-seed DAG failed (status=${status}); active submitted jobs were cancelled." >&2
   exit "${status}"
 }
@@ -107,7 +104,6 @@ write_manifest() {
     printf 'DUCA_H65_TEST_LEDGER_PATH=%q\n' "${DUCA_H65_TEST_LEDGER_PATH}"
     printf 'DUCA_SEEDS=%q\n' "${PRIMARY_SEED}"
     printf 'ARRAY_MAX=%q\n' "7"
-    printf 'COST_JOB_ID=%q\n' "${COST_JOB_ID}"
     printf 'TRAIN_JOB_ID=%q\n' "${TRAIN_JOB_ID}"
     printf 'EVAL_JOB_ID=%q\n' "${EVAL_JOB_ID}"
     printf 'STATS_JOB_ID=%q\n' "${STATS_JOB_ID}"
@@ -118,22 +114,10 @@ is_qos_limit() {
   [[ "$1" == *AssocMaxSubmitJobLimit* || "$1" == *QOS* || "$1" == *job.submit.limit* ]]
 }
 
-# 1. Submit required cost profiling gate
+# 1. Submit 8-Arm Training Array
 echo ""
-echo "[1/4] Submitting Cost Profiling Gate..."
-COST_JOB_OUT=$(submit_job "Cost profiling" \
-  --output="${RUN_ROOT}/slurm_logs/%x_%j.out" \
-  --error="${RUN_ROOT}/slurm_logs/%x_%j.err" \
-  --export=ALL,DUCA_RUN_ROOT="${RUN_ROOT}",DUCA_SEEDS="${PRIMARY_SEED}",DUCA_REPO_ROOT="${REPO_ROOT}",YUZIBO_ROOT="${YUZIBO_ROOT}",DUCA_VIDEOMAE_PRETRAIN="${DUCA_VIDEOMAE_PRETRAIN}",DUCA_H65_LEDGER_ROOT="${DUCA_H65_LEDGER_ROOT}",DUCA_H65_TRAIN_LEDGER_PATH="${DUCA_H65_TRAIN_LEDGER_PATH}",DUCA_H65_VAL_LEDGER_PATH="${DUCA_H65_VAL_LEDGER_PATH}",DUCA_H65_TEST_LEDGER_PATH="${DUCA_H65_TEST_LEDGER_PATH}" \
-  scripts/run_duca_evidence_recovery_cost_array_n16r4.sbatch)
-COST_JOB_ID="${COST_JOB_OUT}"
-echo "Cost Profiling Job ID: ${COST_JOB_ID}"
-
-# 2. Submit 8-Arm Training Array (tasks 0-7, afterok:COST_JOB_ID)
-echo ""
-echo "[2/4] Submitting 8-Arm Training Array (Seed ${PRIMARY_SEED})..."
+echo "[1/3] Submitting 8-Arm Training Array (Seed ${PRIMARY_SEED})..."
 TRAIN_JOB_OUT=$(submit_job "Training array" \
-  --dependency="afterok:${COST_JOB_ID}" \
   --array=0-7 \
   --output="${RUN_ROOT}/slurm_logs/%x_%A_%a.out" \
   --error="${RUN_ROOT}/slurm_logs/%x_%A_%a.err" \
@@ -143,9 +127,9 @@ TRAIN_JOB_ID="${TRAIN_JOB_OUT}"
 echo "Training Array Job ID: ${TRAIN_JOB_ID}"
 write_manifest "TRAIN_SUBMITTED"
 
-# 3. Submit 8-Arm Evaluation Array (tasks 0-7, afterok:TRAIN_JOB_ID)
+# 2. Submit 8-Arm Evaluation Array (tasks 0-7, afterok:TRAIN_JOB_ID)
 echo ""
-echo "[3/4] Submitting 8-Arm Evaluation Array..."
+echo "[2/3] Submitting 8-Arm Evaluation Array..."
 if EVAL_JOB_OUT="$(sbatch --parsable \
   --dependency="afterok:${TRAIN_JOB_ID}" \
   --array=0-7 \
@@ -166,11 +150,11 @@ else
   false
 fi
 
-# 4. Submit Statistical / Summary Analysis (afterok:EVAL_JOB_ID and COST_JOB_ID)
+# 3. Submit Statistical / Summary Analysis (afterok:EVAL_JOB_ID)
 echo ""
-echo "[4/4] Submitting Statistical Analysis & Gate Evaluator..."
+echo "[3/3] Submitting Statistical Analysis & Gate Evaluator..."
 if STATS_JOB_OUT="$(sbatch --parsable \
-  --dependency="afterok:${EVAL_JOB_ID}:${COST_JOB_ID}" \
+  --dependency="afterok:${EVAL_JOB_ID}" \
   --output="${RUN_ROOT}/slurm_logs/%x_%j.out" \
   --error="${RUN_ROOT}/slurm_logs/%x_%j.err" \
   --export=ALL,DUCA_RUN_ROOT="${RUN_ROOT}",DUCA_SEEDS="${PRIMARY_SEED}",DUCA_REPO_ROOT="${REPO_ROOT}",YUZIBO_ROOT="${YUZIBO_ROOT}",DUCA_VIDEOMAE_PRETRAIN="${DUCA_VIDEOMAE_PRETRAIN}",DUCA_H65_LEDGER_ROOT="${DUCA_H65_LEDGER_ROOT}",DUCA_H65_TRAIN_LEDGER_PATH="${DUCA_H65_TRAIN_LEDGER_PATH}",DUCA_H65_VAL_LEDGER_PATH="${DUCA_H65_VAL_LEDGER_PATH}",DUCA_H65_TEST_LEDGER_PATH="${DUCA_H65_TEST_LEDGER_PATH}" \
@@ -191,12 +175,11 @@ fi
 echo ""
 echo "================================================================="
 echo "8-ARM SINGLE-SEED DAG SUBMITTED TO SLURM CLUSTER"
-echo "  1. Cost Gate:       ${COST_JOB_ID}"
-echo "  2. Train Array (8): ${TRAIN_JOB_ID}"
-echo "  3. Eval Array (8):  ${EVAL_JOB_ID}"
-echo "  4. Stats & Gates:   ${STATS_JOB_ID}"
+echo "  1. Train Array (8): ${TRAIN_JOB_ID}"
+echo "  2. Eval Array (8):  ${EVAL_JOB_ID}"
+echo "  3. Stats & Gates:   ${STATS_JOB_ID}"
 echo "  Run Root:           ${RUN_ROOT}"
 echo "================================================================="
 echo "Monitor with:"
-echo "  squeue -u sczc063 -j ${COST_JOB_ID},${TRAIN_JOB_ID},${EVAL_JOB_ID},${STATS_JOB_ID}"
+echo "  squeue -u sczc063 -j ${TRAIN_JOB_ID},${EVAL_JOB_ID},${STATS_JOB_ID}"
 echo "================================================================="

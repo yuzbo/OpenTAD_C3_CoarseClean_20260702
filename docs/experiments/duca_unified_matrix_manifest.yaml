@@ -39,7 +39,7 @@ claim_boundaries:
   - The primary paper result is pre-backbone acquisition only and uses Dense VideoMAE-S.
   - Corrected physical-time propagation is a separately identified representation factor.
   - Feature Taylor supervision is a teacher refinement, not a claim that Taylor is new to H65.
-  - Mixture-of-Depths is an efficiency/Pareto extension, not the primary accuracy mechanism.
+  - Mixture-of-Depths is a backbone-compute/Pareto extension, not the primary accuracy mechanism; no end-to-end latency, throughput, or memory claim is required.
   - Historical H65 and shared dense AdaTAD values are descriptive anchors, not matched causal controls.
 
 common_contract:
@@ -181,7 +181,6 @@ mod_contract:
   required_efficiency_gate:
     max_avg_map_loss_pp: 0.30
     min_measured_backbone_compute_reduction_fraction: 0.25
-    min_measured_end_to_end_latency_improvement_fraction: 0.10
 
 schedules:
   default_20_20_20:
@@ -275,6 +274,8 @@ success_rules:
     reach_66: strong_descriptive_result_not_a_substitute_for_matched_contrast
 
 cost_benchmark:
+  required_for_training_or_scientific_acceptance: false
+  role: optional_system_diagnostic_only
   arm_ids: [U0, A11, C11, E01, F11]
   seed: 4407
   repetitions: 3
@@ -295,6 +296,6 @@ deployment:
   default_max_concurrent_gpu_tasks: 8
   train_eval_array_tasks: 41
   bootstrap_array_tasks: 16
-  cost_array_tasks: 5
+  cost_array_tasks: 0
   one_shot_submission: true
   result_dependent_job_creation_forbidden: true

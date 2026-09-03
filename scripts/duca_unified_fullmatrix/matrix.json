@@ -10,7 +10,7 @@
       "G11",
       "H0"
     ],
-    "cost_benchmark_status": "BLOCKED_UNIMPLEMENTED"
+    "system_metrics_status": "OPTIONAL_NOT_REQUIRED"
   },
   "rows": [
     {

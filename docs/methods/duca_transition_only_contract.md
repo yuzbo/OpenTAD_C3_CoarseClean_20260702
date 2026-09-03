@@ -87,11 +87,12 @@ optimizer horizon, and evaluation protocol.
 - Coarse AUROC/AUPRC/ECE and transition recall pass their health thresholds.
 - Exact-K and max-hole violations are zero.
 - Three-seed fixed-384 improves over matched exact-uniform, especially at high
-  tIoU, or establishes a supported non-inferiority/efficiency claim.
+  tIoU, or establishes supported non-inferiority at the same input budget.
 - One-swap counterfactual utility agrees with the detector ST direction before
   detector-guided selection is claimed.
-- Trained selector-only and full-stack latency, memory, and FLOPs are reported
-  on the same hardware.
+- GFLOPs/MACs or measured backbone work is reported when making a compute-saving
+  claim. Full-stack latency, throughput, and memory are optional diagnostics and
+  do not gate training, evaluation, or the fixed-budget accuracy conclusion.
 - A second detector backend is attempted only after fixed-384 clears the primary
   gate.
 - Before any P0 full run, a clean-commit CUDA gate must build the unmodified

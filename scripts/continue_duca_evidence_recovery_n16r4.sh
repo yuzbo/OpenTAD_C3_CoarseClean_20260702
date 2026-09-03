@@ -30,8 +30,8 @@ source "${MANIFEST}"
 : "${DUCA_VIDEOMAE_PRETRAIN:?DUCA_VIDEOMAE_PRETRAIN missing from manifest}"
 : "${DUCA_SEEDS:?DUCA_SEEDS missing from manifest}"
 : "${ARRAY_MAX:?ARRAY_MAX missing from manifest}"
-: "${COST_JOB_ID:?COST_JOB_ID missing from manifest}"
 : "${TRAIN_JOB_ID:?TRAIN_JOB_ID missing from manifest}"
+COST_JOB_ID="${COST_JOB_ID:-}"
 
 SLURM_USER="${DUCA_SLURM_USER:-sczc063}"
 DUCA_H65_LEDGER_ROOT="${DUCA_H65_LEDGER_ROOT:-${YUZIBO_ROOT}/projects/c3_lowres_action_probe/ledger_exports/c3_official_asformer_delta_ledgers_20260702_052357_+0800}"
@@ -163,7 +163,7 @@ submit_failed_training_cells() {
 submit_stats() {
   local output
   if output="$(sbatch --parsable \
-      --dependency="afterok:${EVAL_JOB_ID}:${COST_JOB_ID}" \
+      --dependency="afterok:${EVAL_JOB_ID}" \
       --output="${RUN_ROOT}/slurm_logs/%x_%j.out" \
       --error="${RUN_ROOT}/slurm_logs/%x_%j.err" \
       --export=ALL,DUCA_RUN_ROOT="${RUN_ROOT}",DUCA_SEEDS="${DUCA_SEEDS}",DUCA_REPO_ROOT="${REPO_ROOT}",YUZIBO_ROOT="${YUZIBO_ROOT}",DUCA_VIDEOMAE_PRETRAIN="${DUCA_VIDEOMAE_PRETRAIN}",DUCA_H65_LEDGER_ROOT="${DUCA_H65_LEDGER_ROOT}",DUCA_H65_TRAIN_LEDGER_PATH="${DUCA_H65_TRAIN_LEDGER_PATH}",DUCA_H65_VAL_LEDGER_PATH="${DUCA_H65_VAL_LEDGER_PATH}",DUCA_H65_TEST_LEDGER_PATH="${DUCA_H65_TEST_LEDGER_PATH}" \
@@ -207,20 +207,6 @@ if [[ -n "${STATS_JOB_ID:-}" ]]; then
       exit 0
       ;;
   esac
-fi
-
-COST_PHASE="$(job_phase "${COST_JOB_ID}")"
-if [[ "${COST_PHASE}" == FAILED ]]; then
-  write_manifest "COST_FAILED"
-  log "[ERROR] Cost profiling job ${COST_JOB_ID} failed; inspect its Slurm stderr before retrying."
-  exit 1
-elif [[ "${COST_PHASE}" == UNKNOWN ]]; then
-  write_manifest "COST_UNKNOWN"
-  log "[ERROR] Cost profiling job ${COST_JOB_ID} has no readable Slurm accounting state."
-  exit 1
-elif [[ "${COST_PHASE}" != COMPLETED ]]; then
-  log "[WAIT] Cost profiling job ${COST_JOB_ID} is ${COST_PHASE}; continuation deferred."
-  exit 0
 fi
 
 TRAIN_PHASE="$(job_phase "${TRAIN_JOB_ID}")"

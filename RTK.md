@@ -84,6 +84,13 @@ export HF_HOME="$BASE/hf_cache"
 - A failed or incomplete run must remain in the ledger, including cancellation, non-finite loss, missing checkpoint, missing terminal receipt, and wrong-checkout cases. `COMPLETED` in Slurm or an epoch message alone is not a valid result. Do not report metrics, mAP, speedup, cost, or bootstrap intervals without the exact-SHA, clean-tree, terminal-checkpoint, evaluator, and aggregation receipts required by the route.
 - The supervisor and heartbeat must surface every unresolved failure and its next action; they may never silently drop, relabel, or adopt a pre-existing job.
 
+### 结果与效率指标
+
+- 正式实验的硬性结果指标是 official THUMOS14 Avg-mAP、各 tIoU mAP（重点包括 `mAP@0.7`）、固定帧预算/实际选择数量，以及适用对比的配对统计证据。
+- 若提出“降低理论计算量”或“减少骨干计算”的结论，必须报告 GFLOPs/MACs 或真实执行的骨干工作量；固定 `K=384/768` 本身只证明输入预算，不自动证明端到端加速。
+- 端到端延迟、吞吐量和峰值 GPU 显存不再是训练准入、结果有效性、矩阵完整性或论文性能结论的硬门禁。缺少这些系统指标不得阻止正式训练、评测、聚合或重提。
+- 已有 profiler 可以保留并按资源情况运行，但其输出仅作可选诊断；除非实际提供了同硬件、同批量、同软件环境的配对测量，否则不得声称 latency/throughput/memory 改善。
+
 需要下载外部资源时使用登录节点代理：
 
 ```bash
@@ -130,7 +137,7 @@ PRECHECK_ONLY=1 bash scripts/run_c3_asformer_delta_ledger_adatad_full_train_gpu1
 - R2 必须使用 R0 唯一选中 family 完成真实 coarse/transition/burst P0 训练与 holdout 裁决。
 - R3 必须在同一精确协议下部署 matched U 与 G0 的 official TAD 正式训练。
 - R4 必须实现真实合法 hard-swap、冻结 official detector signed utility/alignment 门禁，并部署真实 G1/G2。
-- R5 必须覆盖三种子、K384/K256、official AdaTAD、仓库中真实可训练的第二 TAD backend，以及完整端到端成本测量。
+- R5 必须覆盖三种子、K384/K256、official AdaTAD、仓库中真实可训练的第二 TAD backend，以及与效率主张对应的 GFLOPs/MACs 或真实骨干工作量。端到端延迟、吞吐量和峰值显存仅为可选诊断，不属于 R5 验收门禁。
 - mock、sentinel、占位 backend、仅 `PRECHECK_ONLY`、TODO、未接真实 loader/model/CUDA/backend 的入口均是半成品。
 - “已部署”仅在 `sbatch` 返回有效 Job ID，并记录 dependency、exact commit、run root、manifest/hash 和预期终端产物后成立。
 - 并行智能体的文字结论不算交付；代码必须合入唯一分支、通过 focused/contract/Linux/真实 CUDA 门禁，形成一个精确提交后才可部署。

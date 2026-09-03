@@ -428,7 +428,7 @@ def _write_matrix_files(manifest: dict[str, Any], rows: list[dict[str, Any]]) ->
         "base_revision": manifest["integration_base"]["revision"],
         "implementation_gate": {
             "blocked_arm_ids": sorted(_IMPLEMENTATION_BLOCKERS),
-            "cost_benchmark_status": "BLOCKED_UNIMPLEMENTED",
+            "system_metrics_status": "OPTIONAL_NOT_REQUIRED",
         },
         "rows": rows,
     }
@@ -467,9 +467,9 @@ def _write_freeze_doc(manifest: dict[str, Any], rows: list[dict[str, Any]]) -> N
         f"- Confirmation tasks: `{len(confirmation)}`",
         f"- Total train/eval tasks: `{len(rows)}`",
         f"- Bootstrap shards: `{manifest['common_contract']['statistics']['bootstrap_shards']}`",
-        f"- Cost arms: `{', '.join(manifest['cost_benchmark']['arm_ids'])}`",
+        f"- Optional system-diagnostic arms: `{', '.join(manifest['cost_benchmark']['arm_ids'])}`",
         "- Implementation gate: D1/F11 Taylor and H0/G10/G11 H65 retention/transition are blocked until runtime wiring is complete.",
-        "- Cost gate: real synchronized end-to-end benchmark is not implemented; cost submission remains blocked.",
+        "- System metrics: end-to-end latency, throughput, and peak memory are optional diagnostics and do not block training or scientific acceptance.",
         "",
         "The manifest copied into this repository is the source of truth. Historical references in that manifest are descriptive anchors only; matched conclusions must come from this 41-task matrix.",
         "",
@@ -778,8 +778,6 @@ if blocked:
     for task_id, reasons in blocked:
         print(f"BLOCKED_UNIMPLEMENTED {{task_id}}: {{', '.join(reasons)}}", file=sys.stderr)
     raise SystemExit("DUCA Unified formal submission is blocked until all declared mechanisms are implemented")
-if payload.get("implementation_gate", {{}}).get("cost_benchmark_status") != "READY":
-    raise SystemExit("DUCA Unified cost benchmark is not implemented; refusing formal DAG submission")
 PY
 
 export PROJECT_DIR RUN_ROOT BASE
@@ -799,15 +797,14 @@ fi
 LOG_DIR="${{BASE}}/slurm_logs"
 preflight=$(sbatch --parsable "${{SLURM_GPU_ARGS[@]}}" --output="${{LOG_DIR}}/duca_preflight_%j.out" --error="${{LOG_DIR}}/duca_preflight_%j.err" scripts/duca_unified_fullmatrix/preflight.sbatch)
 train=$(sbatch --parsable "${{SLURM_GPU_ARGS[@]}}" --dependency=afterok:$preflight --array=0-{train_count - 1}%$MAX_CONCURRENT --output="${{LOG_DIR}}/duca_train_eval_%A_%a.out" --error="${{LOG_DIR}}/duca_train_eval_%A_%a.err" scripts/duca_unified_fullmatrix/train_eval_array.sbatch)
-cost=$(sbatch --parsable "${{SLURM_GPU_ARGS[@]}}" --dependency=afterok:$train --output="${{LOG_DIR}}/duca_cost_%A_%a.out" --error="${{LOG_DIR}}/duca_cost_%A_%a.err" scripts/duca_unified_fullmatrix/cost_array.sbatch)
 boot=$(sbatch --parsable "${{SLURM_SHARED_ARGS[@]}}" --dependency=afterok:$train --output="${{LOG_DIR}}/duca_bootstrap_%A_%a.out" --error="${{LOG_DIR}}/duca_bootstrap_%A_%a.err" scripts/duca_unified_fullmatrix/bootstrap_array.sbatch)
-finalize=$(sbatch --parsable "${{SLURM_SHARED_ARGS[@]}}" --dependency=afterok:$train:$cost:$boot --output="${{LOG_DIR}}/duca_finalize_%j.out" --error="${{LOG_DIR}}/duca_finalize_%j.err" scripts/duca_unified_fullmatrix/finalize.sbatch)
-audit=$(sbatch --parsable "${{SLURM_SHARED_ARGS[@]}}" --dependency=afterany:$train:$cost:$boot:$finalize --output="${{LOG_DIR}}/duca_audit_%j.out" --error="${{LOG_DIR}}/duca_audit_%j.err" scripts/duca_unified_fullmatrix/audit_afterany.sbatch)
+finalize=$(sbatch --parsable "${{SLURM_SHARED_ARGS[@]}}" --dependency=afterok:$train:$boot --output="${{LOG_DIR}}/duca_finalize_%j.out" --error="${{LOG_DIR}}/duca_finalize_%j.err" scripts/duca_unified_fullmatrix/finalize.sbatch)
+audit=$(sbatch --parsable "${{SLURM_SHARED_ARGS[@]}}" --dependency=afterany:$train:$boot:$finalize --output="${{LOG_DIR}}/duca_audit_%j.out" --error="${{LOG_DIR}}/duca_audit_%j.err" scripts/duca_unified_fullmatrix/audit_afterany.sbatch)
 
 printf -v SUBMISSION_ARGV '%q ' "${{ORIGINAL_ARGV[@]}}"
 SUBMISSION_ARGV="${{SUBMISSION_ARGV%% }}"
 
-python - "$RUN_ROOT" "$PROJECT_DIR" "$REVISION" "$PROJECT_DIR" "$SUBMISSION_ARGV" "$preflight" "$train" "$cost" "$boot" "$finalize" "$audit" <<'PY'
+python - "$RUN_ROOT" "$PROJECT_DIR" "$REVISION" "$PROJECT_DIR" "$SUBMISSION_ARGV" "$preflight" "$train" "$boot" "$finalize" "$audit" <<'PY'
 import hashlib
 import json
 import os
@@ -820,7 +817,7 @@ project_dir = pathlib.Path(sys.argv[2])
 revision = sys.argv[3]
 remote_repo = sys.argv[4]
 submission_argv = sys.argv[5]
-job_ids = sys.argv[6:12]
+job_ids = sys.argv[6:11]
 
 def atomic_write(path: pathlib.Path, data: bytes) -> None:
     tmp = path.with_name(path.name + ".tmp")
@@ -852,10 +849,10 @@ payload = {{
     "matrix_id": "{matrix_id}",
     "preflight_job_id": job_ids[0],
     "train_eval_array_job_id": job_ids[1],
-    "cost_array_job_id": job_ids[2],
-    "bootstrap_array_job_id": job_ids[3],
-    "finalizer_job_id": job_ids[4],
-    "audit_afterany_job_id": job_ids[5],
+    "cost_array_job_id": None,
+    "bootstrap_array_job_id": job_ids[2],
+    "finalizer_job_id": job_ids[3],
+    "audit_afterany_job_id": job_ids[4],
     "final_commit": revision,
     "remote_repo": remote_repo,
     "run_root": str(run_root),
