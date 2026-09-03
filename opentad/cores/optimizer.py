@@ -71,18 +71,19 @@ def assert_optimizer_exact_coverage(model, optimizer):
         )
 
 
-def build_optimizer(cfg, model, logger):
+def build_optimizer(cfg, model, logger=None):
+    raw_model = getattr(model, "module", model)
     optimizer_type = cfg["type"]
     cfg.pop("type")
 
     if optimizer_type == "LayerDecayAdamW":
         optimizer = build_vit_optimizer(cfg, model, logger)
-        assert_optimizer_exact_coverage(model.module, optimizer)
+        assert_optimizer_exact_coverage(raw_model, optimizer)
         return optimizer
 
     # set the backbone's optim_groups: SHOULD ONLY CONTAIN BACKBONE PARAMS
-    if hasattr(model.module, "backbone"):  # if backbone exists
-        if model.module.backbone.freeze_backbone == False:  # not frozen
+    if hasattr(raw_model, "backbone"):  # if backbone exists
+        if raw_model.backbone.freeze_backbone == False:  # not frozen
             assert (
                 "backbone" in cfg.keys()
             ), "Freeze_backbone is set to False, but backbone parameters is not provided in the optimizer config."
@@ -92,7 +93,8 @@ def build_optimizer(cfg, model, logger):
 
         else:  # frozen backbone
             backbone_optim_groups = []
-            logger.info(f"Freeze the backbone...")
+            if logger:
+                logger.info(f"Freeze the backbone...")
     else:
         backbone_optim_groups = []
 
@@ -101,11 +103,11 @@ def build_optimizer(cfg, model, logger):
     # weight decay for a certain layer, the model should have a function called get_optim_groups
     if "paramwise" in cfg.keys() and cfg["paramwise"]:
         cfg.pop("paramwise")
-        det_optim_groups = model.module.get_optim_groups(cfg)
+        det_optim_groups = raw_model.get_optim_groups(cfg)
     else:
         # optim_groups that does not contain backbone params
         detector_params = []
-        for name, param in model.module.named_parameters():
+        for name, param in raw_model.named_parameters():
             # exclude the backbone
             if name.startswith("backbone"):
                 continue
@@ -125,7 +127,7 @@ def build_optimizer(cfg, model, logger):
     else:
         raise f"Optimizer {optimizer_type} is not supported so far."
 
-    assert_optimizer_exact_coverage(model.module, optimizer)
+    assert_optimizer_exact_coverage(raw_model, optimizer)
     return optimizer
 
 
@@ -156,8 +158,9 @@ def get_backbone_optim_groups(cfg, model, logger):
     rest_params_list = []
 
     name_list = []
+    raw_model = getattr(model, "module", model)
     # split the backbone parameters into different groups
-    for name, param in model.module.backbone.named_parameters():
+    for name, param in raw_model.backbone.named_parameters():
         if not param.requires_grad:
             continue
         # loop the exclude_name_list
@@ -195,8 +198,9 @@ def get_backbone_optim_groups(cfg, model, logger):
             rest_params_list.append(param)
             name_list.append(name)
 
-    for name in name_list:
-        logger.info(f"Backbone parameter: {name}")
+    if logger:
+        for name in name_list:
+            logger.info(f"Backbone parameter: {name}")
     # add params to optim_groups
     backbone_optim_groups = []
 
