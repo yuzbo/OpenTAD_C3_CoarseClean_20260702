@@ -268,7 +268,13 @@ class DucaOnlineFrameSelector(nn.Module):
         self.boundary_weight = float(boundary_weight)
         self.detector_gradient_mode = str(detector_gradient_mode)
         self.selected_positions_coordinate = str(coordinate_space)
-        self.detector_output_coordinate_space = str(detector_output_coordinate_space)
+        coord_space_str = str(detector_output_coordinate_space).lower().replace("-", "_")
+        if coord_space_str in {"selected_axis", "selected_axis_index"}:
+            self.detector_output_coordinate_space = SELECTED_AXIS
+        elif coord_space_str in {"true_time", "true_time_dense_index"}:
+            self.detector_output_coordinate_space = TRUE_TIME_AXIS
+        else:
+            self.detector_output_coordinate_space = str(detector_output_coordinate_space)
         self.coordinate_space = self.detector_output_coordinate_space
         self.selected_positions_unit = str(selected_positions_unit)
         self.true_time_source_axis = str(true_time_source_axis)
