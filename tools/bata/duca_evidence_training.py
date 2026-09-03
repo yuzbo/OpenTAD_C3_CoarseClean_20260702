@@ -292,11 +292,20 @@ def validate_ledger_coverage(dataset, split_name: str) -> dict[str, int | str]:
                 f"formal Evidence {split_name} ledger row {sample_id} has invalid dimensions"
             )
         positions = row.get(positions_key)
-        if not isinstance(positions, (list, tuple)) or not positions:
+        if positions is None:
             raise RuntimeError(
                 f"formal Evidence {split_name} ledger row {sample_id} has no positions"
             )
-        positions = [int(item) for item in positions]
+        try:
+            positions = [int(item) for item in positions]
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(
+                f"formal Evidence {split_name} ledger row {sample_id} has invalid positions"
+            ) from exc
+        if not positions:
+            raise RuntimeError(
+                f"formal Evidence {split_name} ledger row {sample_id} has no positions"
+            )
         required_count = ledger_transform._required_count(valid_len)
         if (
             positions != sorted(set(positions))

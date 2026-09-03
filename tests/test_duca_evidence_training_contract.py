@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from array import array
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -114,7 +115,7 @@ def _coverage_row(sample_id):
         "valid_len": 8,
         "dense_len": 8,
         "target_len": 4,
-        "selected_positions": [0, 2, 4, 6],
+        "selected_positions": array("q", [0, 2, 4, 6]),
     }
 
 
