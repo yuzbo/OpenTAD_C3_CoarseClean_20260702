@@ -25,9 +25,20 @@ def test_bafdr_configs_use_supported_collect_contract():
         text = read(path)
         assert 'type="BAFDRSourceViews"' in text
         assert 'type="Collect", inputs="bafdr_inputs"' in text
-        assert '"gt_segments", "gt_labels"' in text
         assert '"bafdr_geometry"' in text
         assert "extra_keys" not in text
+        cfg = Config.fromfile(str(path))
+        for split in ("train", "val", "test"):
+            pipeline = cfg.dataset[split].pipeline
+            collect = next(step for step in pipeline if step.type == "Collect")
+            keys = set(collect["keys"])
+            if split == "train":
+                assert {"masks", "gt_segments", "gt_labels"}.issubset(keys)
+            else:
+                assert keys == {"masks"}
+                for step in pipeline:
+                    if step.type == "ConvertToTensor":
+                        assert not {"gt_segments", "gt_labels"}.intersection(step["keys"])
         # LoadFrames takes trunc_len for random windows; sliding-window length
         # belongs to the dataset config, not the transform constructor.
         assert 'method="sliding_window", window_size=' not in text
@@ -38,6 +49,7 @@ def test_bafdr_generator_cannot_reintroduce_collect_extra_keys():
     text = read(ROOT / "tools" / "bata" / "generate_bafdr_configs.py")
     assert "extra_keys" not in text
     assert 'type="Collect", inputs="bafdr_inputs"' in text
+    assert 'dict(type="Collect", inputs="bafdr_inputs", keys=["masks"]' in text
     assert 'method="sliding_window", window_size=' not in text
     assert 'method="sliding_window", window_overlap_ratio=' not in text
 
@@ -131,6 +143,8 @@ def test_slurm_scripts_use_world2_arm_batch_dag():
     assert 'export YUZIBO_ROOT="${BASE}"' in run_text
     assert "BAFDR_PRETRAIN" in run_text
     assert "pretrained checkpoint is not readable" in run_text
+    assert 'SCREEN_EXPECTED_COMMIT="${BAFDR_SCREEN_EXPECTED_COMMIT:-${EXPECTED_COMMIT}}"' in run_text
+    assert '"${SCREEN_RECEIPT}" "${SCREEN_EXPECTED_COMMIT}"' in run_text
     assert "#SBATCH --gpus=2" in submit_text
     assert "arm_list=(D160 G96 U128-ALL48-A0 U16-UNIFORM-A0 BAFDR-K16-LATE BAFDR-K16-NOKD BAFDR-K16-FULL)" in submit_text
     assert "run_zoomtoken_bafdr_k16_arm_batch.sh" in submit_text

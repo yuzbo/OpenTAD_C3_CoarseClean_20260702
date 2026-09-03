@@ -15,6 +15,8 @@ EXPECTED_COMMIT="${BAFDR_EXPECTED_COMMIT:?BAFDR_EXPECTED_COMMIT must be the full
 [[ "${EXPECTED_COMMIT}" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "BAFDR_EXPECTED_COMMIT must be a full SHA" >&2; exit 2; }
 [[ "$(git rev-parse HEAD)" == "${EXPECTED_COMMIT}" ]] || { echo "BAFDR checkout HEAD mismatch" >&2; exit 2; }
 [[ -z "$(git status --porcelain)" ]] || { echo "BAFDR checkout is not clean" >&2; exit 2; }
+SCREEN_EXPECTED_COMMIT="${BAFDR_SCREEN_EXPECTED_COMMIT:-${EXPECTED_COMMIT}}"
+[[ "${SCREEN_EXPECTED_COMMIT}" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "BAFDR_SCREEN_EXPECTED_COMMIT must be a full SHA" >&2; exit 2; }
 
 if [[ -n "${YUZIBO_ROOT:-}" ]]; then
   BASE="${YUZIBO_ROOT}"
@@ -68,7 +70,7 @@ case "${mode}" in
     if [[ "${BAFDR_REQUIRE_SCREEN_GATE:-1}" == "1" ]]; then
       SCREEN_RECEIPT="${BAFDR_SCREEN_RECEIPT:?BAFDR_SCREEN_RECEIPT is required for the formal 21-cell matrix}"
       [[ -f "${SCREEN_RECEIPT}" ]] || { echo "BAFDR screen receipt not found: ${SCREEN_RECEIPT}" >&2; exit 2; }
-      python - "${SCREEN_RECEIPT}" "${EXPECTED_COMMIT}" <<'PY'
+      python - "${SCREEN_RECEIPT}" "${SCREEN_EXPECTED_COMMIT}" <<'PY'
 import json, sys
 path, expected = sys.argv[1:]
 with open(path, encoding="utf-8") as handle:

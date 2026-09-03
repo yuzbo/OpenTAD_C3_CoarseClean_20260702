@@ -187,9 +187,22 @@ def validate_bafdr_pipeline(cfg: Config, *, config_path: Path, arm: str) -> Dict
         if _get(collect, "inputs") != "bafdr_inputs":
             raise ValueError(f"{config_path}: {split} Collect.inputs must be bafdr_inputs")
         keys = set(_get(collect, "keys", []))
-        required_keys = {"masks", "gt_segments", "gt_labels"}
+        required_keys = {"masks", "gt_segments", "gt_labels"} if split == "train" else {"masks"}
         if not required_keys.issubset(keys):
             raise ValueError(f"{config_path}: {split} Collect.keys missing {sorted(required_keys - keys)}")
+        if split != "train":
+            forbidden_eval_keys = {"gt_segments", "gt_labels"}
+            unexpected = forbidden_eval_keys.intersection(keys)
+            if unexpected:
+                raise ValueError(
+                    f"{config_path}: {split} Collect.keys requests unavailable labels {sorted(unexpected)}"
+                )
+            for convert in _find_steps(pipeline, "ConvertToTensor"):
+                converted = forbidden_eval_keys.intersection(set(_get(convert, "keys", [])))
+                if converted:
+                    raise ValueError(
+                        f"{config_path}: {split} ConvertToTensor requests unavailable labels {sorted(converted)}"
+                    )
         meta_keys = set(_get(collect, "meta_keys", []))
         required_meta = {"id", "fps", "duration", "video_name", "snippet_boundaries", "window_start_frame", "bafdr_geometry"}
         if not required_meta.issubset(meta_keys):

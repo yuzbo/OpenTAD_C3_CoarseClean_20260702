@@ -7,7 +7,6 @@ solver = dict(
     test=dict(batch_size=2, num_workers=2),
 )
 
-
 train_pipeline = [
     dict(type="PrepareVideoInfo", format="mp4"),
     dict(type="mmaction.DecordInit", num_threads=4),
@@ -20,11 +19,13 @@ train_pipeline = [
 evaluation_pipeline = [
     dict(type="PrepareVideoInfo", format="mp4"),
     dict(type="mmaction.DecordInit", num_threads=4),
+    # ``window_size`` and overlap belong to the dataset, not the transform.
+    # LoadFrames has no such constructor arguments; passing them makes the
+    # generated validation loader fail before the first batch.
     dict(type="LoadFrames", num_clips=1, method="sliding_window"),
     dict(type="mmaction.DecordDecode"),
     dict(type="BAFDRSourceViews", global_size=96, output_key="bafdr_inputs", required_source_height=180, required_source_width=320),
-    dict(type="ConvertToTensor", keys=["gt_segments", "gt_labels"]),
-    dict(type="Collect", inputs="bafdr_inputs", keys=["masks", "gt_segments", "gt_labels"], meta_keys=["id", "fps", "duration", "video_name", "snippet_boundaries", "window_start_frame", "bafdr_geometry"]),
+    dict(type="Collect", inputs="bafdr_inputs", keys=["masks"], meta_keys=["id", "fps", "duration", "video_name", "snippet_boundaries", "window_start_frame", "bafdr_geometry"]),
 ]
 
 dataset = dict(
@@ -47,7 +48,6 @@ model = dict(
             bafdr_output_length=768,
             bafdr_uniform_mode=True,
             bafdr_return_bundle=True,
-            bafdr_compute_contract="G96 carrier + uniform K16 local refresh (16x16-frame chunks)",
         )
     ),
     projection=dict(
