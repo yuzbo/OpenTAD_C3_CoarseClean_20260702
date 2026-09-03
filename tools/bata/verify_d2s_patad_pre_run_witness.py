@@ -14,6 +14,7 @@ if str(root_dir) not in sys.path:
 import torch
 from mmengine.config import Config
 
+import opentad.datasets  # noqa: F401 - registers config-driven data transforms
 from opentad.models import build_detector
 from tools.bata.continuous_roi_s2_v3_full200_compute import canonical_sha256
 from tools.bata.zoomtoken_full200_matrix_spec import (
@@ -93,4 +94,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

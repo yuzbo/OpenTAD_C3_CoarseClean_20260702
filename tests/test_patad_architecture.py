@@ -8,7 +8,7 @@ from opentad.models.projections.actionformer_proj import Conv1DTransformerProj
 
 def test_patad_projection_shape_and_forward():
     conv_cfg = dict(kernel_size=3, proj_pdrop=0.0)
-    attn_cfg = dict(n_head=4, n_mha_win_size=19, attn_pdrop=0.0)
+    attn_cfg = dict(n_head=4, n_mha_win_size=-1, attn_pdrop=0.0)
     norm_cfg = dict(type="LN")
 
     patad_proj = PyramidAwareAsymmetricProj(
