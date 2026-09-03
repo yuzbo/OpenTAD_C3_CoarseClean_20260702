@@ -43,7 +43,11 @@ def align_native_tubelet_geometry(
         raise ValueError("native temporal tubelet_size must be positive")
     raw_count = int(raw_masks.shape[1])
     token_count = int(features.shape[2])
-    if raw_count != token_count * tubelet_size:
+    if raw_count == token_count:
+        tubelet_size = 1
+    elif raw_count != token_count * tubelet_size and raw_count % token_count == 0:
+        tubelet_size = raw_count // token_count
+    elif raw_count != token_count * tubelet_size:
         raise ValueError(
             f"native temporal K/J contract failed: K={raw_count}, J={token_count}, tubelet_size={tubelet_size}"
         )
