@@ -48,6 +48,22 @@ def load_rows(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(handle))
 
 
+def validate_physical_time_optimizer(cfg: Config, experiment_id: str) -> None:
+    backbone_cfg = cfg.model.backbone.backbone
+    if not bool(backbone_cfg.get("relative_physical_time_residual", False)):
+        return
+    custom_groups = {
+        str(group["name"]): group for group in cfg.optimizer.backbone.custom
+    }
+    scale_group = custom_groups.get("relative_physical_time_scale")
+    require(scale_group is not None, f"{experiment_id}: physical-time scale missing from optimizer")
+    require(float(scale_group["lr"]) > 0.0, f"{experiment_id}: physical-time scale lr must be positive")
+    require(
+        float(scale_group["weight_decay"]) == 0.0,
+        f"{experiment_id}: physical-time residual scalar must not use weight decay",
+    )
+
+
 def validate_config(row: dict[str, str]) -> None:
     cfg_path = ROOT / row["config"]
     require(cfg_path.is_file(), f"missing config: {row['config']}")
@@ -70,6 +86,7 @@ def validate_config(row: dict[str, str]) -> None:
         require(bool(cfg.workflow.require_finite_train_loss), "REF-D768: finite-loss requirement missing")
         require(bool(cfg.workflow.get("selector_schedule_required", True)) is False, "REF-D768: selector schedule must be disabled")
         return
+    validate_physical_time_optimizer(cfg, row["experiment_id"])
     if row["experiment_id"] == "REF-U384":
         selector = cfg.model.frame_selector
         require(int(selector.budget) == 384, "REF-U384: K must be 384")

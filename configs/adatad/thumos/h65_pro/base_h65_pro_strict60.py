@@ -82,6 +82,14 @@ model = dict(
 
 scheduler = dict(type="LinearWarmupCosineAnnealingLR", warmup_epoch=5, max_epoch=60)
 solver = dict(static_graph=False, find_unused_parameters=True)
+optimizer = dict(
+    backbone=dict(
+        custom=[
+            dict(name="adapter", lr=2e-4, weight_decay=0.05),
+            dict(name="relative_physical_time_scale", lr=2e-4, weight_decay=0.0),
+        ],
+    ),
+)
 workflow = dict(
     formal_protocol="duca_selected_axis_optimization_v1",
     training_profile=duca_training_protocol.name,

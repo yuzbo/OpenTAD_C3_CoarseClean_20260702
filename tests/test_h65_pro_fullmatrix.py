@@ -103,6 +103,12 @@ def test_h65_pro_generated_configs_encode_requested_factor_contracts() -> None:
     assert f01.model.rpn_head.conv_cfg is None
     assert f01.model.backbone.backbone.amod_config.enabled is False
     assert f01.model.frame_selector.detector_contribution_mode == "abs_grad_times_input"
+    custom_groups = {
+        str(group.name): group for group in f01.optimizer.backbone.custom
+    }
+    assert set(custom_groups) == {"adapter", "relative_physical_time_scale"}
+    assert float(custom_groups["relative_physical_time_scale"].lr) == 2.0e-4
+    assert float(custom_groups["relative_physical_time_scale"].weight_decay) == 0.0
 
 
 def test_h65_pro_reference_configs_encode_dense_and_mnv3fc_contracts() -> None:
