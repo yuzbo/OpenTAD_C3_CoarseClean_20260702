@@ -575,6 +575,20 @@ def main():
     val_loss_best = 1e6
     val_start_epoch = cfg.workflow.get("val_start_epoch", 0)
     disable_checkpoint = cfg.workflow.get("disable_checkpoint", False)
+    if update_audit is not None:
+        for k in (
+            "attempted_batches",
+            "optimizer_attempts",
+            "amp_skipped_attempts",
+            "max_amp_retries_observed",
+            "successful_optimizer_updates",
+            "successful_updates",
+            "scheduler_updates",
+            "ema_updates",
+            "duca_schedule_updates",
+            "replay_exhaustions",
+        ):
+            update_audit.setdefault(k, 0)
     for epoch in range(resume_epoch + 1, max_epoch):
         dataset_set_epoch = getattr(train_loader.dataset, "set_epoch", None)
         if bool(cfg.workflow.get("derive_train_loader_contract", False)):
@@ -625,7 +639,7 @@ def main():
                 uses_ema=model_ema is not None,
             )
             delta = {
-                key: int(update_audit[key]) - int(audit_before_epoch[key])
+                key: int(update_audit[key]) - int(audit_before_epoch.get(key, 0))
                 for key in update_audit
             }
             expected_batches = int(
