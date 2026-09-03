@@ -20,20 +20,36 @@ def global_rank_clip_coordinates(irregular_selected_positions, dense_valid_len, 
     lengths = lengths.to(device=positions.device, dtype=torch.long).flatten()
     if lengths.numel() != positions.shape[0]:
         raise ValueError("dense_valid_len must be [B]")
-    unique_lengths = torch.unique(lengths, sorted=True)
-    canonical_by_length = {
-        int(n.item()): exact_uniform_positions(int(n.item()), int(k), device=positions.device)
-        for n in unique_lengths
-    }
-    canonical = torch.stack([canonical_by_length[int(n.item())] for n in lengths])
-    if (positions[:, 1:] <= positions[:, :-1]).any():
-        raise ValueError("selected positions must be strictly increasing")
-    if (positions < 0).any() or (positions >= lengths[:, None]).any():
-        raise ValueError("selected positions out of dense window")
+    canonical_rows = []
+    actual_rows = []
+    for batch_idx, length_tensor in enumerate(lengths):
+        dense_length = int(length_tensor.item())
+        if dense_length <= 0:
+            raise ValueError("dense_valid_len must be positive")
+        active_k = min(int(k), dense_length)
+        active_positions = positions[batch_idx, :active_k]
+        if active_k > 1 and (active_positions[1:] <= active_positions[:-1]).any():
+            raise ValueError("active selected positions must be strictly increasing")
+        if (active_positions < 0).any() or (active_positions >= dense_length).any():
+            raise ValueError("active selected positions out of dense window")
+        if active_k < int(k):
+            padded_positions = positions[batch_idx, active_k:]
+            if (padded_positions != active_positions[-1]).any():
+                raise ValueError("inactive selected-position slots must repeat the final active position")
+        canonical_active = exact_uniform_positions(dense_length, active_k, device=positions.device)
+        pad_count = int(k) - active_k
+        canonical_rows.append(
+            torch.cat([canonical_active, canonical_active[-1:].expand(pad_count)], dim=0)
+        )
+        actual_rows.append(
+            torch.cat([active_positions, active_positions[-1:].expand(pad_count)], dim=0)
+        )
+    canonical = torch.stack(canonical_rows)
+    packed_positions = torch.stack(actual_rows)
     if int(k) % int(clip_len) != 0:
         raise ValueError("K must be divisible by clip_len")
     clips = int(k) // int(clip_len)
-    actual = positions.reshape(positions.shape[0], clips, int(clip_len))
+    actual = packed_positions.reshape(positions.shape[0], clips, int(clip_len))
     canon = canonical.reshape(canonical.shape[0], clips, int(clip_len))
     if int(tubelet_size) > 1:
         if int(clip_len) % int(tubelet_size):

@@ -251,6 +251,42 @@ def test_anchor_free_head_temporal_positions_are_batch_invariant_for_short_windo
     assert torch.equal(batched[1], torch.tensor([0.0, 5.0, 10.0, 15.0]))
 
 
+def test_global_rank_clip_coordinates_supports_mixed_short_and_full_windows() -> None:
+    torch = _require_torch()
+    from opentad.models.utils.temporal_grid import global_rank_clip_coordinates
+
+    positions = torch.tensor(
+        [
+            [0, 1, 2, 3, 4, 4, 4, 4],
+            [0, 1, 3, 5, 6, 8, 10, 11],
+        ]
+    )
+    coords = global_rank_clip_coordinates(
+        positions,
+        torch.tensor([5, 12]),
+        k=8,
+        clip_len=4,
+        tubelet_size=2,
+    )
+
+    assert coords["actual"].shape == (2, 2, 2)
+    assert torch.equal(coords["actual"][0], coords["canonical"][0])
+    assert torch.equal(coords["irregular_selected_positions"], positions)
+
+
+def test_frozen_mobilenet_feature_change_has_no_uninitialized_output_head() -> None:
+    _require_torch()
+    from tools.bata.train_lowres_action_probe import C3MobileNetV3ActionProbe
+
+    probe = C3MobileNetV3ActionProbe(
+        pretrained=False,
+        freeze_backbone=True,
+        preserve_pretrained_classifier=True,
+    )
+    assert probe.output_head is None
+    assert all(not parameter.requires_grad for parameter in probe.module.parameters())
+
+
 def test_semantic_phase_sampler_returns_sorted_unique_exact_k_and_uniform_alpha_zero() -> None:
     torch = _require_torch()
     from opentad.models.duca.acquisition import DucaAcquisitionAdapter

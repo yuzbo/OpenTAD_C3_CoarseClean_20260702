@@ -1332,8 +1332,10 @@ class C3MobileNetV3ActionProbe:
                 self.output_head = nn.LazyLinear(1)
                 self.module.output_head = self.output_head
         else:
-            self.output_head = nn.LazyLinear(1)
-            self.module.output_head = self.output_head
+            # Frozen feature-change mode consumes the preserved ImageNet logits
+            # directly; an additional lazy binary head would be unused and cannot
+            # be frozen before its first forward pass.
+            self.output_head = None
         if freeze_backbone:
             for param in self.module.parameters():
                 param.requires_grad = False
