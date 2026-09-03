@@ -2,6 +2,7 @@ from mmengine.registry import Registry
 from .backbones import (
     BackboneWrapper,
     ContinuousRoiBackboneWrapper,
+    D2STemporalZoomBackboneWrapper,
     GeoRouteBackboneWrapper,
     NativeCropBackboneWrapper,
 )
@@ -39,6 +40,8 @@ def build_backbone(cfg):
         return NativeCropBackboneWrapper(cfg)
     if wrapper_type == "continuous_roi_common_support_u128":
         return ContinuousRoiBackboneWrapper(cfg)
+    if wrapper_type == "d2s_temporal_zoom_shared_videomae":
+        return D2STemporalZoomBackboneWrapper(cfg)
     if wrapper_type == "georoute_native_packed_v1":
         return GeoRouteBackboneWrapper(cfg)
     if wrapper_type is not None:
