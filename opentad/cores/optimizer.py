@@ -2,7 +2,7 @@ import torch
 from .layer_decay_optimizer import build_vit_optimizer
 
 
-def prepare_optimizer_parameter_freezing(cfg, model, logger):
+def prepare_optimizer_parameter_freezing(cfg, model, logger=None):
     """Apply optimizer-driven freezing before DDP registers model parameters."""
     if cfg.get("type") == "LayerDecayAdamW":
         return
@@ -18,7 +18,8 @@ def prepare_optimizer_parameter_freezing(cfg, model, logger):
         is_excluded = any(exclude_name in name for exclude_name in exclude_names)
         if is_excluded and not is_custom and param.requires_grad:
             param.requires_grad = False
-            logger.info(f"Freeze backbone parameter before DDP: {name}")
+            if logger is not None:
+                logger.info(f"Freeze backbone parameter before DDP: {name}")
 
 
 def assert_optimizer_exact_coverage(model, optimizer):
