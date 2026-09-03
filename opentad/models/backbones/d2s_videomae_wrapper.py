@@ -332,7 +332,7 @@ class D2STemporalZoomBackboneWrapper(BackboneWrapper):
                 features.shape[-1],
             )
             .mean(dim=3)
-            .permute(0, 4, 1, 2)
+            .permute(0, 3, 1, 2)
             .flatten(start_dim=2)
             .contiguous()
         )
