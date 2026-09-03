@@ -61,9 +61,11 @@ done
 
 [[ -n "${H65_PRO_EXPECTED_COMMIT:-}" ]] || fail "H65_PRO_EXPECTED_COMMIT is required for H65-Pro evaluation"
 EXPECTED_COMMIT="$H65_PRO_EXPECTED_COMMIT"
+TRAINING_COMMIT="${H65_PRO_TRAINING_COMMIT:-$EXPECTED_COMMIT}"
 OBSERVED_COMMIT="$(git rev-parse HEAD)"
 [[ "$OBSERVED_COMMIT" == "$EXPECTED_COMMIT" ]] || fail "checkout commit $OBSERVED_COMMIT differs from expected $EXPECTED_COMMIT"
 export DUCA_EXPECTED_COMMIT="$EXPECTED_COMMIT"
+export DUCA_TRAINING_COMMIT="$TRAINING_COMMIT"
 export DUCA_ADATAD_PRETRAIN_PATH="$(cd "$(dirname "$ADATAD_PRETRAIN")" && pwd -P)/$(basename "$ADATAD_PRETRAIN")"
 export DUCA_ADATAD_PRETRAIN_SHA256="$(sha256sum "$ADATAD_PRETRAIN" | awk '{print tolower($1)}')"
 export DUCA_SELECTED_OPT_VARIANT="$VARIANT"
@@ -82,7 +84,7 @@ else
 fi
 [[ -z "$(git status --porcelain --untracked-files=normal)" ]] || fail "formal evaluation requires a clean exact-commit checkout"
 
-WORK_ROOT="${H65_PRO_WORK_ROOT:-$YUZIBO_ROOT/experiments/h65_pro_fullmatrix_${EXPECTED_COMMIT}}"
+WORK_ROOT="${H65_PRO_WORK_ROOT:-$YUZIBO_ROOT/experiments/h65_pro_fullmatrix_${TRAINING_COMMIT:0:8}}"
 [[ "$WORK_ROOT" = /* ]] || fail "H65_PRO_WORK_ROOT must be an absolute path"
 case "$WORK_ROOT/" in
   "$ROOT/"*) fail "H65_PRO_WORK_ROOT must stay outside the clean source checkout" ;;

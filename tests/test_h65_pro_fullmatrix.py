@@ -422,6 +422,19 @@ def test_selected_axis_terminal_binding_allows_distinct_afterok_eval_job_id() ->
     assert "continue" in terminal[slurm_check:next_binding_check]
 
 
+def test_h65_pro_eval_binds_immutable_training_identity_separately() -> None:
+    test_source = (ROOT / "tools/test.py").read_text(encoding="utf-8")
+    eval_source = (
+        ROOT / "tools/experiments/run_h65_pro_eval.sbatch"
+    ).read_text(encoding="utf-8")
+
+    assert "duca_p0_training.canonical_sha256" in test_source
+    assert '"DUCA_TRAINING_COMMIT"' in test_source
+    assert 'TRAINING_COMMIT="${H65_PRO_TRAINING_COMMIT:-$EXPECTED_COMMIT}"' in eval_source
+    assert 'export DUCA_TRAINING_COMMIT="$TRAINING_COMMIT"' in eval_source
+    assert "h65_pro_fullmatrix_${TRAINING_COMMIT:0:8}" in eval_source
+
+
 def test_h65_pro_slurm_contract_is_fail_closed_and_collision_resistant() -> None:
     submitter = (ROOT / "tools/experiments/submit_h65_pro_fullmatrix.sh").read_text(encoding="utf-8")
     train = (ROOT / "tools/experiments/run_h65_pro_train.sbatch").read_text(encoding="utf-8")
