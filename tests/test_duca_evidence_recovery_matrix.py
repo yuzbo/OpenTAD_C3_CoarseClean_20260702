@@ -36,6 +36,9 @@ def test_eval_uses_runtime_workdir_and_preserves_training_identity():
     assert 'export DUCA_TRAINING_COMMIT="$TRAINING_COMMIT"' in eval_source
     assert "duca_evidence_eval_${EXPECTED_COMMIT:0:8}" in eval_source
     assert 'work_dir="${EVAL_WORK_DIR}"' in eval_source
+    assert "THUMOS14_TRAIN_DATA_PATH" in eval_source
+    assert "DUCA_H65_TRAIN_LEDGER_PATH" in eval_source
+    assert "DUCA_H65_VAL_LEDGER_PATH" in eval_source
     assert "duca_p0_training.canonical_sha256" in test_source
     assert '"DUCA_TRAINING_COMMIT"' in test_source
 
