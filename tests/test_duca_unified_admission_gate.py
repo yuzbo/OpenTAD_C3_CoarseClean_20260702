@@ -14,7 +14,8 @@ def test_unimplemented_cells_are_marked_and_submission_is_fail_closed():
     rows = payload["rows"]
     blocked = {row["arm_id"] for row in rows if row["admission_status"] != "READY_FOR_GATE"}
     assert blocked == {"D1", "F11", "G10", "G11", "H0"}
-    assert payload["implementation_gate"]["cost_benchmark_status"] == "BLOCKED_UNIMPLEMENTED"
+    assert payload["implementation_gate"]["system_metrics_status"] == "OPTIONAL_NOT_REQUIRED"
     submit_text = SUBMIT.read_text(encoding="utf-8")
     assert "DUCA Unified formal submission is blocked" in submit_text
-    assert "DUCA Unified cost benchmark is not implemented" in submit_text
+    assert "DUCA Unified cost benchmark is not implemented" not in submit_text
+    assert "cost=$(sbatch" not in submit_text

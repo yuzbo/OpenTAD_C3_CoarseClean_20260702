@@ -7,9 +7,9 @@
 - Confirmation tasks: `24`
 - Total train/eval tasks: `41`
 - Bootstrap shards: `16`
-- Cost arms: `U0, A11, C11, E01, F11`
+- Optional system-diagnostic arms: `U0, A11, C11, E01, F11`
 - Implementation gate: D1/F11 Taylor and H0/G10/G11 H65 retention/transition are blocked until runtime wiring is complete.
-- Cost gate: real synchronized end-to-end benchmark is not implemented; cost submission remains blocked.
+- System metrics: end-to-end latency, throughput, and peak memory are optional diagnostics and do not block training or scientific acceptance.
 
 The manifest copied into this repository is the source of truth. Historical references in that manifest are descriptive anchors only; matched conclusions must come from this 41-task matrix.
 
