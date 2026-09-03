@@ -173,6 +173,15 @@
       "repair": "改用双引号包裹远端正则并重新执行 owned/non-owned artifact、receipt、checkpoint 和 error 扫描。",
       "revalidation": "扫描成功；supervisor PID 2272497 存活，1266415 已 RUNNING，Evidence array tasks 1266399/1266400 的两条首个错误已保留。",
       "result": "监控调用错误已修复；不产生科学结果。"
+    },
+    {
+      "attempt_ids": ["coordination-push-20260903-0858"],
+      "route": "coordination audit publication",
+      "classification": "SUBMISSION_ENVIRONMENT_FAILURE_REPAIRED",
+      "root_cause": "首次 git push 到 GitHub 失败，OpenSSL SSL_ERROR_SYSCALL；本地 commit 已完成，未修改实验或冻结 SHA。",
+      "repair": "保留失败输出后，以 HTTP/1.1 方式进行一次有界重试。",
+      "revalidation": "重试成功，协调分支提交 42f890f2 已推送到 origin/codex/duca-multibranch-audit-20260902。",
+      "result": "发布环境错误已修复；不产生科学结果。"
     }
   ],
   "current_resource_blocker": {

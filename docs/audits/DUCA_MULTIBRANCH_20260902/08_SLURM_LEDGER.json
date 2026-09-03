@@ -149,6 +149,21 @@
       "status": "SUCCEEDED",
       "job_ids": ["1266415", "1266399", "1266400"],
       "result": "BAFDR NOKD 1266415 RUNNING without current errors; stale Evidence array tasks 1266399/1266400 FAILED with NaN quota and non-finite scout_action_loss; A2-A5 have checkpoints but no terminal receipts; owned audit worktrees have no terminal artifacts"
+    },
+    {
+      "kind": "coordination_push_initial",
+      "command": "git push origin codex/duca-multibranch-audit-20260902",
+      "status": "FAILED_ENVIRONMENT",
+      "reason": "OpenSSL SSL_ERROR_SYSCALL while connecting to github.com:443; local commit 42f890f2 remained intact",
+      "job_ids": [],
+      "attempt_id": "coordination-push-20260903-0858"
+    },
+    {
+      "kind": "coordination_push_retry",
+      "command": "git -c http.version=HTTP/1.1 push origin codex/duca-multibranch-audit-20260902",
+      "status": "SUCCEEDED",
+      "job_ids": [],
+      "result": "commit 42f890f2 pushed successfully"
     }
   ],
   "failure_diagnoses": [
