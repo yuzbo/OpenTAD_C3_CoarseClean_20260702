@@ -14,7 +14,11 @@ from tools.bata.continuous_roi_s2_v3_full200_compute import (
     validate_parameter_fairness,
 )
 from tools.bata.continuous_roi_s2_v3_full200_compute_profile import (
+    ARMS,
+    CANDIDATE_ARM,
     FullOperatorLedger,
+    LOW_COST_CONTROL_ARM,
+    REFERENCE_ARM,
     batched_matmul_fma2,
     compare_c_exec_receipts,
     convolution_fma2,
@@ -169,7 +173,11 @@ def test_full_operator_ledger_is_integer_complete_and_never_uses_latency():
         "nms_called": False,
         "evaluator_called": False,
     }
-    counts = {"D160": 1000, "G96": 800, "U128-A0": 900}
+    counts = {
+        REFERENCE_ARM: 1000,
+        LOW_COST_CONTROL_ARM: 800,
+        CANDIDATE_ARM: 900,
+    }
     receipts = {}
     for arm, count in counts.items():
         ledger = FullOperatorLedger(arm=arm)
