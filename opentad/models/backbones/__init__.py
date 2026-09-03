@@ -6,7 +6,7 @@ from .vit import VisionTransformerCP
 from .vit_adapter import VisionTransformerAdapter
 from .vit_ladder import VisionTransformerLadder
 from .et_trc_videomae import ETTRCVisionTransformerAdapter
-from .bafdr_wrapper import BAFDRVisionTransformerWrapper
+from .bafdr_wrapper import BAFDRBackboneWrapper
 
 __all__ = [
     "BackboneWrapper",
@@ -17,5 +17,5 @@ __all__ = [
     "VisionTransformerAdapter",
     "VisionTransformerLadder",
     "ETTRCVisionTransformerAdapter",
-    "BAFDRVisionTransformerWrapper",
+    "BAFDRBackboneWrapper",
 ]
