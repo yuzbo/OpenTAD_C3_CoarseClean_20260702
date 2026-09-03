@@ -105,6 +105,7 @@ def test_all_arm_configs_exist_and_load():
 def test_build_detector_for_full_and_c0():
     """Verify build_detector successfully instantiates detector for FULL and C0 configs."""
     try:
+        import opentad.datasets  # noqa: F401 - register config-referenced transforms
         from opentad.models.builder import build_detector
     except OSError as exc:
         pytest.skip(f"torch runtime unavailable in this environment: {exc}")

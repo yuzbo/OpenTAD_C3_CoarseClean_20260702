@@ -24,6 +24,20 @@ module load cuda/11.8
 module load miniforge3/24.11
 source /data/run01/sczc063/yuzibo/conda_envs/opentad/bin/activate
 
+export YUZIBO_ROOT="${YUZIBO_ROOT:-/data/run01/sczc063/yuzibo}"
+export THUMOS14_ANNOTATION_PATH="${THUMOS14_ANNOTATION_PATH:-$YUZIBO_ROOT/thumos14/annotations/thumos_14_anno.json}"
+export THUMOS14_CLASS_MAP="${THUMOS14_CLASS_MAP:-$YUZIBO_ROOT/thumos14/annotations/category_idx.txt}"
+export THUMOS14_TRAIN_DATA_PATH="${THUMOS14_TRAIN_DATA_PATH:-$YUZIBO_ROOT/raw/Validation Data/validation}"
+export THUMOS14_TEST_DATA_PATH="${THUMOS14_TEST_DATA_PATH:-$YUZIBO_ROOT/raw/Test Data/TH14_test_set_mp4}"
+export DUCA_VIDEOMAE_PRETRAIN="${DUCA_VIDEOMAE_PRETRAIN:-$YUZIBO_ROOT/pretrained/vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth}"
+
+for required in \
+  "$THUMOS14_ANNOTATION_PATH" "$THUMOS14_CLASS_MAP" \
+  "$THUMOS14_TRAIN_DATA_PATH" "$THUMOS14_TEST_DATA_PATH" \
+  "$DUCA_VIDEOMAE_PRETRAIN"; do
+  [[ -r "$required" ]] || fail "required admission input is not readable: $required"
+done
+
 python -m py_compile tools/train.py tools/test.py tools/bata/duca_evidence_training.py
 python -m pytest -q \
   tests/test_duca_evidence_training_contract.py \
