@@ -1,6 +1,6 @@
 {
   "schema_version": "DUCA-EXPERIMENT-CATALOG-v001",
-  "last_updated_utc": "2026-09-04T04:57:25+00:00",
+  "last_updated_utc": "2026-09-04T05:34:04+00:00",
   "scope": "所有当前 DUCA/ZoomToken 代码实验及其独立修正路线；旧远端作业另列为不纳入结果",
   "repository": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702",
   "entries": [
@@ -105,10 +105,10 @@
       "supporting_local_directories": [
         "E:/DeskTop/TAD/_duca_fix_worktrees/h65_eval_repair"
       ],
-      "deployment_status": "远端 exact-SHA admission 1267684 已通过；REF-D768、REF-U384、REF-MNV3FC384 正式训练 1267709/1267711/1267737 与官方评测 1269303/1269360/1269373 均 COMPLETED(0:0)。30514803 的 F01/F02/F04 在 AMP replay 后独立出现 probe 全 NaN，F03/F05/F06 随即安全停止并保留 checkpoint。精确 RNG 复现 1269647、梯度审计 1269698/1269699 定位到 relative_physical_time_scale：配置先把它排除在 optimizer/GradScaler 外，backbone.train() 又重新启用其梯度；该标量出现一个非有限梯度后，全局 clip 将 NaN 扩散到全部参数。独立修复 f2068e18 将该标量显式纳入零 weight-decay optimizer group，validator 强制该合同；本地 H65 tests 9 passed/11 skipped、C3 tests 23 passed，远端 exact-SHA clean checkout 59 passed/1 skipped。F01-F06 PRECHECK 1269704/1269706/1269708/1269760/1269762/1269768 全部 COMPLETED(0:0)，正式全新重训 1269705/1269707/1269759/1269761/1269764/1269769 均 RUNNING；截至 12:54 CST，六臂达到 epoch 49-51、约 4999-5099 successful updates，持续跨过旧故障位置且未发现 non-finite/NaN/traceback。各臂累计 6-8 次 AMP skip，单次均在 1-2 次 replay 内恢复；F01/F03/F05 较高总 loss 来自有限的 detector contribution distillation 项，不是数值错误",
+      "deployment_status": "远端 exact-SHA admission 1267684 已通过；REF-D768、REF-U384、REF-MNV3FC384 正式训练 1267709/1267711/1267737 与官方评测 1269303/1269360/1269373 均 COMPLETED(0:0)。30514803 的 F01/F02/F04 在 AMP replay 后独立出现 probe 全 NaN，F03/F05/F06 随即安全停止并保留 checkpoint。精确 RNG 复现 1269647、梯度审计 1269698/1269699 定位到 relative_physical_time_scale：配置先把它排除在 optimizer/GradScaler 外，backbone.train() 又重新启用其梯度；该标量出现一个非有限梯度后，全局 clip 将 NaN 扩散到全部参数。独立修复 f2068e18 将该标量显式纳入零 weight-decay optimizer group，validator 强制该合同；本地 H65 tests 9 passed/11 skipped、C3 tests 23 passed，远端 exact-SHA clean checkout 59 passed/1 skipped。F01-F06 PRECHECK 1269704/1269706/1269708/1269760/1269762/1269768 全部 COMPLETED(0:0)，正式全新重训 1269705/1269707/1269759/1269761/1269764/1269769 均 RUNNING；截至 13:29 CST，F01/F03/F04 已完成 epoch 56 并进入 epoch 57，F02/F05/F06 已完成 epoch 55 并进入 epoch 56。六臂均持续跨过旧故障位置且未发现 non-finite/NaN/traceback/OOM；累计 AMP replay 为 8-11 次，训练均正常继续。F01/F03/F05 较高总 loss 来自有限的 detector contribution distillation 项，不是数值错误",
       "result_status": "D768、U384、MNV 三个参考臂均有有效官方终态性能；F01-F06 未完成，不能报告动态机制性能",
       "final_result": "D768 Avg-mAP=67.58%，mAP@0.3/0.4/0.5/0.6/0.7=82.56/78.12/69.98/60.37/46.88%。U384 Avg-mAP=63.89%，对应 79.37/74.83/67.15/55.94/42.18%，比 D768 低 3.69 个 Avg-mAP 百分点。MNV3FC384 Avg-mAP=57.01%，对应 73.80/68.49/60.54/48.06/34.14%，比 D768 低 10.57 个 Avg-mAP 百分点；MNV receipt 绑定 evaluator 67c8f39f、训练 e553a5a4、seed 3407、epoch 59 EMA、211 videos/422000 predictions。F01-F06 已按修复 SHA 从零重训，尚无性能结果",
-      "next_action": "持续监控六臂跨过旧故障位置约 2056 successful updates；任何失败先读取该臂日志和 checkpoint，完成最小修复与 exact-SHA PRECHECK 后才重提；六臂完成 terminal EMA 后分别运行官方 evaluator 并生成 receipt",
+      "next_action": "持续监控六臂完成 epoch 59/6000 successful updates；任何失败先读取该臂日志和 checkpoint，完成最小修复与 exact-SHA PRECHECK 后才重提；六臂完成 terminal EMA 后分别运行官方 evaluator 并生成 receipt",
       "local_head": "f2068e18e2c68bdbdd7a607b47f32d05ac3beed7",
       "local_clean_tree": true
     },
@@ -198,7 +198,7 @@
       "supporting_local_directories": [
         "E:/DeskTop/TAD/OpenTAD_Evidence_FormalRepair_20260903"
       ],
-      "deployment_status": "旧 77c8d173 C0 训练 1267979 虽完成 6000 updates，但旧 test ledger 不覆盖 792 次真实 loader 暴露，因此只保留为诊断。最终 codex/duca-evidence-fullgrid-repair-20260904@246058f2 使用 train/val 精确旧网格与 test full-grid，强制 allow_missing=False 并按唯一物理窗口校验；admission 1269357 COMPLETED(0:0)，验证 train 438/438、val 487/487、test 792 exposures/791 unique/791 ledger，34 tests 与 CUDA FP32 gate 均通过。C0 seed 8261 训练 1269374_0 与官方评测 1270672_0 均 COMPLETED(0:0)，结构化 metrics.json 已绑定 exact SHA 246058f2、config/evaluator/annotation/class-map SHA、epoch 59 EMA checkpoint/prediction SHA 与自哈希。为完成机制对照，同一 seed 的 F/A1-A6 已以 exact checkout 数组 1270870 提交；F、A1-A5 六臂正在正式训练，A6 因 AssocGrpGRES 等待资源。启动日志正确映射各 arm/config，未见真实 traceback/non-finite/OOM",
+      "deployment_status": "旧 77c8d173 C0 训练 1267979 虽完成 6000 updates，但旧 test ledger 不覆盖 792 次真实 loader 暴露，因此只保留为诊断。最终 codex/duca-evidence-fullgrid-repair-20260904@246058f2 使用 train/val 精确旧网格与 test full-grid，强制 allow_missing=False 并按唯一物理窗口校验；admission 1269357 COMPLETED(0:0)，验证 train 438/438、val 487/487、test 792 exposures/791 unique/791 ledger，34 tests 与 CUDA FP32 gate 均通过。C0 seed 8261 训练 1269374_0 与官方评测 1270672_0 均 COMPLETED(0:0)，结构化 metrics.json 已绑定 exact SHA 246058f2、config/evaluator/annotation/class-map SHA、epoch 59 EMA checkpoint/prediction SHA 与自哈希。为完成机制对照，同一 seed 的 F/A1-A6 已以 exact checkout 数组 1270870 提交；截至 13:29 CST，F、A1-A5 六臂均已完成 epoch 4 并进入 epoch 5，未见 traceback/non-finite/NaN/OOM；A6 因 AssocGrpGRES 等待账户 GPU 配额，尚未创建运行日志。这是资源等待，不是提交或实现失败",
       "result_status": "C0 seed 8261 已有完整正式结果；F/A1-A5 正式训练运行中，A6 等待账户 GPU 配额，完整 Evidence 机制结论尚未形成",
       "final_result": "C0 MATCHED_H65_60 official Avg-mAP=59.23%，mAP@0.3/0.4/0.5/0.6/0.7=75.22/70.01/61.54/50.90/38.48%。test 的 792 次暴露对应 791 个唯一物理窗口，重复项是 video_test_0001431|7680；246058f2 按唯一物理窗口严格覆盖。该结果是 matched-H65 基线，不是完整 recovery 机制；只有 F/A1-A6 完成后才能判断 recovery 增益",
       "next_action": "监控数组 1270870 的 F/A1-A6 直到 6000 successful updates 和 terminal EMA；A6 在账户配额释放后自动启动。逐臂完成后按同一 exact-SHA evaluator 合同生成 metrics receipt，再做机制差分",
@@ -208,16 +208,16 @@
   ],
   "remote_supervisor": {
     "status": "ACTIVE",
-    "checked_at": "2026-09-04T04:57:10+00:00",
+    "checked_at": "2026-09-04T05:33:33+00:00",
     "dispatcher_status": "BLOCKED",
     "entries": []
   },
   "cluster_observation": {
-    "checked_at_cst": "2026-09-04 12:57 CST",
-    "public_gpu_available": 10,
+    "checked_at_cst": "2026-09-04 13:29 CST",
+    "public_gpu_available": 0,
     "public_gpu_total": 240,
     "user_jobs_in_queue": 16,
-    "account_constraint": "AssocGrpGRES/AssocMaxSubmitJobLimit；公共 GPU 空闲不等于本账户仍有可用配额"
+    "account_constraint": "面向提交器的 public 口径显示 0/240 可用；A6 因 AssocGrpGRES 等待。底层 gpu 分区另报 432 卡，二者统计口径不同，不混算"
   },
   "measurement_scope": "当前比较以官方 TAD mAP、固定输入/更新预算和机制消融为主；不把端到端延迟、吞吐量或显存作为强制验收指标",
   "result_policy": "没有 exact SHA、clean-tree、terminal EMA、官方 evaluator 和合法 aggregation receipt，不得报告为最终科学结果",
