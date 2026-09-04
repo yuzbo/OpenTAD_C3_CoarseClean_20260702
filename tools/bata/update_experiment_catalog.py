@@ -165,7 +165,7 @@ def route_entries() -> list[dict[str, Any]]:
             "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/f2068e18e2c68bdbdd7a607b47f32d05ac3beed7",
             "local_directory": "E:/DeskTop/TAD/_duca_fix_worktrees/h65_admission",
             "supporting_local_directories": ["E:/DeskTop/TAD/_duca_fix_worktrees/h65_eval_repair"],
-            "deployment_status": "远端 exact-SHA admission 1267684 已通过；REF-D768、REF-U384、REF-MNV3FC384 正式训练 1267709/1267711/1267737 与官方评测 1269303/1269360/1269373 均 COMPLETED(0:0)。30514803 的 F01/F02/F04 在 AMP replay 后独立出现 probe 全 NaN，F03/F05/F06 随即安全停止并保留 checkpoint。精确 RNG 复现 1269647、梯度审计 1269698/1269699 定位到 relative_physical_time_scale：配置先把它排除在 optimizer/GradScaler 外，backbone.train() 又重新启用其梯度；该标量出现一个非有限梯度后，全局 clip 将 NaN 扩散到全部参数。独立修复 f2068e18 将该标量显式纳入零 weight-decay optimizer group，validator 强制该合同；本地 H65 tests 9 passed/11 skipped、C3 tests 23 passed，远端 exact-SHA clean checkout 59 passed/1 skipped。F01-F06 PRECHECK 1269704/1269706/1269708/1269760/1269762/1269768 全部 COMPLETED(0:0)，正式全新重训 1269705/1269707/1269759/1269761/1269764/1269769 均 RUNNING；截至 08:57 CST，六臂推进到 epoch 8-9、约 799-899 successful updates，所有 AMP skip 均在 1-2 次 replay 内恢复，未发现 non-finite/traceback",
+            "deployment_status": "远端 exact-SHA admission 1267684 已通过；REF-D768、REF-U384、REF-MNV3FC384 正式训练 1267709/1267711/1267737 与官方评测 1269303/1269360/1269373 均 COMPLETED(0:0)。30514803 的 F01/F02/F04 在 AMP replay 后独立出现 probe 全 NaN，F03/F05/F06 随即安全停止并保留 checkpoint。精确 RNG 复现 1269647、梯度审计 1269698/1269699 定位到 relative_physical_time_scale：配置先把它排除在 optimizer/GradScaler 外，backbone.train() 又重新启用其梯度；该标量出现一个非有限梯度后，全局 clip 将 NaN 扩散到全部参数。独立修复 f2068e18 将该标量显式纳入零 weight-decay optimizer group，validator 强制该合同；本地 H65 tests 9 passed/11 skipped、C3 tests 23 passed，远端 exact-SHA clean checkout 59 passed/1 skipped。F01-F06 PRECHECK 1269704/1269706/1269708/1269760/1269762/1269768 全部 COMPLETED(0:0)，正式全新重训 1269705/1269707/1269759/1269761/1269764/1269769 均 RUNNING；截至 09:35 CST，六臂推进到 epoch 14-15、约 1450-1550 successful updates，所有 AMP skip 均在 1-2 次 replay 内恢复，未发现 non-finite/traceback",
             "result_status": "D768、U384、MNV 三个参考臂均有有效官方终态性能；F01-F06 未完成，不能报告动态机制性能",
             "final_result": "D768 Avg-mAP=67.58%，mAP@0.3/0.4/0.5/0.6/0.7=82.56/78.12/69.98/60.37/46.88%。U384 Avg-mAP=63.89%，对应 79.37/74.83/67.15/55.94/42.18%，比 D768 低 3.69 个 Avg-mAP 百分点。MNV3FC384 Avg-mAP=57.01%，对应 73.80/68.49/60.54/48.06/34.14%，比 D768 低 10.57 个 Avg-mAP 百分点；MNV receipt 绑定 evaluator 67c8f39f、训练 e553a5a4、seed 3407、epoch 59 EMA、211 videos/422000 predictions。F01-F06 已按修复 SHA 从零重训，尚无性能结果",
             "next_action": "持续监控六臂跨过旧故障位置约 2056 successful updates；任何失败先读取该臂日志和 checkpoint，完成最小修复与 exact-SHA PRECHECK 后才重提；六臂完成 terminal EMA 后分别运行官方 evaluator 并生成 receipt",
@@ -204,10 +204,10 @@ def route_entries() -> list[dict[str, Any]]:
             "sha": "539287fa8a035765afd7e79863ce77278bef83f2（训练） / 29b5a7a2b291203ea7b697cfe416b64f0d365d02（评测）",
             "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/29b5a7a2b291203ea7b697cfe416b64f0d365d02",
             "local_directory": "E:/DeskTop/TAD/_duca_fix_worktrees/bafdr_admission",
-            "deployment_status": "真实 CUDA/focused 门禁 1267855 已通过；D160 教师 1267884、G96 1268698、U16 1269124、LATE 1269129、NOKD 1269137、FULL 1269297 均 COMPLETED(0:0)，全部写出 6000-update epoch-59 receipt，screen_receipt_r2_1269297.json 为 PASS。评测器 29b5a7a2 已通过本地/远端 11 tests、21-cell validator 和双 GPU U16 PRECHECK 1269540。五臂评测 1269541 已生成 G96/U16/LATE/NOKD 四份 prediction receipt，FULL 因 DECORD EOF 失败；1269763 的首次定向重试又因 wrapper 未显式传入外部 D160 Teacher 路径而 fail-closed。读取两次日志后，1269771 已绑定训练 checkout 的 Teacher config/checkpoint 及既有 SHA256、通过 PRECHECK，并成功生成 FULL prediction receipt；当前正在依次打开五臂官方指标，G96 与 U16 已完成，LATE 正在运行",
-            "result_status": "D160 与五个 screen 臂训练终态有效，screen gate PASS；五臂 prediction receipt 已齐，G96、U16 已有合法官方指标，其余三臂仍在 metric opening",
-            "final_result": "G96 official Avg-mAP=50.93%，mAP@0.3/0.4/0.5/0.6/0.7=64.67/59.83/53.47/44.68/32.00%；U16-UNIFORM-A0 official Avg-mAP=48.17%，对应 63.50/57.95/50.12/40.46/28.84%。两份 eval receipt 均绑定 seed 4407、6000 successful updates、评测提交 29b5a7a2，checkpoint SHA256 分别为 88cf2fa8…和 30f700a0…。FULL prediction receipt 已绑定 checkpoint SHA256=c0eb8677…及 D160 Teacher SHA256=ced2ee78…；LATE/NOKD/FULL 尚无 metric-opening receipt，不得提前报告其 mAP",
-            "next_action": "监控 1269771 完成 LATE、NOKD、FULL official metric opening；仅逐份接收 exact identity 完整的 eval_receipt.json，若任一臂失败则先读当前臂日志后按原规则定向修复和重提",
+            "deployment_status": "真实 CUDA/focused 门禁 1267855 已通过；D160 教师 1267884、G96 1268698、U16 1269124、LATE 1269129、NOKD 1269137、FULL 1269297 均 COMPLETED(0:0)，全部写出 6000-update epoch-59 receipt，screen_receipt_r2_1269297.json 为 PASS。评测器 29b5a7a2 已通过本地/远端 11 tests、21-cell validator 和双 GPU U16 PRECHECK 1269540。五臂评测 1269541 已生成 G96/U16/LATE/NOKD 四份 prediction receipt，FULL 因 DECORD EOF 失败；1269763 的首次定向重试又因 wrapper 未显式传入外部 D160 Teacher 路径而 fail-closed。读取两次日志后，1269771 已绑定训练 checkout 的 Teacher config/checkpoint 及既有 SHA256、通过 PRECHECK，并成功生成 FULL prediction receipt；当前 G96、U16、LATE、NOKD 四臂 official metric opening 已完成，只剩 FULL 正在运行",
+            "result_status": "D160 与五个 screen 臂训练终态有效，screen gate PASS；五臂 prediction receipt 已齐，G96、U16、LATE、NOKD 已有合法官方指标，仅 FULL 仍在 metric opening",
+            "final_result": "G96 official Avg-mAP=50.93%，各阈值 64.67/59.83/53.47/44.68/32.00%；U16-UNIFORM-A0 为 48.17%，63.50/57.95/50.12/40.46/28.84%；LATE 为 53.11%，68.84/63.39/56.05/45.40/31.88%；NOKD 为 49.44%，64.86/58.81/51.60/41.85/30.09%。四份 eval receipt 均绑定 seed 4407、6000 successful updates、评测提交 29b5a7a2，checkpoint SHA256 分别为 88cf2fa8…、30f700a0…、311f82c3…、1d99cabc…。FULL prediction receipt 已绑定 checkpoint SHA256=c0eb8677…及 D160 Teacher SHA256=ced2ee78…；FULL 尚无 metric-opening receipt，不得提前报告其 mAP",
+            "next_action": "监控 1269771 完成 FULL official metric opening；只接收 exact identity 完整的 eval_receipt.json，若失败则先读当前臂日志后按原规则定向修复和重提",
         },
         {
             "category": "correction_route",
@@ -244,9 +244,9 @@ def route_entries() -> list[dict[str, Any]]:
             "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/246058f2c24edc78818ada60eec26249bbf7d5d2",
             "local_directory": "E:/DeskTop/TAD/_duca_fix_worktrees/evidence_eval_repair",
             "supporting_local_directories": ["E:/DeskTop/TAD/OpenTAD_Evidence_FormalRepair_20260903"],
-            "deployment_status": "旧 77c8d173 C0 训练 1267979 虽完成 6000 updates，但旧 test ledger 不覆盖 792 次真实 loader 暴露，因此只保留为诊断。最终 codex/duca-evidence-fullgrid-repair-20260904@246058f2 使用 train/val 精确旧网格与 test full-grid，强制 allow_missing=False 并按唯一物理窗口校验；admission 1269357 COMPLETED(0:0)，验证 train 438/438、val 487/487、test 792 exposures/791 unique/791 ledger，34 tests 与 CUDA FP32 gate 均通过。新 C0 seed 8261 作业 1269374_0 正在 exact-SHA clean checkout 运行；截至 08:53 CST 已完成 epoch 34、3500/6000 successful updates并进入 epoch 35；累计 2 次 AMP skip 均只重放 1 次，nonfinite loss 为 0，stderr 无 traceback",
+            "deployment_status": "旧 77c8d173 C0 训练 1267979 虽完成 6000 updates，但旧 test ledger 不覆盖 792 次真实 loader 暴露，因此只保留为诊断。最终 codex/duca-evidence-fullgrid-repair-20260904@246058f2 使用 train/val 精确旧网格与 test full-grid，强制 allow_missing=False 并按唯一物理窗口校验；admission 1269357 COMPLETED(0:0)，验证 train 438/438、val 487/487、test 792 exposures/791 unique/791 ledger，34 tests 与 CUDA FP32 gate 均通过。新 C0 seed 8261 作业 1269374_0 正在 exact-SHA clean checkout 运行；截至 09:34 CST 已完成 epoch 40、4100/6000 successful updates并进入 epoch 41；累计 2 次 AMP skip 均只重放 1 次，nonfinite loss 为 0，stderr 无 traceback",
             "result_status": "最终 ledger 合同已通过准入；新 C0 seed 8261 正式重训运行中；无最终性能",
-            "final_result": "test 的 792 次暴露对应 791 个唯一物理窗口，因为 video_test_0001431|7680 是 OpenTAD 尾窗逻辑产生的同一窗口重复暴露；246058f2 按唯一物理窗口严格覆盖，不是放宽或漏掉样本。当前 loss 有限但训练仅完成 3500/6000 successful updates，新命名空间尚无 terminal EMA 或官方 evaluator receipt",
+            "final_result": "test 的 792 次暴露对应 791 个唯一物理窗口，因为 video_test_0001431|7680 是 OpenTAD 尾窗逻辑产生的同一窗口重复暴露；246058f2 按唯一物理窗口严格覆盖，不是放宽或漏掉样本。当前 loss 有限但训练仅完成 4100/6000 successful updates，新命名空间尚无 terminal EMA 或官方 evaluator receipt",
             "next_action": "持续监控 1269374_0 的 6000 successful updates 与 terminal EMA；完成后只在同一 ledger 身份下运行官方评测并生成 metrics receipt",
         },
     ]
@@ -265,8 +265,8 @@ def catalog() -> dict[str, Any]:
         "entries": entries,
         "remote_supervisor": remote_receipt(),
         "cluster_observation": {
-            "checked_at_cst": "2026-09-04 08:53 CST",
-            "public_gpu_available": 100,
+            "checked_at_cst": "2026-09-04 09:36 CST",
+            "public_gpu_available": 119,
             "public_gpu_total": 240,
             "user_jobs_in_queue": 11,
             "account_constraint": "AssocGrpGRES/AssocMaxSubmitJobLimit；公共 GPU 空闲不等于本账户仍有可用配额",
@@ -352,7 +352,7 @@ def md_text(payload: dict[str, Any]) -> str:
         lines.append(f"| `{item['job_ids']}` | `{item['remote_directory']}` | `{item['source_head'][:8]}` | {item['reason']} |")
     lines += [
         "",
-        f"结果规则：{payload['result_policy']}。当前 H65 D768、U384、MNV3FC384 参考臂和 BAFDR G96、U16-UNIFORM-A0 具有合法终态 evaluator metrics；其余路线或比较臂仍为 `NO_FINAL_PERFORMANCE_RESULTS`。终态训练 receipt 只能证明训练合同完成，不得从 admission 或中期验证推导最终 mAP 或机制结论。",
+        f"结果规则：{payload['result_policy']}。当前 H65 D768、U384、MNV3FC384 参考臂和 BAFDR G96、U16-UNIFORM-A0、LATE、NOKD 具有合法终态 evaluator metrics；其余路线或比较臂仍为 `NO_FINAL_PERFORMANCE_RESULTS`。终态训练 receipt 只能证明训练合同完成，不得从 admission 或中期验证推导最终 mAP 或机制结论。",
         "",
     ]
     return "\n".join(lines)
