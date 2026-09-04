@@ -116,51 +116,50 @@ class BoundedTubeletIntervalAdapter(BaseModule):
 
         T_tubelet = T_frames // self.tubelet_size
 
-        # Decompose input frames: X0 and X1
-        x_reshaped = x.view(B, C_in, T_tubelet, 2, H, W)
-        X0 = x_reshaped[:, :, :, 0]  # [B, C_in, T_tubelet, H, W]
-        X1 = x_reshaped[:, :, :, 1]  # [B, C_in, T_tubelet, H, W]
+        # Interval decomposition is a small geometric adapter. Keep its sums and
+        # convolutions in FP32 so irregular H65 pairs cannot overflow under AMP.
+        with torch.autocast(device_type=x.device.type, enabled=False):
+            x_fp32 = x.float()
+            weight_fp32 = weight_3d.float()
+            bias_fp32 = None if bias_3d is None else bias_3d.float()
+            z_fp32 = z_condition.float()
 
-        X_mean = 0.5 * (X0 + X1)
-        X_diff = 0.5 * (X1 - X0)
+            x_reshaped = x_fp32.view(B, C_in, T_tubelet, 2, H, W)
+            X0 = x_reshaped[:, :, :, 0]
+            X1 = x_reshaped[:, :, :, 1]
+            X_mean = 0.5 * (X0 + X1)
+            X_diff = 0.5 * (X1 - X0)
 
-        # Decompose weights W0 and W1 along temporal dim (dim 2 of weight)
-        W0 = weight_3d[:, :, 0]  # [C_out, C_in, kH, kW]
-        W1 = weight_3d[:, :, 1]  # [C_out, C_in, kH, kW]
+            W0 = weight_fp32[:, :, 0]
+            W1 = weight_fp32[:, :, 1]
+            W_mean = W0 + W1
+            W_diff = W1 - W0
 
-        W_mean = W0 + W1  # [C_out, C_in, kH, kW]
-        W_diff = W1 - W0  # [C_out, C_in, kH, kW]
+            BT = B * T_tubelet
+            X_mean_2d = X_mean.permute(0, 2, 1, 3, 4).reshape(BT, C_in, H, W)
+            X_diff_2d = X_diff.permute(0, 2, 1, 3, 4).reshape(BT, C_in, H, W)
 
-        # Convolve X_mean with W_mean in 2D per tubelet
-        # Flatten (B * T_tubelet) into batch dim for efficient 2D conv
-        BT = B * T_tubelet
-        X_mean_2d = X_mean.permute(0, 2, 1, 3, 4).reshape(BT, C_in, H, W)
-        X_diff_2d = X_diff.permute(0, 2, 1, 3, 4).reshape(BT, C_in, H, W)
+            Y_mean = F.conv2d(
+                X_mean_2d,
+                W_mean,
+                bias=bias_fp32,
+                stride=(stride_spatial, stride_spatial),
+                padding=(padding_spatial, padding_spatial),
+            )
+            Y_diff = F.conv2d(
+                X_diff_2d,
+                W_diff,
+                bias=None,
+                stride=(stride_spatial, stride_spatial),
+                padding=(padding_spatial, padding_spatial),
+            )
 
-        Y_mean = F.conv2d(
-            X_mean_2d,
-            W_mean,
-            bias=bias_3d,
-            stride=(stride_spatial, stride_spatial),
-            padding=(padding_spatial, padding_spatial),
-        )  # [BT, C_out, H_out, W_out]
+            _, C_out, H_out, W_out = Y_mean.shape
+            Y_mean = Y_mean.view(B, T_tubelet, C_out, H_out, W_out)
+            Y_diff = Y_diff.view(B, T_tubelet, C_out, H_out, W_out)
+            g = self.compute_g(z_fp32)
+            Y = Y_mean + g * Y_diff
 
-        Y_diff = F.conv2d(
-            X_diff_2d,
-            W_diff,
-            bias=None,
-            stride=(stride_spatial, stride_spatial),
-            padding=(padding_spatial, padding_spatial),
-        )  # [BT, C_out, H_out, W_out]
-
-        _, C_out, H_out, W_out = Y_mean.shape
-        Y_mean = Y_mean.view(B, T_tubelet, C_out, H_out, W_out)
-        Y_diff = Y_diff.view(B, T_tubelet, C_out, H_out, W_out)
-
-        # Compute condition g(z): [B, T_tubelet, 1, 1, 1]
-        g = self.compute_g(z_condition)  # [B, T_tubelet, 1, 1, 1]
-
-        Y = Y_mean + g * Y_diff  # [B, T_tubelet, C_out, H_out, W_out]
         # Transpose back to [B, C_out, T_tubelet, H_out, W_out]
         Y = Y.permute(0, 2, 1, 3, 4).contiguous()
         return Y

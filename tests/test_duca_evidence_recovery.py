@@ -76,6 +76,29 @@ def test_bounded_interval_adapter_rejects_non_two_frame_decomposition():
         adapter.forward_tubelet(x, weight, None, stride_spatial=2, padding_spatial=0, z_condition=z)
 
 
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA FP16")
+def test_bounded_interval_adapter_uses_fp32_decomposition_under_amp():
+    adapter = BoundedTubeletIntervalAdapter(
+        embed_dims=4,
+        in_channels=3,
+        patch_size=2,
+        tubelet_size=2,
+        enabled=True,
+    ).cuda()
+    x = torch.randn(1, 3, 4, 4, 4, device="cuda", dtype=torch.float16)
+    weight = torch.randn(4, 3, 2, 2, 2, device="cuda")
+    bias = torch.randn(4, device="cuda")
+    z = torch.randn(1, 2, 3, device="cuda")
+
+    with torch.autocast(device_type="cuda", dtype=torch.float16):
+        out = adapter.forward_tubelet(x, weight, bias, 2, 0, z)
+    reference = F.conv3d(x.float(), weight, bias=bias, stride=(2, 2, 2))
+
+    assert out.dtype == torch.float32
+    assert torch.isfinite(out).all()
+    torch.testing.assert_close(out, reference, rtol=1e-4, atol=1e-4)
+
+
 def test_continuous_timestamp_conditioner_zero_init():
     """Verify ContinuousTimestampConditioner output is strictly zero at initialization."""
     conditioner = ContinuousTimestampConditioner(num_heads=6, enabled=True)
@@ -166,6 +189,22 @@ def test_dense_temporal_recovery_parity():
     scatter_ref = recovery.scatter_triangular(feats, centers, intervals)
     diff = torch.max(torch.abs(out - scatter_ref)).item()
     assert diff < 1e-6, "Recovery output at initialization must equal triangular scatter reference"
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA FP16")
+def test_dense_temporal_recovery_uses_fp32_accumulation_under_amp():
+    recovery = DenseTemporalRecovery(embed_dims=4, target_grid_size=8, original_window_size=16).cuda()
+    feats = torch.full((1, 4, 8), 60000.0, device="cuda", dtype=torch.float16)
+    centers = torch.linspace(0, 15, 8, device="cuda").unsqueeze(0)
+    intervals = torch.stack([centers - 8.0, centers + 8.0], dim=-1)
+    masses = torch.full((1, 8), 8.0, device="cuda")
+
+    with torch.autocast(device_type="cuda", dtype=torch.float16):
+        out = recovery(feats, centers, intervals, masses)
+
+    assert out.dtype == torch.float16
+    assert torch.isfinite(out).all()
+    torch.testing.assert_close(out.float(), torch.full_like(out.float(), 60000.0), rtol=0.0, atol=32.0)
 
 
 def test_largest_remainder_quota_exact_sum():

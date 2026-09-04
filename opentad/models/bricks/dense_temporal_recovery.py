@@ -145,10 +145,17 @@ class DenseTemporalRecovery(BaseModule):
             # If disabled (e.g. NO_RECOVERY arm), return feats directly
             return feats
 
-        # Stage 1: Non-parametric triangular scatter
-        interp = self.scatter_triangular(feats, centers, intervals, masses, valid_mask)  # [B, C, 384]
-
-        # Stage 2: Residual refinement
-        res = self.pwconv(self.act(self.dwconv(interp)))
-        out = interp + self.residual_gate * res
-        return out
+        output_dtype = feats.dtype
+        # The scatter numerator accumulates every irregular support. Perform the
+        # normalization and residual refinement in FP32, then restore its input dtype.
+        with torch.autocast(device_type=feats.device.type, enabled=False):
+            interp = self.scatter_triangular(
+                feats.float(),
+                centers.float(),
+                intervals.float(),
+                None if masses is None else masses.float(),
+                valid_mask,
+            )
+            res = self.pwconv(self.act(self.dwconv(interp)))
+            out = interp + self.residual_gate * res
+        return out.to(dtype=output_dtype)
