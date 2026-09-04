@@ -373,6 +373,8 @@ def test_boundary_burst_soft_and_hard_arms_share_local_utility_only() -> None:
     gt_segments = [torch.tensor([[2.0, 6.0]])]
     gt_labels = [torch.tensor([1])]
 
+    forward_seed = 3701
+    torch.manual_seed(forward_seed)
     soft_state = soft.forward_train(
         inputs=inputs,
         masks=masks,
@@ -380,6 +382,7 @@ def test_boundary_burst_soft_and_hard_arms_share_local_utility_only() -> None:
         gt_segments=gt_segments,
         gt_labels=gt_labels,
     )["selector_outputs"]
+    torch.manual_seed(forward_seed)
     hard_state = hard.forward_train(
         inputs=inputs,
         masks=masks,
