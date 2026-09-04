@@ -4,6 +4,7 @@ _base_ = ["./duca_evidence_recovery_h65_selection.py"]
 
 workflow = dict(
     formal_protocol="",
+    formal_successful_update_contract=False,
     logging_interval=1,
     checkpoint_interval=-1,
     val_loss_interval=-1,
