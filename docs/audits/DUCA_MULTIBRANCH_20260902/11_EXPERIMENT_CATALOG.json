@@ -1,6 +1,6 @@
 {
   "schema_version": "DUCA-EXPERIMENT-CATALOG-v001",
-  "last_updated_utc": "2026-09-04T05:34:04+00:00",
+  "last_updated_utc": "2026-09-04T06:33:40+00:00",
   "scope": "所有当前 DUCA/ZoomToken 代码实验及其独立修正路线；旧远端作业另列为不纳入结果",
   "repository": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702",
   "entries": [
@@ -105,10 +105,10 @@
       "supporting_local_directories": [
         "E:/DeskTop/TAD/_duca_fix_worktrees/h65_eval_repair"
       ],
-      "deployment_status": "远端 exact-SHA admission 1267684 已通过；REF-D768、REF-U384、REF-MNV3FC384 正式训练 1267709/1267711/1267737 与官方评测 1269303/1269360/1269373 均 COMPLETED(0:0)。30514803 的 F01/F02/F04 在 AMP replay 后独立出现 probe 全 NaN，F03/F05/F06 随即安全停止并保留 checkpoint。精确 RNG 复现 1269647、梯度审计 1269698/1269699 定位到 relative_physical_time_scale：配置先把它排除在 optimizer/GradScaler 外，backbone.train() 又重新启用其梯度；该标量出现一个非有限梯度后，全局 clip 将 NaN 扩散到全部参数。独立修复 f2068e18 将该标量显式纳入零 weight-decay optimizer group，validator 强制该合同；本地 H65 tests 9 passed/11 skipped、C3 tests 23 passed，远端 exact-SHA clean checkout 59 passed/1 skipped。F01-F06 PRECHECK 1269704/1269706/1269708/1269760/1269762/1269768 全部 COMPLETED(0:0)，正式全新重训 1269705/1269707/1269759/1269761/1269764/1269769 均 RUNNING；截至 13:29 CST，F01/F03/F04 已完成 epoch 56 并进入 epoch 57，F02/F05/F06 已完成 epoch 55 并进入 epoch 56。六臂均持续跨过旧故障位置且未发现 non-finite/NaN/traceback/OOM；累计 AMP replay 为 8-11 次，训练均正常继续。F01/F03/F05 较高总 loss 来自有限的 detector contribution distillation 项，不是数值错误",
-      "result_status": "D768、U384、MNV 三个参考臂均有有效官方终态性能；F01-F06 未完成，不能报告动态机制性能",
-      "final_result": "D768 Avg-mAP=67.58%，mAP@0.3/0.4/0.5/0.6/0.7=82.56/78.12/69.98/60.37/46.88%。U384 Avg-mAP=63.89%，对应 79.37/74.83/67.15/55.94/42.18%，比 D768 低 3.69 个 Avg-mAP 百分点。MNV3FC384 Avg-mAP=57.01%，对应 73.80/68.49/60.54/48.06/34.14%，比 D768 低 10.57 个 Avg-mAP 百分点；MNV receipt 绑定 evaluator 67c8f39f、训练 e553a5a4、seed 3407、epoch 59 EMA、211 videos/422000 predictions。F01-F06 已按修复 SHA 从零重训，尚无性能结果",
-      "next_action": "持续监控六臂完成 epoch 59/6000 successful updates；任何失败先读取该臂日志和 checkpoint，完成最小修复与 exact-SHA PRECHECK 后才重提；六臂完成 terminal EMA 后分别运行官方 evaluator 并生成 receipt",
+      "deployment_status": "远端 exact-SHA admission 1267684 已通过；REF-D768、REF-U384、REF-MNV3FC384 正式训练 1267709/1267711/1267737 与官方评测 1269303/1269360/1269373 均 COMPLETED(0:0)。30514803 的 F01/F02/F04 在 AMP replay 后独立出现 probe 全 NaN，F03/F05/F06 随即安全停止并保留 checkpoint。精确 RNG 复现 1269647、梯度审计 1269698/1269699 定位到 relative_physical_time_scale；独立修复 f2068e18 将该标量纳入零 weight-decay optimizer group，validator 强制该合同；本地 H65 tests 9 passed/11 skipped、C3 tests 23 passed，远端 exact-SHA clean checkout 59 passed/1 skipped。F01-F06 PRECHECK 全部通过，正式重训 1269705/1269707/1269759/1269761/1269764/1269769 已于 13:39-13:52 CST 全部 COMPLETED(0:0)；六臂均有 epoch_59.pth/state_dict_ema，training audit 均确认 optimizer/scheduler/EMA/DUCA schedule 各 6000 successful updates，日志未见 non-finite/NaN/traceback/OOM。首轮评测 1270970-1270975 因错误使用训练 checkout 的旧 evaluator，全部在推理前以 resolved_config_sha256 mismatch 退出；日志已读，checkpoint 未损坏。独立 evaluator 67c8f39f 的 PRECHECK 1270985 COMPLETED(0:0)，修正后的官方评测 1270987-1270992 使用训练 checkout 的绝对 config 与训练 SHA f2068e18，现均 RUNNING 并已跨过终态身份校验",
+      "result_status": "D768、U384、MNV 三个参考臂均有有效官方终态性能；F01-F06 训练完成、官方评测运行中，尚不能报告动态机制性能",
+      "final_result": "D768 Avg-mAP=67.58%，mAP@0.3/0.4/0.5/0.6/0.7=82.56/78.12/69.98/60.37/46.88%。U384 Avg-mAP=63.89%，对应 79.37/74.83/67.15/55.94/42.18%，比 D768 低 3.69 个 Avg-mAP 百分点。MNV3FC384 Avg-mAP=57.01%，对应 73.80/68.49/60.54/48.06/34.14%，比 D768 低 10.57 个 Avg-mAP 百分点；MNV receipt 绑定 evaluator 67c8f39f、训练 e553a5a4、seed 3407、epoch 59 EMA、211 videos/422000 predictions。F01-F06 的 6000-update 训练合同已完成，但尚无 official metrics receipt",
+      "next_action": "监控 1270987-1270992 完成官方推理和结构化 metrics receipt；逐份核验训练 SHA f2068e18、evaluator SHA 67c8f39f、epoch 59 state_dict_ema、prediction/checkpoint hash 后再报告六臂 mAP",
       "local_head": "f2068e18e2c68bdbdd7a607b47f32d05ac3beed7",
       "local_clean_tree": true
     },
@@ -191,33 +191,33 @@
       "category": "correction_route",
       "name": "Evidence-Recovery 当前 C0：轻量侦察器不确定性与最大空洞补漏",
       "internal_id": "EVIDENCE_ACTIVE",
-      "branch": "codex/duca-evidence-fullgrid-repair-20260904",
-      "sha": "246058f2c24edc78818ada60eec26249bbf7d5d2",
-      "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/246058f2c24edc78818ada60eec26249bbf7d5d2",
+      "branch": "codex/duca-evidence-fullgrid-repair-20260904（C0/F/A1-A5） + codex/duca-evidence-a6-numerical-repair-20260904（A6）",
+      "sha": "246058f2c24edc78818ada60eec26249bbf7d5d2（C0/F/A1-A5） / 9739811e89acef380806a271bc224c61c66bce0f（A6 修复）",
+      "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/9739811e89acef380806a271bc224c61c66bce0f",
       "local_directory": "E:/DeskTop/TAD/_duca_fix_worktrees/evidence_eval_repair",
       "supporting_local_directories": [
         "E:/DeskTop/TAD/OpenTAD_Evidence_FormalRepair_20260903"
       ],
-      "deployment_status": "旧 77c8d173 C0 训练 1267979 虽完成 6000 updates，但旧 test ledger 不覆盖 792 次真实 loader 暴露，因此只保留为诊断。最终 codex/duca-evidence-fullgrid-repair-20260904@246058f2 使用 train/val 精确旧网格与 test full-grid，强制 allow_missing=False 并按唯一物理窗口校验；admission 1269357 COMPLETED(0:0)，验证 train 438/438、val 487/487、test 792 exposures/791 unique/791 ledger，34 tests 与 CUDA FP32 gate 均通过。C0 seed 8261 训练 1269374_0 与官方评测 1270672_0 均 COMPLETED(0:0)，结构化 metrics.json 已绑定 exact SHA 246058f2、config/evaluator/annotation/class-map SHA、epoch 59 EMA checkpoint/prediction SHA 与自哈希。为完成机制对照，同一 seed 的 F/A1-A6 已以 exact checkout 数组 1270870 提交；截至 13:29 CST，F、A1-A5 六臂均已完成 epoch 4 并进入 epoch 5，未见 traceback/non-finite/NaN/OOM；A6 因 AssocGrpGRES 等待账户 GPU 配额，尚未创建运行日志。这是资源等待，不是提交或实现失败",
-      "result_status": "C0 seed 8261 已有完整正式结果；F/A1-A5 正式训练运行中，A6 等待账户 GPU 配额，完整 Evidence 机制结论尚未形成",
+      "deployment_status": "246058f2 使用 train/val 精确旧网格与 test full-grid，admission 1269357 COMPLETED(0:0)；C0 seed 8261 训练 1269374_0 与官方评测 1270672_0 均 COMPLETED(0:0)，metrics.json 已绑定 exact SHA、config/evaluator/annotation/class-map、epoch 59 EMA checkpoint/prediction SHA 与自哈希。同 seed 的 F/A1-A5 在数组 1270870_1-6 中健康运行，截至 14:34 CST 达到 epoch 14-15，未见 traceback/non-finite/NaN/OOM。A6 的 1270870_7 获得资源后在 batch 2 连续 50 次确定性 replay 均产生 pre-AMP non-finite cost，于 13:51 CST FAILED(1:0)；日志定位到 H65 replay 与完整 time/merge/recovery 组合。独立修复 9739811e 将 bounded interval decomposition 与 dense recovery accumulation 固定为 FP32，同时保留全部 A6 机制，并新增真实 ledger/真实视频前三 batch PRECHECK。35340cad admission 1270978 已通过 36 tests 和 CUDA FP32 gate；首次 PRECHECK 1270986 在模型构建前因误继承 6000-update formal 标志失败，9739811e 已修正该预检合同。最终 exact-SHA admission 1271006 因 AssocGrpGRES 等待；PRECHECK 与正式 A6 尚未提交，原因是 AssocMaxSubmitJobLimit，而不是忽略失败",
+      "result_status": "C0 seed 8261 已有完整正式结果；F/A1-A5 正式训练运行中；A6 旧实现失败，修复版正在等待 exact-SHA admission/PRECHECK，完整 Evidence 机制结论尚未形成",
       "final_result": "C0 MATCHED_H65_60 official Avg-mAP=59.23%，mAP@0.3/0.4/0.5/0.6/0.7=75.22/70.01/61.54/50.90/38.48%。test 的 792 次暴露对应 791 个唯一物理窗口，重复项是 video_test_0001431|7680；246058f2 按唯一物理窗口严格覆盖。该结果是 matched-H65 基线，不是完整 recovery 机制；只有 F/A1-A6 完成后才能判断 recovery 增益",
-      "next_action": "监控数组 1270870 的 F/A1-A6 直到 6000 successful updates 和 terminal EMA；A6 在账户配额释放后自动启动。逐臂完成后按同一 exact-SHA evaluator 合同生成 metrics receipt，再做机制差分",
-      "local_head": "246058f2c24edc78818ada60eec26249bbf7d5d2",
+      "next_action": "监控 F/A1-A5 到 6000 successful updates；待 1271006 通过并释放提交名额后，先提交 9739811e 的三 batch A6 PRECHECK，通过后才以新命名空间重提 A6。逐臂完成后按 exact-SHA evaluator 合同生成 receipt",
+      "local_head": "9739811e89acef380806a271bc224c61c66bce0f",
       "local_clean_tree": true
     }
   ],
   "remote_supervisor": {
     "status": "ACTIVE",
-    "checked_at": "2026-09-04T05:33:33+00:00",
+    "checked_at": "2026-09-04T06:33:15+00:00",
     "dispatcher_status": "BLOCKED",
     "entries": []
   },
   "cluster_observation": {
-    "checked_at_cst": "2026-09-04 13:29 CST",
-    "public_gpu_available": 0,
+    "checked_at_cst": "2026-09-04 14:34 CST",
+    "public_gpu_available": 34,
     "public_gpu_total": 240,
     "user_jobs_in_queue": 16,
-    "account_constraint": "面向提交器的 public 口径显示 0/240 可用；A6 因 AssocGrpGRES 等待。底层 gpu 分区另报 432 卡，二者统计口径不同，不混算"
+    "account_constraint": "公共口径 34/240 可用，但本用户 14 RUNNING、2 PENDING；A6 admission 因 AssocGrpGRES 等待，追加提交受 AssocMaxSubmitJobLimit 限制"
   },
   "measurement_scope": "当前比较以官方 TAD mAP、固定输入/更新预算和机制消融为主；不把端到端延迟、吞吐量或显存作为强制验收指标",
   "result_policy": "没有 exact SHA、clean-tree、terminal EMA、官方 evaluator 和合法 aggregation receipt，不得报告为最终科学结果",
@@ -401,6 +401,24 @@
       "remote_directory": "/data/run01/sczc063/yuzibo/projects/zoomtoken_bafdr_eval_29b5a7a2",
       "source_head": "29b5a7a2b291203ea7b697cfe416b64f0d365d02（评测） / 539287fa8a035765afd7e79863ce77278bef83f2（训练）",
       "reason": "第一次 FULL 定向重试的 wrapper 未把训练收据中的外部 D160 Teacher config/checkpoint 显式传给 fail-closed 评测器，错误地在评测 checkout 内寻找不存在的 checkpoint，35 秒后按合同失败；1269771 已绑定既有 Teacher 路径与 SHA256 并通过对应 PRECHECK 后重提"
+    },
+    {
+      "job_ids": "1270970-1270975",
+      "remote_directory": "/data/run01/sczc063/yuzibo/projects/h65_pro_physical_optimizer_f2068e18",
+      "source_head": "f2068e18e2c68bdbdd7a607b47f32d05ac3beed7",
+      "reason": "H65 F01-F06 首轮终态评测错误复用了训练 checkout 中不含 67c8f39f 跨-checkout identity 修复的 evaluator，六作业均在推理前由 resolved_config_sha256 mismatch 严格拒绝；训练 checkpoint 完整保留。67c8f39f PRECHECK 1270985 通过后，已用训练 checkout 绝对 config 与独立 evaluator checkout 重提为 1270987-1270992"
+    },
+    {
+      "job_ids": "1270870_7",
+      "remote_directory": "/data/run01/sczc063/yuzibo/projects/duca_evidence_normalized_246058f2",
+      "source_head": "246058f2c24edc78818ada60eec26249bbf7d5d2",
+      "reason": "Evidence A6 seed8261 在正式 batch 2 连续 50 次 deterministic replay 都产生 pre-AMP non-finite cost，13:51 CST FAILED(1:0)；非 OOM。9739811e 保持 H65 selection/time/merge/recovery 设计，仅将几何 decomposition 和 recovery accumulation 固定为 FP32，并增加真实 loader 三 batch PRECHECK"
+    },
+    {
+      "job_ids": "1270986",
+      "remote_directory": "/data/run01/sczc063/yuzibo/projects/duca_evidence_a6_35340cad",
+      "source_head": "35340cadff3950e8b1155e72ca987337bc3466c2",
+      "reason": "A6 首次三 batch PRECHECK 仍继承 formal_successful_update_contract=True，与缩短的三更新预检冲突，在模型构建前退出；未训练。9739811e 仅关闭预检自身的正式结果身份，仍保留非有限 loss fail-closed 和正式 A6 完整合同"
     },
     {
       "job_ids": "1265777-1265778",
