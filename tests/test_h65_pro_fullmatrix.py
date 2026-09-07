@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import ast
 import json
 import subprocess
 import sys
@@ -109,6 +110,13 @@ def test_h65_pro_generated_configs_encode_requested_factor_contracts() -> None:
     assert set(custom_groups) == {"adapter", "relative_physical_time_scale"}
     assert float(custom_groups["relative_physical_time_scale"].lr) == 2.0e-4
     assert float(custom_groups["relative_physical_time_scale"].weight_decay) == 0.0
+
+
+def test_h65_base_generator_preserves_effective_configuration() -> None:
+    from tools.bata.generate_h65_pro_fullmatrix import base_config
+
+    committed = (CONFIG_DIR / "base_h65_pro_strict60.py").read_text(encoding="utf-8")
+    assert ast.dump(ast.parse(base_config())) == ast.dump(ast.parse(committed))
 
 
 def test_h65_pro_reference_configs_encode_dense_and_mnv3fc_contracts() -> None:
