@@ -40,8 +40,12 @@ export DUCA_H65_TEST_LEDGER_PATH="$FULLGRID_LEDGER_ROOT/test/value_transport_led
 export DUCA_H65_LEDGER_SOURCE=c3_lowres_probe_delta_p_action
 export DUCA_H65_LEDGER_CONFIG_HASH=""
 
-case "${SLURM_ARRAY_TASK_ID:?array task must be 2 or 7}" in
+case "${SLURM_ARRAY_TASK_ID:?array task must name an implemented precheck}" in
+  1) CONFIG=duca_evidence_recovery_f_optimizer_precheck.py; ARM=F ;;
   2) CONFIG=duca_evidence_recovery_a1_optimizer_precheck.py; ARM=A1 ;;
+  4) CONFIG=duca_evidence_recovery_a3_optimizer_precheck.py; ARM=A3 ;;
+  5) CONFIG=duca_evidence_recovery_a4_optimizer_precheck.py; ARM=A4 ;;
+  6) CONFIG=duca_evidence_recovery_a5_optimizer_precheck.py; ARM=A5 ;;
   7) CONFIG=duca_evidence_recovery_a6_optimizer_precheck.py; ARM=A6 ;;
   *) echo "Unsupported precheck task" >&2; exit 1 ;;
 esac

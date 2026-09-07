@@ -84,7 +84,10 @@ python -m py_compile tools/train.py tools/test.py tools/bata/duca_evidence_train
 python -m pytest -q \
   tests/test_duca_evidence_training_contract.py \
   tests/test_duca_evidence_recovery_matrix.py \
-  tests/test_duca_evidence_recovery.py
+  tests/test_duca_evidence_recovery.py \
+  tests/test_evidence_time_optimizer.py \
+  tests/test_c3_coarse_classifier_model_matrix.py \
+  tests/test_c3_asformer_delta_ledger_full_train.py
 python - <<'PY'
 import torch
 

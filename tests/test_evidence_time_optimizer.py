@@ -24,6 +24,22 @@ def test_evidence_config_registers_trainable_time_parameters():
     assert cfg.solver.find_unused_parameters is True
 
 
+@pytest.mark.parametrize("arm,formal_name", [
+    ("f", "full"), ("a3", "no_robust"), ("a4", "no_merge"), ("a5", "no_recovery"),
+])
+def test_remaining_prechecks_preserve_formal_model_and_optimizer(arm, formal_name):
+    config_dir = ROOT / "configs/adatad/thumos"
+    formal = Config.fromfile(str(config_dir / f"duca_evidence_recovery_{formal_name}.py"))
+    precheck = Config.fromfile(str(config_dir / f"duca_evidence_recovery_{arm}_optimizer_precheck.py"))
+    assert precheck.model == formal.model
+    assert precheck.optimizer == formal.optimizer
+    assert precheck.dataset.train == formal.dataset.train
+    assert precheck.workflow.formal_successful_update_contract is False
+    assert precheck.workflow.end_epoch == 2
+    assert precheck.workflow.max_train_iters == 100
+    assert formal.workflow.formal_successful_update_contract is True
+
+
 def _torch():
     if os.name == "nt":
         pytest.skip("Windows torch/c10.dll unavailable; run runtime tests on N16R4")
