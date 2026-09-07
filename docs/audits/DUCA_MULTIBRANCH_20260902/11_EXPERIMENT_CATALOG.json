@@ -1,6 +1,6 @@
 {
   "schema_version": "DUCA-EXPERIMENT-CATALOG-v001",
-  "last_updated_utc": "2026-09-07T05:21:06+00:00",
+  "last_updated_utc": "2026-09-07T06:02:08+00:00",
   "scope": "所有当前 DUCA/ZoomToken 代码实验及其独立修正路线；旧远端作业另列为不纳入结果",
   "repository": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702",
   "entries": [
@@ -98,6 +98,7 @@
       "category": "correction_route",
       "name": "H65-Pro 当前正式单种子矩阵：384 帧四相预算与物理时间定位",
       "internal_id": "H65_PRO_ACTIVE",
+      "current_cycle": "2026-09-07 基线口径纠正：上游 AdaTAD VideoMAE-S/768/160 公开结果为 69.03%；项目登记的未修改共享复现为 68.73%（本轮未重新读取原始运行产物）。历史 uniform384 的 native stride-2 为 64.352%，physical-grid 版本为 65.696%，均与本轮协议不匹配。67.58%/63.89% 只保留为 strict6000 修改协议的实测参考，不能称为已复现的官方 AdaTAD 基线。已确认学习率余弦周期、world size、终态模型选择和 U384 后端有协议差异；差异对分数的因果贡献尚未隔离。F02 的 +0.34 仅是相对本轮 U384 的数值差，不能据此宣称超过约 65% 的历史均匀基线",
       "branch": "codex/h65-pro-admission-fix-20260902（参考臂） + codex/h65-pro-physical-time-optimizer-repair-20260904（F 臂）",
       "sha": "e553a5a4a1063a755900d3dfa4bf8909bf97d466（参考臂） / f2068e18e2c68bdbdd7a607b47f32d05ac3beed7（F 臂）",
       "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/f2068e18e2c68bdbdd7a607b47f32d05ac3beed7",
@@ -106,9 +107,9 @@
         "E:/DeskTop/TAD/_duca_fix_worktrees/h65_eval_repair"
       ],
       "deployment_status": "远端 exact-SHA admission 1267684 已通过；REF-D768、REF-U384、REF-MNV3FC384 正式训练 1267709/1267711/1267737 与官方评测 1269303/1269360/1269373 均 COMPLETED(0:0)。30514803 的 F01/F02/F04 在 AMP replay 后独立出现 probe 全 NaN，F03/F05/F06 随即安全停止并保留 checkpoint。精确 RNG 复现 1269647、梯度审计 1269698/1269699 定位到 relative_physical_time_scale；独立修复 f2068e18 将该标量纳入零 weight-decay optimizer group，validator 强制该合同；本地 H65 tests 9 passed/11 skipped、C3 tests 23 passed，远端 exact-SHA clean checkout 59 passed/1 skipped。F01-F06 PRECHECK 全部通过，正式重训 1269705/1269707/1269759/1269761/1269764/1269769 均 COMPLETED(0:0)；六臂均有 epoch_59.pth/state_dict_ema，training audit 均确认 optimizer/scheduler/EMA/DUCA schedule 各 6000 successful updates，日志未见 non-finite/NaN/traceback/OOM。首轮评测 1270970-1270975 因错误使用训练 checkout 的旧 evaluator，全部在推理前以 resolved_config_sha256 mismatch 退出；日志已读，checkpoint 未损坏。独立 evaluator 67c8f39f 的 PRECHECK 1270985 COMPLETED(0:0)，修正后的官方评测 1270987-1270992 均 COMPLETED(0:0)；六份结构化 metrics receipt 均绑定训练 SHA f2068e18、evaluator SHA 67c8f39f、seed 3407、epoch 59 state_dict_ema、6000 successful updates，且 evaluation_sha256 自哈希复算一致",
-      "result_status": "D768、U384、MNV 三个参考臂及 F01-F06 均有有效官方终态性能；这是 seed 3407 的六臂正式结果，不代表尚未运行的完整 24 臂或多种子结论",
+      "result_status": "D768、U384、MNV 及 F01-F06 有本协议下官方评估器产生的终态数值与收据；这不等于未修改 AdaTAD 的复现成功或机制有效。仅 seed 3407，非完整 24 臂或多种子结论",
       "final_result": "参考臂：D768 Avg-mAP=67.58%，U384=63.89%，MNV3FC384=57.01%。H65 F01-F06 official Avg-mAP 分别为 63.3854%、64.2265%、60.3648%、60.7013%、64.0886%、63.8181%；对应 mAP@0.3/0.4/0.5/0.6/0.7：F01=79.1680/74.3484/66.5598/56.0579/40.7929，F02=79.9377/74.5653/67.3877/56.1257/43.1163，F03=75.9121/70.5691/63.0241/52.9793/39.3393，F04=75.8391/71.1599/63.8342/53.5592/39.1141，F05=79.2504/74.3064/67.1331/56.9056/42.8476，F06=79.2828/74.6584/66.6302/56.2470/42.2723。相对 U384，F02 最好为 +0.34 个百分点，F05 为 +0.20，F06 为 -0.07，F01 为 -0.50，F03 为 -3.53，F04 为 -3.19；所有 F 臂仍低于 D768",
-      "next_action": "封存 F01-F06 的六份 official receipt；不重复运行已完成的 seed 3407。只有论文主张需要完整 24 臂或多种子统计时，才按同一 exact-SHA 合同扩展，并与当前六臂严格分栏",
+      "next_action": "保留原始数值和收据；先核对共享 68.73% 的原配置/产物、均匀384的真实索引/坐标与各臂完整训练配方，厘清基线退化和配对差异后再决定重训范围。不得因新数值较低而替换历史基线，也不得按目标分数调参或重复训练共享未修改 AdaTAD",
       "local_head": "f2068e18e2c68bdbdd7a607b47f32d05ac3beed7",
       "local_clean_tree": true
     },
@@ -227,7 +228,7 @@
   ],
   "remote_supervisor": {
     "status": "ACTIVE",
-    "checked_at": "2026-09-07T05:20:31+00:00",
+    "checked_at": "2026-09-07T06:01:49+00:00",
     "dispatcher_status": "BLOCKED",
     "dispatcher_mode": "plan",
     "entries": []
@@ -240,6 +241,8 @@
     "account_constraint": "公共口径 28/240 可用；本用户 11 RUNNING、5 PENDING。六个 Evidence 修复臂及双 GPU ET-TRC OFF/ON 评测均获得资源；新增 Evidence A3 评测提交被 AssocMaxSubmitJobLimit 拒绝，A3/A4/A5 后续评测等待提交额度，不是缺少公共 GPU。历史 BAFDR 1267921 仍只读"
   },
   "measurement_scope": "当前比较以官方 TAD mAP、固定输入/更新预算和机制消融为主；不把端到端延迟、吞吐量或显存作为强制验收指标",
+  "baseline_reference_note": "12_BASELINE_IDENTITY_CORRECTION_20260907.md",
+  "baseline_comparison_policy": "区分上游公开结果、历史共享复现和本次修改协议实测；官方 evaluator 与完整 receipt 不代表官方训练 recipe 已复现。比较提升前须对齐预训练、数据、batch/曝光、学习率、坐标、模型选择和后处理，不能用较低参考数值替代约69/65的既有锚点，也不能把约69/65规定为每次运行必须达到的分数",
   "result_policy": "没有 exact SHA、clean-tree、epoch-59 EMA、6000 successful updates、官方 evaluator 和结构化自哈希 receipt，不得报告为最终科学结果；不得用 scheduler steps 替代 optimizer successful updates",
   "excluded_remote_jobs": [
     {
