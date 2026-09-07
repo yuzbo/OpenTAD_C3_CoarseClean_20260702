@@ -1,0 +1,7 @@
+{
+  "status": "INCOMPLETE_DIAGNOSTIC_NOT_A_COMPLETED_FULL_HEARTBEAT",
+  "original_log": "C:/Users/skywalker/.fastctx/jobs/j-k1n3he/output.log",
+  "failure": "The read-only inspector asserted every AdamW parameter step must equal 6000 and stopped on Evidence A1.",
+  "resolution": "A1 has 373 state entries at 6000 and four conditional continuous_timestamp_conditioner entries at 794. The real positions/timestamps if-elif route explains conditional exposure; this assertion did not establish a global budget violation. Production training and admission were not modified.",
+  "completed_followup": "16_HEARTBEAT_TERMINAL_EVIDENCE_20260908_0424.json"
+}

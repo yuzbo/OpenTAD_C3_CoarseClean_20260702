@@ -1,0 +1,494 @@
+{
+  "checked_at_utc": "2026-09-07T20:30:30.664823+00:00",
+  "inspection_script": "E:/DeskTop/TAD/_pro_review_packets/DUCA_SIX_ROUTES_20260908/heartbeat_terminal_check_0424.py",
+  "scope": "Artifact integrity and observed training state, not completion of known missing mechanisms. Supplementary observations below retain their individual sample times.",
+  "bafdr_terminal_validation": {
+    "checked_at_cst": "2026-09-08 04:28:08",
+    "source": "/data/run01/sczc063/yuzibo/projects/bafdr_successful_updates_710ce8a6",
+    "sha": "710ce8a6246c471742c83bf7c180d9ab87c36fac",
+    "clean_tree": true,
+    "validator": "tools/bata/bafdr_training_contract.py:validate_terminal_checkpoint",
+    "run_root": "/data/run01/sczc063/yuzibo/experiments/bafdr_successful_updates_710ce8a6/work_dirs",
+    "U16": {"checkpoint": "bafdr_k16_u16_uniform_a0_seed4407/checkpoint/epoch_59.pth", "state_step_histogram": {"6000": 352}, "scheduler_updates": 6000, "ema_updates": 6000, "amp_skips": 5, "validator": "PASS"},
+    "LATE": {"checkpoint": "bafdr_k16_late_seed4407/checkpoint/epoch_59.pth", "state_step_histogram": {"6000": 348}, "scheduler_updates": 6000, "ema_updates": 6000, "amp_skips": 5, "validator": "PASS"},
+    "NOKD": {"checkpoint": "bafdr_k16_nokd_seed4407/checkpoint/epoch_59.pth", "state_step_histogram": {"6000": 352}, "scheduler_updates": 6000, "ema_updates": 6000, "amp_skips": 4, "validator": "PASS"},
+    "performance_status": "NO_NEW_INDEPENDENT_RECEIPTS; FULL_FORMAL_AND_21_CELL_BLOCKED_BY_PADDING_AND_SCREEN_DEFECTS"
+  },
+  "ct_g2_g3_terminal_and_eval": {
+    "terminal_checked_at_utc": "2026-09-07T20:32:40.316915+00:00",
+    "training_sha": "78cde1be1cb8b3acc7d750afc92ea740f2a03d06",
+    "evaluator_sha": "11ced13ac6b72091d26405c5d6f152f09914c22d",
+    "clean_tree": true,
+    "validator": "tools/bata/ctdp_terminal_receipt.py:checkpoint_counts",
+    "each_arm": {"checkpoint_epoch": 59, "checkpoint_state_key": "state_dict_ema", "actual_optimizer_states": 337, "all_state_steps": 6000, "scheduler_updates": 6000, "ema_updates": 6000},
+    "admission_already_satisfied": "1277767 COMPLETED(0:0)",
+    "jobs": {"G2": "1278026_2", "G3": "1278026_3"},
+    "launch_checked_at_utc": "2026-09-07T20:40:11.298646+00:00",
+    "state": "BOTH_RUNNING; CTDP_EVAL_CHECKPOINT_OK; EMA and AMP inference started",
+    "inference_batches_observed": {"G2": 157, "G3": 154},
+    "qualification": "Not a compatible evaluator for new fe1c53db G0/G1; no new CT mAP yet"
+  },
+  "evidence": [
+    {
+      "arm": "A1",
+      "source": {
+        "path": "/data/run01/sczc063/yuzibo/projects/duca_evidence_storage_resume_ce767b4d",
+        "sha": "ce767b4df49a82b42f4fab4897ac4ea562e4b548",
+        "clean": true
+      },
+      "checkpoint_path": "/data/run01/sczc063/yuzibo/experiments/duca_evidence_storage_resume_ce767b4d/formal/A1/seed_8261/gpu1_id0/checkpoint/epoch_59.pth",
+      "epoch": 59,
+      "state_dict_ema": true,
+      "optimizer_groups": [
+        {
+          "group": 0,
+          "configured_parameters": 112,
+          "state_count": 112,
+          "step_histogram": {
+            "6000.0": 112
+          }
+        },
+        {
+          "group": 1,
+          "configured_parameters": 4,
+          "state_count": 4,
+          "step_histogram": {
+            "794.0": 4
+          }
+        },
+        {
+          "group": 2,
+          "configured_parameters": 1,
+          "state_count": 1,
+          "step_histogram": {
+            "6000.0": 1
+          }
+        },
+        {
+          "group": 3,
+          "configured_parameters": 181,
+          "state_count": 179,
+          "step_histogram": {
+            "6000.0": 179
+          }
+        },
+        {
+          "group": 4,
+          "configured_parameters": 83,
+          "state_count": 81,
+          "step_histogram": {
+            "6000.0": 81
+          }
+        }
+      ],
+      "scheduler_last_epoch": 6000,
+      "update_audit": {
+        "attempted_batches": 6000,
+        "optimizer_attempts": 6009,
+        "successful_optimizer_updates": 6000,
+        "amp_skipped_attempts": 9,
+        "replayed_batches": 7,
+        "replay_exhaustions": 0,
+        "scheduler_updates": 6000,
+        "ema_updates": 6000,
+        "duca_schedule_updates": 0,
+        "forced_amp_overflow_attempts": 0,
+        "max_amp_retries_observed": 3,
+        "nonfinite_loss_attempts": 0,
+        "nonfinite_loss_replays": 0,
+        "nonfinite_loss_replay_exhaustions": 0,
+        "max_nonfinite_loss_retries_observed": 0,
+        "replay_state_restorations": 9
+      },
+      "training_identity": {
+        "checkpoint_path": "/data/run01/sczc063/yuzibo/experiments/duca_evidence_storage_resume_ce767b4d/formal/A1/seed_8261/gpu1_id0/checkpoint/epoch_59.pth",
+        "checkpoint_sha256": "2786deb622747de5dc8ab01e53216929ff98181444dbeb15a43c4a29ae144043",
+        "training_audit_sha256": "24df208888d6de87af5ae29fe8cbb5122c1b5125eed3dd2025e1391674ca7883",
+        "training_slurm_job_id": "1277406",
+        "resume_lineage": [
+          {
+            "git_commit": "1570a72507491899a50767700a35a04eee3f5fe9",
+            "slurm_job_id": "1274925",
+            "checkpoint_path": "/data/run01/sczc063/yuzibo/experiments/duca_evidence_optimizer_1570a725/formal/A1/seed_8261/gpu1_id0/checkpoint/epoch_39.pth",
+            "checkpoint_epoch": 39,
+            "training_audit_sha256": "c5401121722eeae92c1a20eeaf114625c2badabd59e71b70648deb95261dcbf2",
+            "successful_optimizer_updates": 4000
+          }
+        ]
+      },
+      "status": "TERMINAL_TRAINING_BOUND; KNOWN_MECHANISM_DEFECTS_REMAIN",
+      "conditional_parameter_note": "group1 is continuous_timestamp_conditioner; positions branch bypasses it in vit_adapter.py:935-945. Per-parameter exposure is not global optimizer-step count.",
+      "receipt_path": "/data/run01/sczc063/yuzibo/experiments/duca_evidence_storage_resume_ce767b4d/evaluation/A1/seed_8261/gpu1_id0/official_eval/metrics.json",
+      "metrics": {
+        "average_mAP": 0.5159681679375281,
+        "mAP@0.3": 0.6996763679956545,
+        "mAP@0.4": 0.6390762093566129,
+        "mAP@0.5": 0.5405654235751765,
+        "mAP@0.6": 0.4221696475089728,
+        "mAP@0.7": 0.278353191251224
+      },
+      "receipt_self_hash_verified": true,
+      "official_evaluator_verified": true,
+      "prediction_binding_verified": true
+    },
+    {
+      "arm": "A6",
+      "source": {
+        "path": "/data/run01/sczc063/yuzibo/projects/duca_evidence_storage_resume_ce767b4d",
+        "sha": "ce767b4df49a82b42f4fab4897ac4ea562e4b548",
+        "clean": true
+      },
+      "checkpoint_path": "/data/run01/sczc063/yuzibo/experiments/duca_evidence_storage_resume_ce767b4d/formal/A6/seed_8261/gpu1_id0/checkpoint/epoch_59.pth",
+      "epoch": 59,
+      "state_dict_ema": true,
+      "optimizer_groups": [
+        {
+          "group": 0,
+          "configured_parameters": 112,
+          "state_count": 112,
+          "step_histogram": {
+            "6000.0": 112
+          }
+        },
+        {
+          "group": 1,
+          "configured_parameters": 4,
+          "state_count": 4,
+          "step_histogram": {
+            "1600.0": 4
+          }
+        },
+        {
+          "group": 2,
+          "configured_parameters": 1,
+          "state_count": 1,
+          "step_histogram": {
+            "6000.0": 1
+          }
+        },
+        {
+          "group": 3,
+          "configured_parameters": 161,
+          "state_count": 161,
+          "step_histogram": {
+            "6000.0": 161
+          }
+        },
+        {
+          "group": 4,
+          "configured_parameters": 73,
+          "state_count": 73,
+          "step_histogram": {
+            "6000.0": 73
+          }
+        }
+      ],
+      "scheduler_last_epoch": 6000,
+      "update_audit": {
+        "attempted_batches": 6000,
+        "optimizer_attempts": 6011,
+        "successful_optimizer_updates": 6000,
+        "amp_skipped_attempts": 11,
+        "replayed_batches": 9,
+        "replay_exhaustions": 0,
+        "scheduler_updates": 6000,
+        "ema_updates": 6000,
+        "duca_schedule_updates": 0,
+        "forced_amp_overflow_attempts": 0,
+        "max_amp_retries_observed": 2,
+        "nonfinite_loss_attempts": 0,
+        "nonfinite_loss_replays": 0,
+        "nonfinite_loss_replay_exhaustions": 0,
+        "max_nonfinite_loss_retries_observed": 0,
+        "replay_state_restorations": 11
+      },
+      "training_identity": {
+        "checkpoint_path": "/data/run01/sczc063/yuzibo/experiments/duca_evidence_storage_resume_ce767b4d/formal/A6/seed_8261/gpu1_id0/checkpoint/epoch_59.pth",
+        "checkpoint_sha256": "6dffe7277fe3001d1b6b8a3833320a4ba7bc09c32694ebbb5fb25324cb01d570",
+        "training_audit_sha256": "789ab41accd38e2e7e8554b5752e1445e3917569a4ce623641aec84d88b077a2",
+        "training_slurm_job_id": "1277407",
+        "resume_lineage": [
+          {
+            "git_commit": "1570a72507491899a50767700a35a04eee3f5fe9",
+            "slurm_job_id": "1274924",
+            "checkpoint_path": "/data/run01/sczc063/yuzibo/experiments/duca_evidence_optimizer_1570a725/formal/A6/seed_8261/gpu1_id0/checkpoint/epoch_39.pth",
+            "checkpoint_epoch": 39,
+            "training_audit_sha256": "a658e58c0ceb57dc622f1c9017046edd79a98721700488934ac2ede9d198f57d",
+            "successful_optimizer_updates": 4000
+          }
+        ]
+      },
+      "status": "TERMINAL_TRAINING_BOUND; KNOWN_MECHANISM_DEFECTS_REMAIN",
+      "conditional_parameter_note": "group1 is continuous_timestamp_conditioner; positions branch bypasses it in vit_adapter.py:935-945. Per-parameter exposure is not global optimizer-step count."
+    },
+    {
+      "arm": "F",
+      "source": {
+        "path": "/data/run01/sczc063/yuzibo/projects/duca_evidence_storage_resume_ce767b4d",
+        "sha": "ce767b4df49a82b42f4fab4897ac4ea562e4b548",
+        "clean": true
+      },
+      "checkpoint_path": "/data/run01/sczc063/yuzibo/experiments/duca_evidence_storage_resume_ce767b4d/formal/F/seed_8261/gpu1_id0/checkpoint/epoch_59.pth",
+      "epoch": 59,
+      "state_dict_ema": true,
+      "optimizer_groups": [
+        {
+          "group": 0,
+          "configured_parameters": 112,
+          "state_count": 112,
+          "step_histogram": {
+            "6000.0": 112
+          }
+        },
+        {
+          "group": 1,
+          "configured_parameters": 4,
+          "state_count": 4,
+          "step_histogram": {
+            "794.0": 4
+          }
+        },
+        {
+          "group": 2,
+          "configured_parameters": 1,
+          "state_count": 1,
+          "step_histogram": {
+            "6000.0": 1
+          }
+        },
+        {
+          "group": 3,
+          "configured_parameters": 181,
+          "state_count": 179,
+          "step_histogram": {
+            "6000.0": 179
+          }
+        },
+        {
+          "group": 4,
+          "configured_parameters": 83,
+          "state_count": 81,
+          "step_histogram": {
+            "6000.0": 81
+          }
+        }
+      ],
+      "scheduler_last_epoch": 6000,
+      "update_audit": {
+        "attempted_batches": 6000,
+        "optimizer_attempts": 6009,
+        "successful_optimizer_updates": 6000,
+        "amp_skipped_attempts": 9,
+        "replayed_batches": 6,
+        "replay_exhaustions": 0,
+        "scheduler_updates": 6000,
+        "ema_updates": 6000,
+        "duca_schedule_updates": 0,
+        "forced_amp_overflow_attempts": 0,
+        "max_amp_retries_observed": 3,
+        "nonfinite_loss_attempts": 0,
+        "nonfinite_loss_replays": 0,
+        "nonfinite_loss_replay_exhaustions": 0,
+        "max_nonfinite_loss_retries_observed": 0,
+        "replay_state_restorations": 9
+      },
+      "training_identity": {
+        "checkpoint_path": "/data/run01/sczc063/yuzibo/experiments/duca_evidence_storage_resume_ce767b4d/formal/F/seed_8261/gpu1_id0/checkpoint/epoch_59.pth",
+        "checkpoint_sha256": "0d3285ed04b6d021c7f1ff186dd705dd173f36bd08e515fece94f33e7a51614d",
+        "training_audit_sha256": "4940ec800b02194dfe2b5f5013b2d443632c6513534f7d2ea3c3c9ff4f03ee3e",
+        "training_slurm_job_id": "1277768",
+        "resume_lineage": [
+          {
+            "git_commit": "73bdd34ae21c6c675a00d1927b8af7c12f9edc05",
+            "slurm_job_id": "1275687",
+            "checkpoint_path": "/data/run01/sczc063/yuzibo/experiments/duca_evidence_remaining_73bdd34a/formal/F/seed_8261/gpu1_id0/checkpoint/epoch_29.pth",
+            "checkpoint_epoch": 29,
+            "training_audit_sha256": "72b1a842aa38c138d5fe144e98c6471134585213026f60ebd9372a14891f9bae",
+            "successful_optimizer_updates": 3000
+          }
+        ]
+      },
+      "status": "TERMINAL_TRAINING_BOUND; KNOWN_MECHANISM_DEFECTS_REMAIN",
+      "conditional_parameter_note": "group1 is continuous_timestamp_conditioner; positions branch bypasses it in vit_adapter.py:935-945. Per-parameter exposure is not global optimizer-step count."
+    }
+  ],
+  "sealed_receipts": [
+    {
+      "route": "H65",
+      "path": "/data/run01/sczc063/yuzibo/experiments/h65_pro_eval_67c8f39f_f2068e18/F01_seed3407/gpu1_id0/eval/F01_seed3407_epoch59_ema_metrics.json",
+      "self_hash_verified": true,
+      "checkpoint_exists": true,
+      "checkpoint_path": "/data/run01/sczc063/yuzibo/experiments/h65_pro_physical_optimizer_f2068e18/F01_seed3407/gpu1_id0/checkpoint/epoch_59.pth",
+      "metrics": {
+        "average_mAP": 0.6338540623028592,
+        "mAP@0.3": 0.7916804296791404,
+        "mAP@0.4": 0.7434840063969461,
+        "mAP@0.5": 0.6655975857328414,
+        "mAP@0.6": 0.5605791306830004,
+        "mAP@0.7": 0.40792915902236776
+      },
+      "git_commit": "67c8f39fa7d20b865a0f77adf75d418a374c7ff5",
+      "training_git_commit": "f2068e18e2c68bdbdd7a607b47f32d05ac3beed7"
+    },
+    {
+      "route": "H65",
+      "path": "/data/run01/sczc063/yuzibo/experiments/h65_pro_eval_67c8f39f_f2068e18/F02_seed3407/gpu1_id0/eval/F02_seed3407_epoch59_ema_metrics.json",
+      "self_hash_verified": true,
+      "checkpoint_exists": true,
+      "checkpoint_path": "/data/run01/sczc063/yuzibo/experiments/h65_pro_physical_optimizer_f2068e18/F02_seed3407/gpu1_id0/checkpoint/epoch_59.pth",
+      "metrics": {
+        "average_mAP": 0.6422653640360945,
+        "mAP@0.3": 0.7993765687242615,
+        "mAP@0.4": 0.7456527748559523,
+        "mAP@0.5": 0.6738773843355284,
+        "mAP@0.6": 0.561256640808347,
+        "mAP@0.7": 0.431163451456383
+      },
+      "git_commit": "67c8f39fa7d20b865a0f77adf75d418a374c7ff5",
+      "training_git_commit": "f2068e18e2c68bdbdd7a607b47f32d05ac3beed7"
+    },
+    {
+      "route": "H65",
+      "path": "/data/run01/sczc063/yuzibo/experiments/h65_pro_eval_67c8f39f_f2068e18/F03_seed3407/gpu1_id0/eval/F03_seed3407_epoch59_ema_metrics.json",
+      "self_hash_verified": true,
+      "checkpoint_exists": true,
+      "checkpoint_path": "/data/run01/sczc063/yuzibo/experiments/h65_pro_physical_optimizer_f2068e18/F03_seed3407/gpu1_id0/checkpoint/epoch_59.pth",
+      "metrics": {
+        "average_mAP": 0.6036478160171815,
+        "mAP@0.3": 0.7591213874453324,
+        "mAP@0.4": 0.7056905964457048,
+        "mAP@0.5": 0.6302410008917773,
+        "mAP@0.6": 0.5297930681887723,
+        "mAP@0.7": 0.393393027114321
+      },
+      "git_commit": "67c8f39fa7d20b865a0f77adf75d418a374c7ff5",
+      "training_git_commit": "f2068e18e2c68bdbdd7a607b47f32d05ac3beed7"
+    },
+    {
+      "route": "H65",
+      "path": "/data/run01/sczc063/yuzibo/experiments/h65_pro_eval_67c8f39f_f2068e18/F04_seed3407/gpu1_id0/eval/F04_seed3407_epoch59_ema_metrics.json",
+      "self_hash_verified": true,
+      "checkpoint_exists": true,
+      "checkpoint_path": "/data/run01/sczc063/yuzibo/experiments/h65_pro_physical_optimizer_f2068e18/F04_seed3407/gpu1_id0/checkpoint/epoch_59.pth",
+      "metrics": {
+        "average_mAP": 0.6070129227677766,
+        "mAP@0.3": 0.7583912367871555,
+        "mAP@0.4": 0.7115993588673238,
+        "mAP@0.5": 0.6383415199986878,
+        "mAP@0.6": 0.5355916841609183,
+        "mAP@0.7": 0.39114081402479794
+      },
+      "git_commit": "67c8f39fa7d20b865a0f77adf75d418a374c7ff5",
+      "training_git_commit": "f2068e18e2c68bdbdd7a607b47f32d05ac3beed7"
+    },
+    {
+      "route": "H65",
+      "path": "/data/run01/sczc063/yuzibo/experiments/h65_pro_eval_67c8f39f_f2068e18/F05_seed3407/gpu1_id0/eval/F05_seed3407_epoch59_ema_metrics.json",
+      "self_hash_verified": true,
+      "checkpoint_exists": true,
+      "checkpoint_path": "/data/run01/sczc063/yuzibo/experiments/h65_pro_physical_optimizer_f2068e18/F05_seed3407/gpu1_id0/checkpoint/epoch_59.pth",
+      "metrics": {
+        "average_mAP": 0.640886229714488,
+        "mAP@0.3": 0.7925041314075376,
+        "mAP@0.4": 0.7430639272661347,
+        "mAP@0.5": 0.6713312692274858,
+        "mAP@0.6": 0.5690557037375036,
+        "mAP@0.7": 0.4284761169337791
+      },
+      "git_commit": "67c8f39fa7d20b865a0f77adf75d418a374c7ff5",
+      "training_git_commit": "f2068e18e2c68bdbdd7a607b47f32d05ac3beed7"
+    },
+    {
+      "route": "H65",
+      "path": "/data/run01/sczc063/yuzibo/experiments/h65_pro_eval_67c8f39f_f2068e18/F06_seed3407/gpu1_id0/eval/F06_seed3407_epoch59_ema_metrics.json",
+      "self_hash_verified": true,
+      "checkpoint_exists": true,
+      "checkpoint_path": "/data/run01/sczc063/yuzibo/experiments/h65_pro_physical_optimizer_f2068e18/F06_seed3407/gpu1_id0/checkpoint/epoch_59.pth",
+      "metrics": {
+        "average_mAP": 0.6381814163848895,
+        "mAP@0.3": 0.7928283902041564,
+        "mAP@0.4": 0.7465839231257171,
+        "mAP@0.5": 0.6663017496990975,
+        "mAP@0.6": 0.5624701846279634,
+        "mAP@0.7": 0.42272283426751295
+      },
+      "git_commit": "67c8f39fa7d20b865a0f77adf75d418a374c7ff5",
+      "training_git_commit": "f2068e18e2c68bdbdd7a607b47f32d05ac3beed7"
+    },
+    {
+      "route": "ET_TRC",
+      "path": "/data/run01/sczc063/yuzibo/experiments/ettrc_terminal_eval_67d7079d/formal/off/gpu2_id0/official_eval/metrics.json",
+      "self_hash_verified": true,
+      "checkpoint_exists": true,
+      "checkpoint_path": "/data/run01/sczc063/yuzibo/experiments/zoomtoken_ettrc_74473c27_seed4407/off/gpu2_id0/checkpoint/epoch_59.pth",
+      "metrics": {
+        "average_mAP": 0.6207677503328417,
+        "mAP@0.3": 0.7706320102202896,
+        "mAP@0.4": 0.7191051303513417,
+        "mAP@0.5": 0.6534222232778369,
+        "mAP@0.6": 0.545130563639053,
+        "mAP@0.7": 0.4155488241756872
+      },
+      "git_commit": null,
+      "training_git_commit": "74473c2775caebf0da9d368ce8009d78e2942098"
+    },
+    {
+      "route": "ET_TRC",
+      "path": "/data/run01/sczc063/yuzibo/experiments/ettrc_terminal_eval_67d7079d/formal/on/gpu2_id0/official_eval/metrics.json",
+      "self_hash_verified": true,
+      "checkpoint_exists": true,
+      "checkpoint_path": "/data/run01/sczc063/yuzibo/experiments/zoomtoken_ettrc_74473c27_seed4407/on/gpu2_id0/checkpoint/epoch_59.pth",
+      "metrics": {
+        "average_mAP": 0.5480958031537403,
+        "mAP@0.3": 0.7037801617949151,
+        "mAP@0.4": 0.6488928739330445,
+        "mAP@0.5": 0.5749477810844568,
+        "mAP@0.6": 0.4665164562751092,
+        "mAP@0.7": 0.3463417426811761
+      },
+      "git_commit": null,
+      "training_git_commit": "74473c2775caebf0da9d368ce8009d78e2942098"
+    },
+    {
+      "route": "CT_OLD_DIAGNOSTIC",
+      "path": "/data/run01/sczc063/yuzibo/experiments/ctdp_terminal_eval_11ced13a/formal/g1/gpu1_id0/official_eval/metrics.json",
+      "self_hash_verified": true,
+      "checkpoint_exists": true,
+      "checkpoint_path": "/data/run01/sczc063/yuzibo/experiments/ctdp_successful_updates_78cde1be/formal/duca_ctdp_geometry_g1_seed3407/gpu1_id0/checkpoint/epoch_59.pth",
+      "metrics": {
+        "average_mAP": 0.14661261616206914,
+        "mAP@0.3": 0.27534008464759274,
+        "mAP@0.4": 0.20829308474095645,
+        "mAP@0.5": 0.14179670428435914,
+        "mAP@0.6": 0.07564411738616454,
+        "mAP@0.7": 0.031989089751272945
+      },
+      "git_commit": null,
+      "training_git_commit": "78cde1be1cb8b3acc7d750afc92ea740f2a03d06"
+    }
+  ],
+  "queue": [
+    "1278023|tr-0afe8e4fc09b|RUNNING|g0056|gres/gpu:1",
+    "1278012|ctdp-g1-fe1c53db|RUNNING|g0030|gres/gpu:1",
+    "1278011|ctdp-g0-fe1c53db|RUNNING|g0006|gres/gpu:1",
+    "1276621|zt-d2s-21aa-r5|RUNNING|g0067|gres/gpu:2",
+    "1276622|zt-patad-21aa-r4|RUNNING|g0067|gres/gpu:2",
+    "1274508|scripted_gpu|RUNNING|g0017|N/A"
+  ],
+  "completed_jobs": [
+    "1276669|ctdp-g0-78cde1be|COMPLETED|0:0|2026-09-07T18:04:07|2026-09-08T02:37:21",
+    "1276670|ctdp-g1-78cde1be|COMPLETED|0:0|2026-09-07T18:04:07|2026-09-08T02:29:21",
+    "1276671|ctdp-g2-78cde1be|COMPLETED|0:0|2026-09-07T18:11:08|2026-09-08T02:40:20",
+    "1276672|ctdp-g3-78cde1be|COMPLETED|0:0|2026-09-07T18:11:08|2026-09-08T02:54:13",
+    "1276842|bafdr-u16_uniform_a0-710ce8a6|COMPLETED|0:0|2026-09-07T21:02:05|2026-09-08T00:17:30",
+    "1276843|bafdr-late-710ce8a6|COMPLETED|0:0|2026-09-07T21:02:35|2026-09-08T00:15:13",
+    "1277406_2|ev-resume-A1-ce767b4d|COMPLETED|0:0|2026-09-07T22:12:30|2026-09-08T00:19:46",
+    "1277407_7|ev-resume-A6-ce767b4d|COMPLETED|0:0|2026-09-08T00:05:29|2026-09-08T02:19:39",
+    "1277768_1|ev-resume-F-ce767b4d|COMPLETED|0:0|2026-09-08T00:09:00|2026-09-08T03:28:42",
+    "1277953_2|ev-eval-A1-ce767b4d|COMPLETED|0:0|2026-09-08T00:20:02|2026-09-08T00:42:14",
+    "1277954|bafdr-nokd-710ce8a6|COMPLETED|0:0|2026-09-08T00:16:32|2026-09-08T03:28:52",
+    "1277955|bafdr-full-precheck-710ce8a6|COMPLETED|0:0|2026-09-08T00:17:32|2026-09-08T00:19:52",
+    "1277962_1|ctdp-eval-g1-11ced13a|COMPLETED|0:0|2026-09-08T02:29:29|2026-09-08T02:48:25"
+  ],
+  "inspection_completed_at_utc": "2026-09-07T20:31:01.110990+00:00"
+}

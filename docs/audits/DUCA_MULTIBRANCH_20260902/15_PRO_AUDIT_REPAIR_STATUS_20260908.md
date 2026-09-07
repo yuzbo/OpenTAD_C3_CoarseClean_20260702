@@ -128,3 +128,18 @@ job1245842 的 Slurm 记录为 COMPLETED(0:0)。原 source 为 `/data/run01/sczc
 6. 接通Unified真实P0/P1和H65保留/转换后，按依赖释放已实现子矩阵。不得取消实现阻塞来凑齐“全矩阵已完成”。
 
 不重新加入端到端延迟、吞吐或显存强制指标。只有声称减少计算时才要求相应执行量证据，且不将计算量减少等同于实际加速。所有旧负结果和失败记录继续保留。
+
+## 04:24 心跳补充
+
+本轮实际核查始于2026-09-08 04:24 CST，远端分项采样为04:25、04:28、04:30-04:32，新增评测启动复核为04:40。前述02:57记录是历史部署记录，不能当作当前训练进度。03:35的只读诊断在参数步数断言处中止，未完成的全面检查不补记为已完成；失败诊断与本轮补证分别保存在16号JSON中。
+
+- CT新坐标G0/G1：04:25已分别完成epoch11/12，optimizer/scheduler/EMA各1200/1300，AMP skip累计2/3均已重放，loss有限，无新fatal错误。未重复1278007准入或重提训练。
+- 旧CT G0-G3均COMPLETED。G1旧独立评测Avg-mAP14.6613%，收据自哈希通过，但坐标错域未被收据修复，仅作诊断。G2/G3的真实epoch59 EMA通过现有验证器，各337个AdamW状态step6000、scheduler/EMA6000。仅补交兼容旧身份的独立评测1278026_2/3，04:40两项RUNNING，身份校验已过，推理分别到157/154批。训练78cde1be、评测11ced13a；不把此评测器用于新fe1c53db控制。
+- BAFDR均匀分块U16、晚期融合LATE、无蒸馏NOKD：04:28首次从各自原始checkpoint验证全部AdamW state及scheduler/EMA为6000。state数为352/348/352，AMP skip5/5/4均成功重放，无nonfinite loss或重放耗尽。D160/G96不重复加载。三臂仍无新独立评测receipt；FULL只有已完成PRECHECK，padding/screen缺陷仍禁止扩展。
+- Evidence A1/A6/F：真实epoch59 EMA、完整终态绑定和跨SHA恢复链均通过。全局optimizer/scheduler/EMA均6000；四个时间conditioner参数的实际step为794/1600/794。`backbone_wrapper.py:89-109`和`vit_adapter.py:935-945`表明actual/canonical positions分支优先于conditioner，条件参数参与次数不等于全局更新数。最初要求每个参数都6000的只读诊断过严，未据此改生产合同、重训或篡改权重。utility缺少学习路径仍是另一个真实问题。
+- A1关闭覆盖约束：旧实现官方Avg-mAP **51.5968%**，mAP@0.3/0.4/0.5/0.6/0.7为69.9676/63.9076/54.0565/42.2170/27.8353%。epoch39/4000次从1570a725恢复到ce767b4d，seed8261，eval1277953_2；收据自哈希、checkpoint、prediction、官方evaluator绑定已复核。这不是e0c88c9a新refiner性能，也不证明utility/robust/cycle已实现。A6/F仍缺独立评测。
+- H65六份及ET两份小收据自哈希和terminal文件存在性复核通过，未重复推理，原数值未变。TIA、四相匹配对照、ET anchor correction和Unified训练接线本轮没有新增修复，不虚报完成。
+
+04:25公共可调度GPU为49/192未分配；只按当时24节点CfgTRES/AllocTRES计算。磁盘325G可用、95%已用，公共空间不等于用户配额保证。04:40本账户展开数组为8 RUNNING/0 PENDING，其中两项是本轮新CT评测。只读分钟轮询回执仍更新，但dispatcher为plan/BLOCKED，并非自动提交器。没有取消或修改历史BAFDR1267920/1267921，没有新增模型训练或放开已知缺陷矩阵。
+
+结构化证据：[16_HEARTBEAT_TERMINAL_EVIDENCE_20260908_0424.json](16_HEARTBEAT_TERMINAL_EVIDENCE_20260908_0424.json)。后续按本报告既有最小工作顺序推进，优先收取1278026_2/3终态收据并准备与新CT坐标代码匹配的独立evaluator；尚未完成的机制修复继续逐项保留。
