@@ -57,9 +57,7 @@ class DenseTemporalRecovery(BaseModule):
         self.pwconv = nn.Conv1d(embed_dims, embed_dims, kernel_size=1)
         self.residual_gate = nn.Parameter(torch.zeros(1))
 
-        # Initialize refinement to zero so initial output is strictly non-parametric interpolation
-        nn.init.zeros_(self.pwconv.weight)
-        nn.init.zeros_(self.pwconv.bias)
+        # Only the gate is zero: a zero projection as well would lock both gradients.
 
     def scatter_triangular(
         self,
