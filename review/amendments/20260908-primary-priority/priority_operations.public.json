@@ -1,0 +1,26 @@
+[
+  {
+    "job_id": "tr-be89cd6cb2ca",
+    "slurm_id": "244973",
+    "primary_dynamic_slurm_id": "244989",
+    "command": [
+      "scontrol",
+      "update",
+      "JobId=244973",
+      "Dependency=after:244989"
+    ],
+    "returncode": 0
+  },
+  {
+    "job_id": "tr-a45686a40afa",
+    "slurm_id": "244975",
+    "primary_dynamic_slurm_id": "244991",
+    "command": [
+      "scontrol",
+      "update",
+      "JobId=244975",
+      "Dependency=after:244991"
+    ],
+    "returncode": 0
+  }
+]

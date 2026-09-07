@@ -1,0 +1,65 @@
+{
+  "N16R4": {
+    "cluster": "N16R4",
+    "coordinator": {
+      "pid": 4011084,
+      "host": "ln01",
+      "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+      "started_at": 1788803810.2486923,
+      "assigned_training_ids": [
+        "tr-f90ea0ae2ce4"
+      ]
+    },
+    "reused_capabilities": [],
+    "work_root": "<MACHINE_PATH>/902fa05b"
+  },
+  "A100": {
+    "cluster": "A100",
+    "coordinator": {
+      "pid": 2862399,
+      "host": "ln311",
+      "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+      "started_at": 1788803809.5637114,
+      "assigned_training_ids": [
+        "tr-c2d93c4c3979",
+        "tr-bacdbb058eca",
+        "tr-6f26bfd4ff96",
+        "tr-067daa13036b"
+      ]
+    },
+    "reused_capabilities": [
+      {
+        "job_id": "tr-c2d93c4c3979",
+        "capability": "common",
+        "test_receipt": "<MACHINE_PATH>/gpu_precheck.json"
+      },
+      {
+        "job_id": "tr-c2d93c4c3979",
+        "capability": "evaluation",
+        "test_receipt": "<MACHINE_PATH>/gpu_precheck.json"
+      },
+      {
+        "job_id": "tr-c2d93c4c3979",
+        "capability": "route_B",
+        "test_receipt": "<MACHINE_PATH>/gpu_precheck.json"
+      },
+      {
+        "job_id": "tr-bacdbb058eca",
+        "capability": "common",
+        "test_receipt": "<MACHINE_PATH>/gpu_precheck.json"
+      },
+      {
+        "job_id": "tr-bacdbb058eca",
+        "capability": "evaluation",
+        "test_receipt": "<MACHINE_PATH>/gpu_precheck.json"
+      },
+      {
+        "job_id": "tr-bacdbb058eca",
+        "capability": "route_DENSE",
+        "test_receipt": "<MACHINE_PATH>/gpu_precheck.json"
+      }
+    ],
+    "work_root": "<MACHINE_PATH>/902fa05b"
+  },
+  "updated_at_utc": "2026-09-07T17:56:52.549072+00:00"
+}
