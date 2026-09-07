@@ -81,7 +81,7 @@ def run(job, bindings, output, precheck=False):
     cfg = resolve_opentad_config(job, bindings, split_dir / "annotations.json")
     cfg.evaluation.ground_truth_filename = bindings["annotations"]
     resolved = dict(opentad=cfg.to_dict(), model=job["model"], dataset=job["dataset"], seed=job["seed"],
-                    epochs=60, runtime=runtime, protocol="geosparse-full-validation-best-20260907",
+                    epochs=60, runtime=runtime, protocol=job["protocol_version"],
                     checkpoint_selection=dict(subset="validation", interval_epochs=5, weights="ema",
                                               metric="average_mAP@0.3:0.1:0.7", ties="earlier_checkpoint"))
     resolved = json.loads(json.dumps(resolved))

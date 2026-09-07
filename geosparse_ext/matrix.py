@@ -291,7 +291,7 @@ def main():
     content="".join(canonical(j)+"\n" for j in jobs)
     (a.out/"experiments.jsonl").write_text(content,encoding="utf-8")
     count=Counter(j["kind"] for j in jobs)
-    summary={"protocol_version":"geosparse-v1.0","counts":dict(count),
+    summary={"protocol_version":"geosparse-official-full-data-20260908","counts":dict(count),
              "total_jobs":len(jobs),"training_epochs_total":60*count["train"],
              "train_jobs_have_experiment_dependencies":False,
              "matrix_sha256":hashlib.sha256(content.encode()).hexdigest(),
