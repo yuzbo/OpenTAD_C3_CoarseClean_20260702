@@ -143,3 +143,18 @@ job1245842 的 Slurm 记录为 COMPLETED(0:0)。原 source 为 `/data/run01/sczc
 04:25公共可调度GPU为49/192未分配；只按当时24节点CfgTRES/AllocTRES计算。磁盘325G可用、95%已用，公共空间不等于用户配额保证。04:40本账户展开数组为8 RUNNING/0 PENDING，其中两项是本轮新CT评测。只读分钟轮询回执仍更新，但dispatcher为plan/BLOCKED，并非自动提交器。没有取消或修改历史BAFDR1267920/1267921，没有新增模型训练或放开已知缺陷矩阵。
 
 结构化证据：[16_HEARTBEAT_TERMINAL_EVIDENCE_20260908_0424.json](16_HEARTBEAT_TERMINAL_EVIDENCE_20260908_0424.json)。后续按本报告既有最小工作顺序推进，优先收取1278026_2/3终态收据并准备与新CT坐标代码匹配的独立evaluator；尚未完成的机制修复继续逐项保留。
+
+## 06:34 心跳补充
+
+本轮实际远端采样为2026-09-08 06:35:38至06:39:29 CST。此前未完成的心跳不补记为已完成全面检查；本节只记录本轮实际读取和复用证据的边界。
+
+- CT新坐标G0/G1仍RUNNING，源码fe1c53db与本地一致且clean。06:35 audit分别3100/3200成功更新；06:38最新日志G1已到3300，G0仍3100，optimizer/scheduler/EMA一致。AMP skip累计2/3，最新loss0.4699/0.5214有限，stderr仅既有linear1d非确定性警告。没有重提健康训练或重复1278007准入。
+- 旧身份G2/G3的独立评测1278026_2/3均COMPLETED(0:0)，分别于04:52:56/04:53:11结束。06:38核对训练78cde1be、评测11ced13a、clean及opentad/configs差异为空、官方evaluator文件绑定、211个视频及两份收据自哈希。实际epoch59 EMA和337个AdamW state全部6000的证据复用04:32记录，本轮没有再次加载大权重。
+- G2 official Avg-mAP **56.5234%**，mAP@0.3/0.4/0.5/0.6/0.7为77.0574/70.2257/60.5909/47.7463/26.9965%；G3 **57.8489%**，对应76.0448/70.3664/61.8093/49.3377/31.6861%。单种子G3相对G2为+1.3255pp，严格阈值0.7为+4.6896pp。两臂都没有B-AMoD，不将该差值外推为完整矩阵因果结论，也不将结果迁移为新fe1c53db控制。
+- H65六份及ET两份小收据自哈希、原训练身份和checkpoint存在性06:39复核通过，数值不变。H65仍phase-off/TIA待修；ET仍有anchor correction及精度核对欠账。没有进行新推理或Pro咨询。
+- Evidence A1/A6/F及A1独立评测均完成，JobName明确均属Evidence，不是H65。A1收据自哈希通过，仍51.5968%；A6/F输出目录仍没有独立metrics receipt。BAFDR U16/LATE/NOKD及FULL PRECHECK仍完成，日志无新fatal错误，但新输出根无metrics receipt。两路线实际终态更新验证分别复用04:30/04:28记录，不把本轮日志检查写成又一次大权重审计。
+- 所有六路线active本地worktree仍为此前登记的完整SHA且clean。Unified保持BLOCKED_UNIMPLEMENTED；Evidence utility/robust/cycle、BAFDR padding/screen等未修问题继续保留，未自动扩展有缺陷旧矩阵。
+
+06:38公共可调度25节点CfgTRES200、AllocTRES141，即59/200 GPU未分配；本账户展开队列7 RUNNING/0 PENDING，其中本任务CT占2项。实验挂载可用286G、使用率95%，不代表个人配额保证。分钟轮询回执距采样48秒，读取正常，但dispatcher=plan/BLOCKED、entries为空，仍不是当前修复队列的自动提交器。
+
+本轮完成监控、G2/G3官方结果入册及目录刷新；未新增模型修改、GPU准入、训练或评测作业，也未取消任何作业。新坐标版兼容独立evaluator及其PRECHECK仍未完成，不能声称已部署；后续仍按上面的最小工作顺序推进。历史BAFDR1267920/1267921未操作。结构化证据：[17_HEARTBEAT_EVIDENCE_20260908_0634.json](17_HEARTBEAT_EVIDENCE_20260908_0634.json)。

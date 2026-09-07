@@ -46,3 +46,22 @@ def test_terminal_observation_preserves_metric_scale_and_conditional_steps():
     assert entry["conditional_time_parameter_updates"]["A1"] == 794
     assert a1["optimizer_groups"][1]["step_histogram"] == {"794.0": 4}
     assert "不作完整机制验收" in entry["result_status"]
+
+
+def test_ct_terminal_metrics_keep_training_identity_and_fraction_scale():
+    evidence = json.loads((catalog.AUDIT / "17_HEARTBEAT_EVIDENCE_20260908_0634.json").read_text(encoding="utf-8"))
+    observed = evidence["ct_g2_g3_official_results"]
+    entry = next(row for row in catalog.route_entries() if row["internal_id"] == "CT_DP_BAMOD_ACTIVE")
+    result = entry["official_terminal_results"]
+    assert result["training_sha"] == observed["training_sha"]
+    assert result["evaluator_sha"] == observed["evaluator_sha"]
+    assert result["training_sha"] != entry["latest_repair"]["sha"]
+    assert result["metric_scale"] == "fraction_0_to_1"
+    assert result["successful_optimizer_updates"] == result["scheduler_updates"] == result["ema_updates"] == 6000
+    for arm in ("G2", "G3"):
+        assert result[arm]["average_mAP"] == observed[arm]["metrics"]["average_mAP"]
+        assert 0 < result[arm]["average_mAP"] < 1
+        assert f"{100 * result[arm]['average_mAP']:.4f}%" in entry["final_result"]
+        assert result[arm]["receipt_sha256"] == observed[arm]["receipt_sha256"]
+        assert "COMPLETED" in entry["new_evaluation_states"][arm]
+    assert evidence["actions"]["new_slurm_jobs"] == []
