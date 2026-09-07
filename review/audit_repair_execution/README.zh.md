@@ -8,6 +8,7 @@
 - `full_method_witness.py`：动态预算、预算头与acquisition梯度、dual/cost EMA更新的实际batch正确性检查，模型在检查后丢弃，不生成科学结果。
 - `activate_dependency_refresh.py`：只更新补充coordinator；按实际登录host、进程owner和命令核验并重启，不停止训练进程。
 - `reserve_primary_gpu1.py`：针对实际发生的N16主方法续训资源冲突，暂停补充队列对两个GPU1节点的使用。在1278034的第1轮全状态保存后缩短其本次allocation，之后恢复仍使用同一任务checkpoint；它不是改变60轮训练预算的工具。
+- `collect_audit_validation_receipts.py`：读取指定主方法已完成的全量验证，核对源版本、配置/数据/初始化权重、211视频/792窗口和best身份后同步小型收据。原始预测保留在远端，不运行推理或训练；规范视频列表来自此前已核验的动态A第10轮收据。本次已用于动态A第25轮、固定A第15轮及固定C第5轮的真实产物，模型M不变。
 
 `audit_queue.py` 和 `full_method_witness.py` 放在操作员配置的 `control/` 目录，激活脚本在本地执行包目录运行并复用该包的SSH辅助函数。manifest和bindings由冻结M矩阵生成并绑定真实数据、初始化权重、环境和工作目录；本目录不携带凭据或数据。主方法配置 `primary_binding_paths=[]`，补充队列指向同服务器主队列bindings；`slurm_nice`分别0/10000。N16的 `control/gpu1_nodes.json` 包含已经实际验证能分配物理GPU1的节点，不凭CUDA逻辑索引猜测物理编号。
 
