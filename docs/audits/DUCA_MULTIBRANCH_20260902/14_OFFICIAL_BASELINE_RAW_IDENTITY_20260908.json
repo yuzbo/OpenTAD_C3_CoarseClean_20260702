@@ -1,0 +1,38 @@
+{
+  "source_path": "/data/run01/sczc063/yuzibo/projects/official_adatad_reproduction_01c58b9",
+  "source_sha": "01c58b9f2370e914150cf94d392208a4e211c053",
+  "source_status": "",
+  "run_path": "/data/run01/sczc063/yuzibo/projects/official_adatad_reproduction_run_01c58b9_seed42_commandfix_20260821",
+  "config_differences": [
+    {
+      "field": "work_dir",
+      "official": "exps/thumos/adatad/e2e_actionformer_videomae_s_768x1_160_adapter",
+      "recorded": "/data/run01/sczc063/yuzibo/projects/official_adatad_reproduction_run_01c58b9_seed42_commandfix_20260821/gpu2_id0/"
+    }
+  ],
+  "recorded_config_source": "/data/run01/sczc063/yuzibo/projects/official_adatad_reproduction_run_01c58b9_seed42_commandfix_20260821/slurm-1245842.out",
+  "checkpoint_path": "/data/run01/sczc063/yuzibo/projects/official_adatad_reproduction_run_01c58b9_seed42_commandfix_20260821/gpu2_id0/checkpoint/epoch_59.pth",
+  "checkpoint_bytes": 623799195,
+  "checkpoint_epoch": 59,
+  "checkpoint_keys": [
+    "epoch",
+    "optimizer",
+    "scheduler",
+    "state_dict",
+    "state_dict_ema"
+  ],
+  "ema_present": true,
+  "actual_optimizer_steps": [
+    5995.0
+  ],
+  "scheduler_last_epoch": 6000,
+  "pretrain_path": "/data/run01/sczc063/yuzibo/projects/official_adatad_reproduction_01c58b9/pretrained/vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth",
+  "pretrain_resolved_path": "/data/run01/sczc063/yuzibo/pretrained/vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth",
+  "limitations": [
+    "Current clean checkout does not alone prove historical clean state.",
+    "Current pretrain digest is not an independently verified published digest.",
+    "No mAP inference was run by this inspector.",
+    "Official-recipe training is not subject to the later strict6000 contract."
+  ],
+  "pretrain_current_sha256": "4b96b7f403f8ae0396437855b785af6a0064f11a9d76e2268e5a76a04e0de251"
+}
