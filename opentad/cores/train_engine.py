@@ -57,6 +57,9 @@ def train_one_epoch(
         update_audit.setdefault("optimizer_attempts", 0)
         update_audit.setdefault("amp_skipped_attempts", 0)
         update_audit.setdefault("max_amp_retries_observed", 0)
+        update_audit.setdefault("successful_optimizer_updates", 0)
+        update_audit.setdefault("scheduler_updates", 0)
+        update_audit.setdefault("ema_updates", 0)
     use_amp = False if scaler is None else True
 
     model.train()
@@ -88,11 +91,11 @@ def train_one_epoch(
             # successful update still corresponds to this exact sampled batch.
             with torch.cuda.amp.autocast(dtype=torch.float16, enabled=use_amp):
                 losses = model(**data_dict, return_loss=True)
-            if max_amp_retries_per_batch > 0 and not bool(
+            if (fail_on_skipped_update or max_amp_retries_per_batch > 0) and not bool(
                 torch.isfinite(losses["cost"]).all()
             ):
                 raise FloatingPointError(
-                    "S1 produced a non-finite loss before AMP scaling"
+                    "Training produced a non-finite loss before AMP scaling"
                 )
 
             if use_amp:
@@ -131,7 +134,7 @@ def train_one_epoch(
             if retry_count > max_amp_retries_per_batch:
                 if fail_on_skipped_update:
                     raise FloatingPointError(
-                        "S1 AMP could not produce a successful optimizer update "
+                        "AMP could not produce a successful optimizer update "
                         f"after {max_amp_retries_per_batch} retries"
                     )
                 break
@@ -144,13 +147,19 @@ def train_one_epoch(
             )
 
         successful_updates += int(update_succeeded)
+        if update_audit is not None:
+            update_audit["successful_optimizer_updates"] += int(update_succeeded)
 
         # update scheduler
         scheduler.step()
+        if update_audit is not None:
+            update_audit["scheduler_updates"] += 1
 
         # update ema
         if model_ema is not None:
             model_ema.update(model)
+            if update_audit is not None:
+                update_audit["ema_updates"] += 1
 
         # track all losses
         losses = reduce_loss(losses)  # only for log

@@ -7,6 +7,7 @@ selected_budget = 384
 scaffold_budget = 128
 burst_budget = 256
 chunk_num = selected_budget // 16  # 24 chunks of 16 frames
+ctdp_training = True
 
 model = dict(
     type="ActionFormer",
@@ -93,4 +94,6 @@ workflow = dict(
     val_eval_interval=2,
     val_start_epoch=40,
     end_epoch=60,
+    formal_successful_update_contract=True,
+    max_amp_retries_per_batch=8,
 )

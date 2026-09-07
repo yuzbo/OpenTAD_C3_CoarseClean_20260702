@@ -7358,3 +7358,17 @@ admissible replacement full-ASFormer gradient gate, bound to the full commit.
   负诊断。当前三档转移路线继续停止；当前唯一任务是完整 200-video training 与 211/212 held-out 身份审计。
 - 数据身份未经 Builder、独立 Critic、N16R4 CPU Evaluator 和 Pro 准入前，禁止模型代码、checkpoint、PRE_RUN、GPU、
   训练、held-out prediction 和 mAP。通过后才解锁固定 K384 与多预算暴露的两臂、三种子完整正式实验。
+
+## 2026-09-07 CT-DP successful-update deficit repair
+
+- The six-route supervision found actual AdamW steps 5997/5996/5996/5997
+  in CT-DP jobs 1267229-1267232, despite scheduler step 6000 and epoch59 EMA.
+  These runs remain protocol-invalid; no artifact or score is rewritten.
+- Branch `codex/duca-ctdp-successful-updates-20260907` connects CT-DP to
+  existing state-restoring AMP replay, fails on replay exhaustion, checks
+  optimizer/scheduler/EMA progress, and persists counters/scaler/RNG states.
+  It leaves CT-Tubelet, B-AMoD and the original LR/data recipe unchanged.
+- A two-epoch, three-batch-per-epoch real-video PRECHECK now replaces the
+  launcher-only compile check. CUDA admission and formal replacement jobs
+  are not claimed until their actual results/job identities are recorded.
+- Details: `experiments/ctdp-successful-update-repair-20260907.md`.

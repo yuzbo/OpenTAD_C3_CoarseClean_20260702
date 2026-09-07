@@ -28,6 +28,7 @@ def save_checkpoint(
     work_dir=None,
     experiment_metadata=None,
     experiment_sidecar_schema=None,
+    training_state=None,
 ):
     save_dir = os.path.join(work_dir, "checkpoint")
 
@@ -42,6 +43,8 @@ def save_checkpoint(
         save_states.update({"state_dict_ema": model_ema.module.state_dict()})
     if experiment_metadata is not None:
         save_states.update({"experiment_metadata": dict(experiment_metadata)})
+    if training_state is not None:
+        save_states["training_state"] = training_state
 
     if not os.path.exists(save_dir):
         os.mkdir(save_dir)
@@ -65,7 +68,7 @@ def save_checkpoint(
         ]
         if existing:
             raise FileExistsError(
-                f"refusing to overwrite frozen S1 checkpoint artifacts: {existing}"
+                f"refusing to overwrite frozen checkpoint artifacts: {existing}"
             )
         torch.save(save_states, checkpoint_tmp)
         sidecar = {

@@ -263,6 +263,9 @@ def test_train_one_epoch_replays_a_skipped_amp_batch_before_advancing(monkeypatc
         "optimizer_attempts": 3,
         "amp_skipped_attempts": 1,
         "max_amp_retries_observed": 1,
+        "successful_optimizer_updates": 2,
+        "scheduler_updates": 2,
+        "ema_updates": 0,
     }
     assert any("retry 1/4" in message for message in logger.messages)
 
@@ -288,6 +291,35 @@ def test_train_one_epoch_fails_when_amp_retry_limit_is_exhausted(monkeypatch):
 
     assert optimizer.steps == 0
     assert scheduler.steps == 0
+    assert model.loss_normalizer.value == 0
+
+
+def test_strict_nonfinite_cost_fails_before_optimizer_scheduler_and_ema(monkeypatch):
+    engine = _load_train_engine_with_fake_runtime(monkeypatch)
+    monkeypatch.setattr(engine.torch, "isfinite", lambda _: types.SimpleNamespace(all=lambda: False))
+    model, optimizer, scheduler = _ToyModel(), _ToyOptimizer(), _ToyScheduler()
+    ema_calls, audit = [], {}
+    with pytest.raises(FloatingPointError, match="non-finite loss"):
+        engine.train_one_epoch(_ToyLoader(1), model, optimizer, scheduler, 0, _Logger(),
+                               scaler=_ToyScaler(0), fail_on_skipped_update=True,
+                               max_amp_retries_per_batch=8, update_audit=audit,
+                               model_ema=types.SimpleNamespace(update=lambda _: ema_calls.append(1)))
+    assert model.backward_calls == optimizer.steps == scheduler.steps == len(ema_calls) == 0
+    assert audit["successful_optimizer_updates"] == audit["ema_updates"] == 0
+
+
+def test_strict_exhaustion_never_advances_ema_or_records_success(monkeypatch):
+    engine = _load_train_engine_with_fake_runtime(monkeypatch)
+    model, optimizer, scheduler = _ToyModel(True), _ToyOptimizer(), _ToyScheduler()
+    ema_calls, audit = [], {}
+    with pytest.raises(FloatingPointError, match="could not produce"):
+        engine.train_one_epoch(_ToyLoader(1), model, optimizer, scheduler, 0, _Logger(),
+                               scaler=_ToyScaler(10), fail_on_skipped_update=True,
+                               max_amp_retries_per_batch=2, update_audit=audit,
+                               model_ema=types.SimpleNamespace(update=lambda _: ema_calls.append(1)))
+    assert audit["amp_skipped_attempts"] == 3
+    assert audit["successful_optimizer_updates"] == audit["scheduler_updates"] == audit["ema_updates"] == 0
+    assert optimizer.steps == scheduler.steps == len(ema_calls) == 0
     assert model.loss_normalizer.value == 0
 
 
