@@ -55,6 +55,43 @@ def scheduled_script(script, primary_ids, nice, resumable=False):
     return script.replace('#!/usr/bin/env bash\n', '#!/usr/bin/env bash\n' + '\n'.join(directives) + '\n', 1)
 
 
+def refresh_primary_start_dependencies(bindings):
+    """Keep pending controls behind the current primary resume allocations."""
+    if not bindings['primary_binding_paths']:
+        return {}
+    primary_ids, waiting = primary_state(bindings)
+    if waiting or not primary_ids:
+        return {}
+    primary_ids = sorted(set(primary_ids), key=int)
+    root = Path(bindings['work_root'])
+    control = root.parent.parent / 'control'
+    prechecks_path = control / 'precheck_submissions.json'
+    prechecks = load(prechecks_path) if prechecks_path.exists() else {}
+    state_path = root / 'slurm_state.json'
+    states = load(state_path)['jobs'] if state_path.exists() else {}
+    owned = {str(row['slurm_id']) for row in list(prechecks.values()) + list(states.values())
+             if row.get('slurm_id')}
+    pending = set(subprocess.check_output(
+        ['squeue', '-h', '--me', '--states=PENDING', '-o', '%i'], text=True).split())
+    record_path = control / 'primary_start_dependencies.json'
+    records = load(record_path) if record_path.exists() else {}
+    updates = {}
+    for sid in sorted(owned & pending, key=int):
+        if records.get(sid, {}).get('primary_ids') == primary_ids:
+            continue
+        result = subprocess.run(
+            ['scontrol', 'update', 'JobId=' + sid, 'Dependency=after:' + ':'.join(primary_ids)],
+            capture_output=True, text=True)
+        updates[sid] = dict(primary_ids=primary_ids, updated_at=time.time(),
+                            status='UPDATED' if result.returncode == 0 else 'UPDATE_FAILED',
+                            stderr=result.stderr.strip())
+        if result.returncode == 0:
+            records[sid] = updates[sid]
+    if updates:
+        save(record_path, records)
+    return updates
+
+
 def precheck(args, bindings, queue):
     root = Path(bindings['work_root']).parent.parent
     control = root / 'control'
@@ -148,6 +185,7 @@ def main():
     while True:
         # Production queue is run for one scheduling pass. The supervisor
         # coordinates prechecks too, including after a storage block clears.
+        dependency_updates = refresh_primary_start_dependencies(bindings)
         queue.worker_script = original_worker
         status = precheck(args, bindings, queue)
         queue.worker_script = worker
@@ -155,7 +193,7 @@ def main():
         sys.argv = [sys.argv[0], '--manifest', str(args.manifest), '--bindings', str(args.bindings), '--execute']
         queue.main()
         state = load(root / 'slurm_state.json')
-        save(control / 'audit_progress.json', dict(updated_at=time.time(), pid=os.getpid(), host=socket.gethostname(), precheck_status=status, states={jid:state['jobs'][jid]['status'] for jid in bindings['assigned_training_ids']}))
+        save(control / 'audit_progress.json', dict(updated_at=time.time(), pid=os.getpid(), host=socket.gethostname(), precheck_status=status, primary_dependency_updates=dependency_updates, states={jid:state['jobs'][jid]['status'] for jid in bindings['assigned_training_ids']}))
         time.sleep(60)
 
 
