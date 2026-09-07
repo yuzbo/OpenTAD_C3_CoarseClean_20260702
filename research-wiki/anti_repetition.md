@@ -1425,3 +1425,13 @@ updated: 2026-08-31
     full-stack latency 失败，不得重跑、换 GPU/population、改门、增加 async/prefetch/worker tuning、模型救援或
     successor。该 STOP 只约束当前 R1 contiguous-support single-GPU 效率路线，不外推所有 decode reuse、动态计算、
     official test、训练泛化或边界保护；唯一下一动作是一次 fresh exact-Project Pro。
+55. 不得复用或续跑 D2S `1269331` 的
+    `d2s_tad_full200_compute_bfb402d6_formal_r3` 或 PA-TAD `1269332` 的
+    `patad_full200_compute_bfb402d6_formal_r2`。两者在候选 seed-4407 首个前向因
+    PyTorch 2.0.1 DDP 的 `device_ids=[local_rank]` 递归迁移 CPU `inputs.source`
+    而失败，未形成候选 update 或性能证据。唯一当前执行修复是 exact clean/pushed
+    `21aa2945b934a0dba469a517c224efe9b30d3967`：正式 DDP 必须使用
+    `device_ids=None` 保留调用方混合设备布局，且 precheck 必须通过相同两卡 DDP
+    前向。PRECHECK `1274657/1274658` 已 `COMPLETED 0:0`；新正式完整矩阵仅为
+    D2S `1274666` 与 PA-TAD `1274667`，各自使用全新 namespace。运行中、部分 cell、
+    recovery 或 epoch 日志均不得解释为准确率或论文证据。

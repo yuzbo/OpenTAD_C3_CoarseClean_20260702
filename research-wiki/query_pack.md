@@ -1547,6 +1547,23 @@ max_chars: 8000
   multi-seed, boundary-protection or universal decode-reuse claim. One fresh exact-
   Project Pro adjudication is mandatory before any successor.
 
+- **D2S/PA-TAD DDP execution repair and replacement deployment (2026-09-07).**
+  Exact runtime `bfb402d6...` formal jobs D2S `1269331` and PA-TAD `1269332`
+  completed as engineering failures when their candidate seed-4407 cell reached
+  its first forward. PyTorch 2.0.1 DDP with `device_ids=[local_rank]` recursively
+  moved structured `inputs.source` from CPU to CUDA, violating the registered
+  post-routing physical-gather contract; neither job produced a candidate update
+  or a model-performance result. Clean pushed repair
+  `21aa2945b934a0dba469a517c224efe9b30d3967` uses DDP with `device_ids=None`,
+  retaining caller-managed rank-local CUDA tensors while the uint8 source stays
+  on CPU. It also upgrades the pre-run witness to the actual two-rank DDP call.
+  D2S precheck `1274657` and PA-TAD precheck `1274658` both completed `0:0` and
+  proved 48 global chunks, 16 executed local chunks and 32 physical skips per
+  sample. Their audited candidate/D160 full-operator `C_exec` ratios are
+  `0.503766065467287` and `0.5040854723114946`. Fresh complete 3x3 formal jobs
+  D2S `1274666` and PA-TAD `1274667` were submitted in new namespaces; they are
+  running evidence acquisition, not completed accuracy or paper evidence.
+
 ## Pointers
 
 - GeoRoute implementation and gates:
