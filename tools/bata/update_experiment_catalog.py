@@ -178,23 +178,28 @@ def route_entries() -> list[dict[str, Any]]:
             "category": "correction_route",
             "name": "CT-DP 当前正式四臂：基础嵌入、CT-Tubelet、B-AMoD 及二者组合",
             "internal_id": "CT_DP_BAMOD_ACTIVE",
-            "current_cycle": "2026-09-07 已在独立 codex 分支落实修复，模型训练代码提交 3a9f3dfe，完整 admission 脚本提交 0aa72a60。CT-DP 接通既有同批 AMP replay、重试耗尽即失败，逐轮验证 optimizer/scheduler/EMA 更新相等，checkpoint 保存真实计数、GradScaler 与 RNG；真实 PRECHECK 为两轮各三批，明确非正式身份。CT-Tubelet、B-AMoD、数据和原始100轮余弦/60轮训练配方不变。本地40 passed/1 CUDA skipped，独立聚焦审阅无阻断发现；远端最终0aa72a60 clean exact-SHA同样40 passed/1 CUDA skipped。此前3a9f3dfe的GPU admission提交被AssocMaxSubmitJobLimit拒绝，无job id；0aa72a60已同步干净目录，等待额度后执行脚本内CUDA测试与G0-G3逐臂真实PRECHECK。尚未通过CUDA或重训，不能称完整部署",
+            "current_cycle": "2026-09-07 本轮GPU admission1276617暴露单进程CUDA测试错误调用分布式日志reduce_loss，48通过/1失败。stdout/stderr已读；78cde1be仅修正测试夹具，不改生产模型、AMP重放或学习率。本地40通过/1 CUDA跳过；完整Windows几何测试受c10.dll限制。GitHub已推送，远端增量Git bundle同步并核对GitHub分支SHA，clean Linux48通过/1 CUDA跳过。最终GPU admission1276643现已COMPLETED(0:0)，49测试及G0-G3各两轮三批真实PRECHECK全部通过、CTDP_ALL_PRECHECKS_OK。随后正式G0/G1/G2/G3分别提交1276669/1276670/1276671/1276672，afterok:1276643，新命名空间formal；没有把旧欠更新checkpoint继续训练或改称合格",
             "branch": "codex/duca-ctdp-successful-updates-20260907",
-            "sha": "0aa72a60c74309f1fff8142d2ab5fb71763622fd（待CUDA准入修复） / c0fae67a1236f2c47e6c2935d217659cd1f8fb9d（旧训练）",
-            "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/0aa72a60c74309f1fff8142d2ab5fb71763622fd",
+            "sha": "78cde1be1cb8b3acc7d750afc92ea740f2a03d06（更新合同及测试修复） / c0fae67a1236f2c47e6c2935d217659cd1f8fb9d（旧训练）",
+            "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/78cde1be1cb8b3acc7d750afc92ea740f2a03d06",
             "local_directory": "E:/DeskTop/TAD/_duca_fix_worktrees/ctdp_successful_updates",
             "supporting_local_directories": ["E:/DeskTop/TAD/OpenTAD_CTDP_FormalRepair_20260903"],
-            "remote_source": "/data/run01/sczc063/yuzibo/projects/ctdp_successful_updates_0aa72a60",
-            "repair_run_root": "/data/run01/sczc063/yuzibo/experiments/ctdp_successful_updates_0aa72a60",
+            "remote_source": "/data/run01/sczc063/yuzibo/projects/ctdp_successful_updates_78cde1be",
+            "repair_run_root": "/data/run01/sczc063/yuzibo/experiments/ctdp_successful_updates_78cde1be",
+            "admission_job": "1276643",
+            "admission_progress": "1276643 COMPLETED(0:0): 49 CUDA tests passed; CT_CUDA_GATE_OK; all G0-G3 real prechecks passed; CTDP_ALL_PRECHECKS_OK",
+            "formal_jobs": {"G0": "1276669", "G1": "1276670", "G2": "1276671", "G3": "1276672"},
+            "formal_job_states": {"G0": "RUNNING", "G1": "RUNNING", "G2": "PENDING AssocGrpGRES", "G3": "PENDING AssocGrpGRES"},
             "deployment_status": "G0/G1/G2/G3 训练 1267229/1267230/1267231/1267232 均 COMPLETED(0:0)，四个 epoch_59.pth/EMA 均存在。但 2026-09-07 直接读取 checkpoint，实际 optimizer step 分别只有 5997/5996/5996/5997，scheduler 均为 6000。源码确认该路线未启用正式 AMP replay，跳过更新仍推进 scheduler",
-            "result_status": "旧四臂仍为 PROTOCOL_ERROR；更新预算修复代码已提交并完成本地/远端CPU focused tests，CUDA admission因账户提交上限 BLOCKED_RESOURCE，尚无修复版正式性能",
+            "result_status": "旧四臂仍为PROTOCOL_ERROR；78cde1be已通过GPU/逐臂PRECHECK，四个修复版正式训练已提交，尚无新最终性能",
             "final_result": "仅保留旧训练 telemetry：Avg-mAP G0=14.71%、G1=14.84%、G2=56.15%、G3=57.84%；mAP@0.7=2.84/3.26/26.24/31.53%。旧 checkpoint 和日志不删除，不把 6000 scheduler steps 改称 6000 successful updates，也不据此裁决机制贡献",
-            "next_action": "额度释放后提交0aa72a60/scripts/run_duca_ctdp_cuda_gate_n16r4.sbatch：PROJECT_DIR绑定remote_source、CTDP_EXPECTED_COMMIT为完整0aa72a60 SHA、CTDP_RUN_ROOT为repair_run_root/precheck，stdout/stderr写入repair_run_root/slurm_logs。该作业内先跑focused/CUDA witness，再串行G0-G3真实PRECHECK；必须看到CTDP_ALL_PRECHECKS_OK才可在新formal命名空间重训四臂。禁止给旧checkpoint补造6000记录，不重复新作业，不以公共空卡数绕过账户限制",
+            "next_action": "监督1276669-1276672，日志repair_run_root/slurm_logs/formal_g{0..3}_JOB.out/.err；checkpoint预期repair_run_root/formal/duca_ctdp_geometry_g{0..3}_seed3407/gpu1_id0/checkpoint/epoch_59.pth。不得重复已通过admission或重提现有四臂。训练后仍需独立官方evaluator与自哈希receipt，不能把训练telemetry当最终性能；该独立评测闭环尚待接入",
         },
         {
             "category": "correction_route",
             "name": "DUCA-Unified 当前 41 单元正交消融控制台",
             "internal_id": "DUCA_UNIFIED_ACTIVE",
+            "current_cycle": "本轮只读定位确认：feature_attribution.py的Taylor函数仍无运行时调用；duca_online_frame_selector.py:449附近仍是GT边界utility代理；generate_duca_unified_fullmatrix.py:60附近把H65 original retention/transition映射为legacy_dual_phase。尚未修复，不删除阻塞标志或把元数据配置当成机制落地",
             "branch": "codex/duca-unified-formal-gates-20260903",
             "sha": "793c4f9cdf7dac4f224bc73012aff8bc93949f87",
             "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/793c4f9cdf7dac4f224bc73012aff8bc93949f87",
@@ -216,14 +221,17 @@ def route_entries() -> list[dict[str, Any]]:
             "deployment_status": "真实 CUDA/focused 门禁 1267855 已通过；D160 教师 1267884、G96 1268698、U16 1269124、LATE 1269129、NOKD 1269137、FULL 1269297 均 COMPLETED(0:0)，全部写出 6000-update epoch-59 receipt，screen_receipt_r2_1269297.json 为 PASS。评测器 29b5a7a2 已通过本地/远端 11 tests、21-cell validator 和双 GPU U16 PRECHECK 1269540。五臂评测 1269541 已生成 G96/U16/LATE/NOKD 四份 prediction receipt，FULL 因 DECORD EOF 失败；1269763 的首次定向重试又因 wrapper 未显式传入外部 D160 Teacher 路径而 fail-closed。读取两次日志后，1269771 显式绑定训练 checkout 的 Teacher config/checkpoint 及既有 SHA256、通过 PRECHECK，完成 FULL prediction 和五臂 metric opening，并于 10:16 CST COMPLETED(0:0)",
             "result_status": "PROTOCOL_ERROR：五臂和D160教师均不足6000次真实optimizer更新，无本合同下有效最终性能。84f1f035补封存保留了真实评测身份和数值，却沿用了错误的total_successful_updates字段；1274829完成及自哈希通过不能修复训练预算违规。原始评测和权重保留，以下数值仅供诊断",
             "final_result": "保留的协议不合格诊断数值：G96官方评估器Avg-mAP=50.93%，各阈值64.67/59.83/53.47/44.68/32.00%；U16均匀分块48.17%，63.50/57.95/50.12/40.46/28.84%；晚期融合LATE53.11%，68.84/63.39/56.05/45.40/31.88%；无蒸馏NOKD49.44%，64.86/58.81/51.60/41.85/30.09%；完整FULL52.38%，67.63/62.71/54.60/45.14/31.83%。五份旧receipt绑定seed4407/evaluator29b5a7a2，但其中自报6000 successful updates已被真实AdamW state证伪。FULL绑定539287fa的D160教师也只有5996更新。不得据此宣称满足严格预算、模型优劣或多种子显著性；原始分数和checkpoint不改写",
-            "next_action": "按710ce8a6精确SHA完成Linux focused、CUDA witness和真实2GPU PRECHECK；资源允许后在全新命名空间重训D160/G96/U16/LATE/NOKD，FULL必须等新D160达到epoch59 EMA/真实6000后再执行自己的PRECHECK及正式训练。先修复已证明的计数错误，不声称3-6次skip解释大幅性能差，也不按测试分数调参。历史1267920/1267921完全不动；不覆盖旧训练、收据或checkpoint",
+            "next_action": "监督新D160正式1276650和G96正式1276675，终态预期repair_run_root/work_dirs/bafdr_k16_{d160,g96}_seed4407/checkpoint/epoch_59.pth。U16/LATE/NOKD的PRECHECK已通过，正式训练仍待额度，不能遗漏。G96第一次提交因已完成的admission1276618被Slurm控制器清除而出现Job dependency problem（无job）；sacct确认COMPLETED及PRECHECK成功标记后去掉过期afterok，未改代码/模型，成功提交1276675。FULL仍须等待新D160终态后运行自己的PRECHECK及训练；旧五臂分数仅诊断",
             "receipt_sealing_branch": "codex/zoomtoken-bafdr-receipt-seal-20260907",
             "receipt_sealing_github": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/codex/zoomtoken-bafdr-receipt-seal-20260907",
             "supporting_local_directories": ["E:/DeskTop/TAD/_duca_fix_worktrees/bafdr_admission", "E:/DeskTop/TAD/_duca_fix_worktrees/bafdr_receipt_seal"],
             "remote_repair_source": "/data/run01/sczc063/yuzibo/projects/bafdr_successful_updates_710ce8a6",
             "repair_run_root": "/data/run01/sczc063/yuzibo/experiments/bafdr_successful_updates_710ce8a6",
             "observed_optimizer_steps": {"D160": 5996, "G96": 5997, "U16": 5996, "LATE": 5996, "NOKD": 5994, "FULL": 5995},
-            "repair_validation": {"commit": "710ce8a6246c471742c83bf7c180d9ab87c36fac", "local": "41 passed, 1 Windows Torch skipped", "remote_exact_clean_linux": "44 passed, 1 CUDA skipped", "cuda_and_two_gpu_precheck": "NOT_RUN_ACCOUNT_SUBMISSION_LIMIT", "formal_retraining": "NOT_SUBMITTED"},
+            "repair_validation": {"commit": "710ce8a6246c471742c83bf7c180d9ab87c36fac", "local": "41 passed, 1 Windows Torch skipped", "remote_exact_clean_linux": "44 passed, 1 CUDA skipped", "cuda_and_two_gpu_precheck": "1276618 COMPLETED(0:0): 45 tests passed; D160/G96/U16/LATE/NOKD各两轮三批，BAFDR_SUCCESSFUL_UPDATE_PRECHECKS_OK", "formal_retraining": "18:07 CST: D1601276650 RUNNING，epoch1完成，optimizer/scheduler/EMA各200更新、3次AMP replay、无非有限loss或耗尽；G961276675 PENDING(AssocGrpGRES)；U16/LATE/NOKD未提交，FULL等待新终态教师"},
+            "admission_job": "1276618",
+            "teacher_training_job": "1276650",
+            "g96_training_job": "1276675",
         },
         {
             "category": "correction_route",
@@ -250,7 +258,7 @@ def route_entries() -> list[dict[str, Any]]:
             "sha": "efe69d2ea10accd01d0129dfe99cba4d1d5773cb",
             "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/efe69d2ea10accd01d0129dfe99cba4d1d5773cb",
             "local_directory": "E:/DeskTop/TAD/NO_LOCAL_WORKTREE_FOR_EFE69D2E",
-            "deployment_status": "1266410-1266414 已产生 15 个 epoch-59 checkpoint；独立任务的 prediction eval 1267920 于 2026-09-04 05:47 CST FAILED(1:0)，postprocess 1267921 为 DependencyNeverSatisfied。该链由其他任务所有，本监督任务仅记录，不取消、不修改、不重提",
+            "deployment_status": "1266410-1266414已产生15个epoch59 checkpoint；独立prediction eval1267920 FAILED(1:0)。2026-09-07 17:57只读sacct显示1267921已由UID1258取消，本监督任务未执行该取消。该链仍归其他任务，本任务不修改、不重提",
             "result_status": "历史 exact-SHA 评测失败，尚无可报告终态指标",
             "final_result": "只按 efe69d2e 的真实训练/teacher/数据/evaluator receipts 报告，绝不迁移为当前 539287fa 结果",
             "next_action": "由历史评测任务读取 1267920 日志并决定修复；当前监督任务保持只读边界",
@@ -264,15 +272,20 @@ def route_entries() -> list[dict[str, Any]]:
             "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/73bdd34ae21c6c675a00d1927b8af7c12f9edc05",
             "local_directory": "E:/DeskTop/TAD/_duca_fix_worktrees/evidence_remaining_arms",
             "supporting_local_directories": ["E:/DeskTop/TAD/_duca_fix_worktrees/evidence_optimizer_repair", "E:/DeskTop/TAD/_duca_fix_worktrees/evidence_eval_repair", "E:/DeskTop/TAD/OpenTAD_Evidence_FormalRepair_20260903"],
-            "current_cycle": "2026-09-07 15:50 CST：A1/A6已完成epoch32/32，累计3300/3300 successful updates；F/A3/A4/A5已完成epoch21/21/22/22，累计2200/2200/2300/2300。各臂optimizer/scheduler/EMA计数相等；AMP skipped attempts依次7/9/5/4/2/2，nonfinite_loss_attempts及replay_exhaustions全部0，尚无epoch59。六臂均RUNNING，stdout/stderr无新故障，仅常规DDP/环境warning。A1/A6官方评测1274926_2/1274927_7、F评测1275691_1以及此前补齐的A3/A4/A5评测1276074_4/1276075_5/1276076_6均PENDING(Dependency)，逐臂afterok绑定正确；本轮未重复提交",
+            "current_cycle": "2026-09-07 17:46核查：正式1274924_2/7和1275675_1/4/5/6均已在16:49-16:56 FAILED(1:0)。六对stdout/stderr均定位到写入training_audit.json.tmp时Disk quota exceeded，不是非有限loss或replay耗尽。最后成功落盘的审计：A1/A6为4200/4200，F/A3/A4/A5为3100/3100/3200/3200，optimizer/scheduler/EMA计数相等，nonfinite_loss_attempts及replay_exhaustions均0。现有A1/A6 epoch39、其余epoch29检查点可加载，metadata自哈希、EMA/scaler/RNG和4000/3000更新记录存在。17:48小文件写入已恢复、df显示约510GB可用，未删除任何原始产物，也未证实配额由谁解除。本任务取消五个DependencyNeverSatisfied评测1274926_2/1274927_7/1275691_1/1276074_4/1276076_6；A4评测1276075_5此前已由UID1258取消。新存储恢复PRECHECK已提交：1276644_2/7及1276645_1/4/5/6，17:57为五项RUNNING、A5因AssocGrpGRES排队；没有正式续训或新最终mAP",
             "deployment_status": "C0 训练 1269374_0 / 官方评测 1270672_0 完成；A2 训练 1270870_3 / 独立官方评测 1274711_3 也完成，均为原始 246058f2 训练及评测语义。A2 epoch59 EMA/6000 成功更新训练审计和 evaluation_sha256 自哈希复算通过。旧 A1 1270870_2 在 epoch54 batch11 非有限 utility 失败；A6 1270870_7 在 epoch0 batch2 非有限 cost 失败。FP32 修复 9739811e 的 A6 正式重试 1274671_7 又在 epoch1 batch2 非有限 cost 失败，旧日志/checkpoint 全保留。真实 ViT optimizer 回归定位：forward 重新启用时间参数，但 custom optimizer 只含 adapter，时间参数未被 optimizer/GradScaler 管理，可能经全局 clipping 扩散 NaN。1570a725 补齐 continuous_timestamp_conditioner/relative_physical_time_scale 分组，使用 dynamic DDP 和 non-reentrant checkpoint 支持随真实窗口变化的时间分支；不关闭 time/merge/recovery。远端 clean exact-SHA admission 1274755 全部 49 tests PASS；真实视频 A1/A6 两轮各 200 batch PRECHECK 1274759_2/7 均 COMPLETED(0:0)。正式 A1/A6 1274924_2/7 已 RUNNING；独立官方 evaluator 1274926_2 / 1274927_7 分别 afterok 依赖对应训练任务，尚未运行",
-            "result_status": "C0和A2有官方结果；旧受影响的六臂结果不采用，六个修复臂RUNNING且六项逐臂afterok官方评测均已登记。完整Evidence机制仍未形成终态性能",
+            "result_status": "C0/A2原官方收据本轮可读且数值不变；其余六个正式训练因磁盘配额失败，无epoch59。恢复PRECHECK已重新部署，正式续训尚未部署；不能沿用旧RUNNING描述",
             "final_result": "C0 MATCHED_H65_60 Avg-mAP=59.23%，各 tIoU=75.22/70.01/61.54/50.90/38.48%。A2 NO_TIME official Avg-mAP=54.2756%，各 tIoU=72.2334/67.0169/57.6467/44.8214/29.6595%。C0 是 matched-H65 基线，A2 是关闭物理时间的消融，二者都不是完整 recovery 方法。test 792 次暴露对应 791 个唯一物理窗口（video_test_0001431|7680 重复），246058f2 按唯一物理窗口严格覆盖",
-            "next_action": "继续监督六臂到epoch59 EMA/6000 successful updates，并由已登记的六个afterok评测产生官方receipt。A3/A4/A5现已有1276074_4/1276075_5/1276076_6，禁止重复提交。任何失败先读日志再按独立修复流程处理；旧受影响checkpoint不纳入结果",
+            "next_action": "先收取1276644_2/7和1276645_1/4/5/6对应PRECHECK并确认写入稳定；保留全部旧job/log/checkpoint和审计。优先从A1/A6 epoch39、F/A3/A4/A5 epoch29续训，但当前restore_training_state严格绑定原runtime_config_sha256，直接更换work_dir会失败；必须完成不改变科学配置、保留旧身份的最小恢复接线及真实恢复验证后，才新job续训并登记六项新的afterok评测。不得修改旧审计来伪造目录匹配，不因存储故障修改模型，也不无记录从零重训",
             "remote_run_root": "/data/run01/sczc063/yuzibo/experiments/duca_evidence_optimizer_1570a725/formal",
             "remote_log_root": "/data/run01/sczc063/yuzibo/experiments/duca_evidence_optimizer_1570a725/slurm_logs",
             "remote_eval_root": "/data/run01/sczc063/yuzibo/experiments/duca_evidence_optimizer_1570a725/evaluation",
             "remaining_arms_remote_root": "/data/run01/sczc063/yuzibo/experiments/duca_evidence_remaining_73bdd34a",
+            "storage_recovery_root": "/data/run01/sczc063/yuzibo/experiments/duca_evidence_storage_recovery_20260907",
+            "storage_recovery_precheck_jobs": {"A1": "1276644_2", "A6": "1276644_7", "F": "1276645_1", "A3": "1276645_4", "A4": "1276645_5", "A5": "1276645_6"},
+            "storage_recovery_precheck_status": "18:07 CST 六项均RUNNING，18:01 stderr扫描没有新Traceback/RuntimeError/Disk quota；不是正式续训，尚未宣称PRECHECK通过",
+            "last_persisted_updates": {"A1": 4200, "A6": 4200, "F": 3100, "A3": 3100, "A4": 3200, "A5": 3200},
+            "recoverable_checkpoint_epochs": {"A1": 39, "A6": 39, "F": 29, "A3": 29, "A4": 29, "A5": 29},
         },
     ]
 
@@ -290,17 +303,20 @@ def catalog() -> dict[str, Any]:
         "entries": entries,
         "remote_supervisor": remote_receipt(),
         "cluster_observation": {
-            "checked_at_cst": "2026-09-07 16:13 CST",
-            "public_gpu_available": 19,
+            "checked_at_cst": "2026-09-07 18:07 CST",
+            "public_gpu_available": 22,
             "public_gpu_total": 240,
             "user_jobs_in_queue": 16,
-            "account_constraint": "16:13公共19/240可用，本用户仍占16项提交额度；最近15:53完整队列为9 RUNNING、7 PENDING。六项Evidence评测已经完整，不再补交。此前CT-DP admission被AssocMaxSubmitJobLimit拒绝；本轮提交前检查发现额度未释放，未重复sbatch。CT-DP最终0aa72a60远端clean；BAFDR710ce8a6已通过远端exact-clean Linux 44 tests，1 CUDA skipped，二者CUDA/真实PRECHECK和重训均须等待账户额度。历史BAFDR1267921仍只读，不取消它或其他任务腾额度",
+            "account_constraint": "18:07公共22/240可用，本用户13 RUNNING/3 PENDING。CT-DP G0/G1和BAFDR D160已正式RUNNING，CT-DP G2/G3与BAFDR G96因AssocGrpGRES排队；六项Evidence只是存储恢复PRECHECK运行中，不是正式续训。提交额度16已满，BAFDR U16/LATE/NOKD仍未提交。旧Evidence训练因Disk quota exceeded失败，五个死依赖评测由本任务取消并保留历史。当前小文件可写且df约510GB可用，但配额解除原因未确认，不删除旧实验腾空间。历史BAFDR1267921由其他操作者取消，本任务仅只读记录",
         },
         "measurement_scope": "当前比较以官方 TAD mAP、固定输入/更新预算和机制消融为主；不把端到端延迟、吞吐量或显存作为强制验收指标",
         "baseline_reference_note": "12_BASELINE_IDENTITY_CORRECTION_20260907.md",
         "baseline_comparison_policy": "区分上游公开结果、历史共享复现和本次修改协议实测；官方 evaluator 与完整 receipt 不代表官方训练 recipe 已复现。比较提升前须对齐预训练、数据、batch/曝光、学习率、坐标、模型选择和后处理，不能用较低参考数值替代约69/65的既有锚点，也不能把约69/65规定为每次运行必须达到的分数",
         "result_policy": "没有 exact SHA、clean-tree、epoch-59 EMA、6000 successful updates、官方 evaluator 和结构化自哈希 receipt，不得报告为最终科学结果；不得用 scheduler steps 替代 optimizer successful updates",
         "excluded_remote_jobs": [
+            {"job_ids": "BAFDR G96第一次提交失败，无job id", "remote_directory": "/data/run01/sczc063/yuzibo/experiments/bafdr_successful_updates_710ce8a6", "source_head": "710ce8a6246c471742c83bf7c180d9ab87c36fac", "reason": "sbatch --dependency=afterok:1276618返回Job dependency problem；scontrol证实该完成job已不在控制器，sacct仍为COMPLETED(0:0)，日志有BAFDR_SUCCESSFUL_UPDATE_PRECHECKS_OK。核验已满足前置验证后删除过期dependency参数，未修改模型或放宽门禁，成功提交新job1276675"},
+            {"job_ids": "1274924_2/1274924_7/1275675_1/1275675_4/1275675_5/1275675_6", "remote_directory": "/data/run01/sczc063/yuzibo/experiments/duca_evidence_optimizer_1570a725 + duca_evidence_remaining_73bdd34a", "source_head": "1570a725 / 73bdd34a", "reason": "六个正式训练在2026-09-07 16:49-16:56因Disk quota exceeded无法写training_audit临时文件而FAILED；六对stdout/stderr已读，无terminal epoch59。旧checkpoint可加载，不能称最终性能。其死依赖评测均已取消；新1276644/1276645仅是存储恢复PRECHECK，正式续训仍待恢复合同接线"},
+            {"job_ids": "1276617", "remote_directory": "/data/run01/sczc063/yuzibo/experiments/ctdp_successful_updates_0aa72a60", "source_head": "0aa72a60c74309f1fff8142d2ab5fb71763622fd", "reason": "GPU admission的CUDA witness未初始化分布式进程组而调用日志reduce_loss，48 passed/1 failed；未执行后续G0-G3真实PRECHECK。已读stdout/stderr，78cde1be只修复测试夹具，保留生产机制并以1276643重跑"},
             {"job_ids": "1267884/1268698/1269124/1269129/1269137/1269297", "remote_directory": "/data/run01/sczc063/yuzibo/experiments/zoomtoken_bafdr_539287fa_seed4407", "source_head": "539287fa8a035765afd7e79863ce77278bef83f2", "reason": "2026-09-07读取六对stdout/stderr及terminal AdamW state：D160/G96/U16/LATE/NOKD/FULL只有5996/5997/5996/5996/5994/5995次真实更新，而scheduler与receipt均6000。自报计数及补封存未识别GradScaler skip；此前严格6000有效结论撤回。新710ce8a6修复重放及consumer校验，旧产物只读保留，不迁移为新结果"},
             {"job_ids": "2026-09-07 本轮CT-DP admission提交失败，无job id", "remote_directory": "/data/run01/sczc063/yuzibo/projects/ctdp_successful_updates_3a9f3dfe", "source_head": "3a9f3dfe753a55a7aa09119d771e5808f14e0b23", "reason": "exact-SHA CPU40tests通过后，单GPU admission sbatch返回AssocMaxSubmitJobLimit / Job violates accounting/QOS policy；stdout/stderr已完整读取。旧作业/模型不动。后继0aa72a60仅将相同验证流程保存到已有sbatch脚本，远端clean checkout与CPU40tests已准备；额度释放后提交最终SHA的CUDA+四臂真实PRECHECK，不得把当前状态写成CUDA通过"},
             {"job_ids": "2026-09-07 13:18 CST 提交失败，无 job id", "remote_directory": "/data/run01/sczc063/yuzibo/projects/duca_evidence_remaining_73bdd34a", "source_head": "73bdd34ae21c6c675a00d1927b8af7c12f9edc05", "reason": "Evidence A3 官方评测 --array=4 --dependency=afterok:1275675_4 的 sbatch 返回 AssocMaxSubmitJobLimit / Job violates accounting/QOS policy；stdout/stderr 已完整读取。F 评测 1275691_1 已成功，A4/A5 未继续尝试。资源类提交失败不改模型代码，额度释放后仅补任务 4/5/6"},
@@ -375,6 +391,12 @@ def md_text(payload: dict[str, Any]) -> str:
         deployment = entry["deployment_status"]
         if entry.get("current_cycle"):
             deployment += f"<br>本轮更新：{entry['current_cycle']}"
+        if entry.get("admission_progress"):
+            deployment += f"<br>GPU准入：{entry['admission_progress']}"
+        if entry.get("formal_job_states"):
+            deployment += "<br>正式作业：" + "; ".join(f"{arm}={state}" for arm, state in entry["formal_job_states"].items())
+        if entry.get("storage_recovery_precheck_status"):
+            deployment += f"<br>恢复预检：{entry['storage_recovery_precheck_status']}"
         if entry.get("repair_validation"):
             validation = entry["repair_validation"]
             deployment += f"<br>修复验证：本地 {validation['local']}；远端精确干净 SHA {validation['remote_exact_clean_linux']}；CUDA/双GPU预检 {validation['cuda_and_two_gpu_precheck']}；正式重训 {validation['formal_retraining']}"
@@ -402,7 +424,7 @@ def md_text(payload: dict[str, Any]) -> str:
         lines.append(f"| `{item['job_ids']}` | `{item['remote_directory']}` | `{item['source_head'][:8]}` | {item['reason']} |")
     lines += [
         "",
-        f"结果规则：{payload['result_policy']}。H65本协议参考臂/F01-F06、Evidence C0/A2及ET-TRC OFF/ON已有可追溯的官方终态数值，H65基线身份仍按单独纠正说明区分。BAFDR原官方评测数值仍真实存在，但本轮发现教师及五臂的真实optimizer更新均不足6000，撤回其严格预算合格结论；事后补封存和自哈希不能修复此缺陷。CT-DP旧结果同样更新不足，修复已提交但CUDA验证/重训待资源；DUCA-Unified仍缺机制实现。完整receipt不等于官方配方复现、模型无错或机制有效；不得从admission或中期验证推导最终mAP。",
+        f"结果规则：{payload['result_policy']}。H65本协议参考臂/F01-F06、Evidence C0/A2及ET-TRC OFF/ON已有可追溯的官方终态数值，H65基线身份仍按单独纠正说明区分。BAFDR旧五臂及教师真实optimizer不足6000，旧分数仅诊断；修复版GPU验证通过后D160/G96已提交，U16/LATE/NOKD及FULL仍待部署。CT-DP旧结果同样更新不足，修复版四臂已通过准入并提交正式重训，尚非最终性能。Evidence六个未完正式训练因磁盘配额失败，恢复PRECHECK已提交，不冒称仍在正式训练。DUCA-Unified仍缺机制实现。完整receipt不等于官方配方复现、模型无错或机制有效；不得从admission或中期验证推导最终mAP。",
         "",
     ]
     return "\n".join(lines)
