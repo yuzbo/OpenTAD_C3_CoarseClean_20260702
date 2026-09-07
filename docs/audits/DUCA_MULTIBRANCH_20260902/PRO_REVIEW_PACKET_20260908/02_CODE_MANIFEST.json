@@ -1,0 +1,1109 @@
+{
+  "schema_version": 1,
+  "scope": "本任务负责的六条路线；不将其他所有者的 Spatial-Zoom、SparseHead、GeoSparse 等分支纳入",
+  "repository": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702",
+  "official_reference": {
+    "repository": "https://github.com/sming256/OpenTAD",
+    "snapshot_sha": "346d09d19e2091372cec48172dbe40f7b28bdee6",
+    "published_avg_map_percent": 69.03,
+    "warning": "Snapshot of official main at review time, not proof of the published checkpoint training revision. REF-D768 67.58 is a modified-protocol reference, not verified original AdaTAD."
+  },
+  "coordination_branch": "codex/duca-multibranch-audit-20260902",
+  "context_evidence_sha": "327df30525d3e093ad4ad59b6a00674440c28283",
+  "results_snapshot_cst": "2026-09-08 00:37 +08:00",
+  "results_snapshot_note": "代码索引刷新不等于本轮重新 SSH 检查队列或重算性能。",
+  "routes": [
+    {
+      "id": "h65",
+      "name": "H65-Pro：语义相位选帧、时间定位及因素消融",
+      "primary": "h65_train",
+      "evaluation": "h65_evaluator",
+      "seed": 3407,
+      "frozen_branch": "codex/h65-pro-fullmatrix-strict60-20260902",
+      "frozen_sha": "cfb7041d876f6e38e9ef6ce77cef7cee04b79659",
+      "status": "F01-F06 已有终态官方结果，但全部 phase=0；不能代表四相完整方案已验证。"
+    },
+    {
+      "id": "ctdp",
+      "name": "CT-DP：非均匀时间嵌入、检测几何与稀疏骨干路由",
+      "primary": "ctdp_train",
+      "evaluation": "ctdp_evaluator",
+      "seed": 3407,
+      "frozen_branch": "codex/duca-ctdp-geometry-mechanism-correction-20260902",
+      "frozen_sha": "2b7f81808006c6cb09a4d21a7f6fdc8ed3f6babc",
+      "status": "成功更新计数已修复；G0/G1 坐标闭环缺陷仍在；G0-G3 不包含开启 B-AMoD 的机制消融。"
+    },
+    {
+      "id": "unified",
+      "name": "DUCA-Unified：manifest 驱动的系统因素控制实验",
+      "primary": "unified_implementation",
+      "evaluation": null,
+      "seed": {
+        "development": 3407,
+        "confirmation": [
+          4407,
+          5407,
+          6407
+        ]
+      },
+      "frozen_branch": "codex/duca-unified-fullmatrix-20260902",
+      "frozen_sha": "89b9ea3e8e018b41034917ee14de7f409354a7e9",
+      "status": "41 个配置存在；Taylor P0/P1 和历史 H65 retention/transition 运行时机制仍被显式阻断。"
+    },
+    {
+      "id": "bafdr",
+      "name": "BAFDR：全局低分辨率载体、局部块路由和教师蒸馏",
+      "primary": "bafdr_train",
+      "evaluation": "bafdr_old_receipt",
+      "seed": 4407,
+      "frozen_branch": "codex/zoomtoken-bafdr-gradient-correction-20260902",
+      "frozen_sha": "fdeaeb98340bf7070201a02feb8093f50486aeaa",
+      "status": "修复成功更新后的重新训练与旧 5994-5997 更新结果严格区分；旧 receipt seal 不是新结果。"
+    },
+    {
+      "id": "ettrc",
+      "name": "ET-TRC：保持密集状态的 Transformer 局部残差近似",
+      "primary": "ettrc_train",
+      "evaluation": "ettrc_evaluator",
+      "seed": 4407,
+      "frozen_branch": "codex/zoomtoken-et-trc-correction-20260902",
+      "frozen_sha": "59eab0c6aaacf5039d2ae20969a6dd5772bcb80f",
+      "status": "正式训练 OFF/ON 已出分；当前是固定 stride anchor + learned low-rank surrogate，不是已完成事件策略。"
+    },
+    {
+      "id": "evidence",
+      "name": "Evidence-Recovery：预选阶段语义侦察、空洞控制与证据恢复",
+      "primary": "evidence_resume",
+      "evaluation": "evidence_resume",
+      "seed": 8261,
+      "frozen_branch": "codex/duca-evidence-recovery-numerical-correction-20260902",
+      "frozen_sha": "08d425a259fc468dde7c496e77b4c43e953d8d0c",
+      "status": "最新恢复 SHA 与 C0/A2、A1/A6、F/A3-A5 原始训练来源不同；最终 receipt 必须保留恢复谱系。"
+    }
+  ],
+  "snapshots": [
+    {
+      "id": "official_adatad",
+      "route": "Official AdaTAD",
+      "role": "官方原始源码参考；优先核对模型和完整配方，不能只对比帧数",
+      "repository": "https://github.com/sming256/OpenTAD",
+      "branch": "main",
+      "sha": "346d09d19e2091372cec48172dbe40f7b28bdee6",
+      "local": null,
+      "full_runtime": true,
+      "patterns": [
+        "configs/adatad/README.md",
+        "configs/adatad/thumos/e2e_thumos_videomae_s_768x1_160_adapter.py"
+      ],
+      "focus": [
+        "configs/adatad/thumos/e2e_thumos_videomae_s_768x1_160_adapter.py",
+        "opentad/models/backbones/vit_adapter.py",
+        "opentad/models/backbones/backbone_wrapper.py",
+        "opentad/models/detectors/actionformer.py",
+        "opentad/cores/optimizer.py",
+        "opentad/cores/train_engine.py"
+      ],
+      "remote_head_verified": "346d09d19e2091372cec48172dbe40f7b28bdee6",
+      "commit_time": "2026-07-14T15:56:15+08:00",
+      "commit_subject": "Enforce long type for labels when using one class (#75)",
+      "commit_url": "https://github.com/sming256/OpenTAD/commit/346d09d19e2091372cec48172dbe40f7b28bdee6",
+      "branch_url": "https://github.com/sming256/OpenTAD/tree/main",
+      "omitted_credential_bearing_files": [],
+      "exported_file_count": 169,
+      "exported_source_bytes": 917491,
+      "archive_prefix": "snapshots/official_adatad__346d09d1/",
+      "focus_links": [
+        {
+          "path": "configs/adatad/thumos/e2e_thumos_videomae_s_768x1_160_adapter.py",
+          "url": "https://github.com/sming256/OpenTAD/blob/346d09d19e2091372cec48172dbe40f7b28bdee6/configs/adatad/thumos/e2e_thumos_videomae_s_768x1_160_adapter.py"
+        },
+        {
+          "path": "opentad/models/backbones/vit_adapter.py",
+          "url": "https://github.com/sming256/OpenTAD/blob/346d09d19e2091372cec48172dbe40f7b28bdee6/opentad/models/backbones/vit_adapter.py"
+        },
+        {
+          "path": "opentad/models/backbones/backbone_wrapper.py",
+          "url": "https://github.com/sming256/OpenTAD/blob/346d09d19e2091372cec48172dbe40f7b28bdee6/opentad/models/backbones/backbone_wrapper.py"
+        },
+        {
+          "path": "opentad/models/detectors/actionformer.py",
+          "url": "https://github.com/sming256/OpenTAD/blob/346d09d19e2091372cec48172dbe40f7b28bdee6/opentad/models/detectors/actionformer.py"
+        },
+        {
+          "path": "opentad/cores/optimizer.py",
+          "url": "https://github.com/sming256/OpenTAD/blob/346d09d19e2091372cec48172dbe40f7b28bdee6/opentad/cores/optimizer.py"
+        },
+        {
+          "path": "opentad/cores/train_engine.py",
+          "url": "https://github.com/sming256/OpenTAD/blob/346d09d19e2091372cec48172dbe40f7b28bdee6/opentad/cores/train_engine.py"
+        }
+      ]
+    },
+    {
+      "id": "h65_train",
+      "route": "H65-Pro",
+      "role": "当前 F 臂训练实现",
+      "branch": "codex/h65-pro-physical-time-optimizer-repair-20260904",
+      "sha": "f2068e18e2c68bdbdd7a607b47f32d05ac3beed7",
+      "local": "E:/DeskTop/TAD/_duca_fix_worktrees/h65_admission",
+      "full_runtime": true,
+      "patterns": [
+        "configs/adatad/thumos/h65_pro/*",
+        "tools/bata/*h65*",
+        "tools/experiments/*h65*",
+        "scripts/*h65_60*",
+        "tests/*h65*",
+        "tests/*duca*optimizer*",
+        "docs/experiments/h65_pro_fullmatrix_20260902/03_EXPERIMENT_MATRIX.csv"
+      ],
+      "focus": [
+        "configs/adatad/thumos/h65_pro/base_h65_pro_strict60.py",
+        "tools/bata/generate_h65_pro_fullmatrix.py",
+        "opentad/models/duca/acquisition.py",
+        "opentad/models/selectors/pc_ot_mras_prebackbone_frame_selector.py",
+        "opentad/models/backbones/vit_adapter.py",
+        "opentad/cores/optimizer.py"
+      ],
+      "remote_head_verified": "f2068e18e2c68bdbdd7a607b47f32d05ac3beed7",
+      "commit_time": "2026-09-04T08:00:27+08:00",
+      "commit_subject": "Stabilize H65 boundary comparison test",
+      "commit_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/f2068e18e2c68bdbdd7a607b47f32d05ac3beed7",
+      "branch_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/codex/h65-pro-physical-time-optimizer-repair-20260904",
+      "local_head": "f2068e18e2c68bdbdd7a607b47f32d05ac3beed7",
+      "local_tracked_clean": true,
+      "local_untracked_count": 0,
+      "omitted_credential_bearing_files": [],
+      "exported_file_count": 276,
+      "exported_source_bytes": 3205520,
+      "archive_prefix": "snapshots/h65_train__f2068e18/",
+      "focus_links": [
+        {
+          "path": "configs/adatad/thumos/h65_pro/base_h65_pro_strict60.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/f2068e18e2c68bdbdd7a607b47f32d05ac3beed7/configs/adatad/thumos/h65_pro/base_h65_pro_strict60.py"
+        },
+        {
+          "path": "tools/bata/generate_h65_pro_fullmatrix.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/f2068e18e2c68bdbdd7a607b47f32d05ac3beed7/tools/bata/generate_h65_pro_fullmatrix.py"
+        },
+        {
+          "path": "opentad/models/duca/acquisition.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/f2068e18e2c68bdbdd7a607b47f32d05ac3beed7/opentad/models/duca/acquisition.py"
+        },
+        {
+          "path": "opentad/models/selectors/pc_ot_mras_prebackbone_frame_selector.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/f2068e18e2c68bdbdd7a607b47f32d05ac3beed7/opentad/models/selectors/pc_ot_mras_prebackbone_frame_selector.py"
+        },
+        {
+          "path": "opentad/models/backbones/vit_adapter.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/f2068e18e2c68bdbdd7a607b47f32d05ac3beed7/opentad/models/backbones/vit_adapter.py"
+        },
+        {
+          "path": "opentad/cores/optimizer.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/f2068e18e2c68bdbdd7a607b47f32d05ac3beed7/opentad/cores/optimizer.py"
+        }
+      ]
+    },
+    {
+      "id": "h65_reference",
+      "route": "H65-Pro",
+      "role": "已出分 REF-D768 / REF-U384 的历史训练实现，不是当前 F 臂",
+      "branch": "codex/h65-pro-admission-fix-20260902",
+      "sha": "e553a5a4a1063a755900d3dfa4bf8909bf97d466",
+      "local": null,
+      "full_runtime": false,
+      "patterns": [
+        "configs/adatad/thumos/h65_pro/*",
+        "opentad/cores/optimizer.py",
+        "tools/experiments/*h65*"
+      ],
+      "focus": [
+        "configs/adatad/thumos/h65_pro/h65_pro_ref_d768.py",
+        "configs/adatad/thumos/h65_pro/h65_pro_ref_u384.py"
+      ],
+      "remote_head_verified": "e553a5a4a1063a755900d3dfa4bf8909bf97d466",
+      "commit_time": "2026-09-03T16:05:59+08:00",
+      "commit_subject": "fix(h65): pad short-window coordinates to frame budget",
+      "commit_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/e553a5a4a1063a755900d3dfa4bf8909bf97d466",
+      "branch_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/codex/h65-pro-admission-fix-20260902",
+      "omitted_credential_bearing_files": [],
+      "exported_file_count": 62,
+      "exported_source_bytes": 780272,
+      "archive_prefix": "snapshots/h65_reference__e553a5a4/",
+      "focus_links": [
+        {
+          "path": "configs/adatad/thumos/h65_pro/h65_pro_ref_d768.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/e553a5a4a1063a755900d3dfa4bf8909bf97d466/configs/adatad/thumos/h65_pro/h65_pro_ref_d768.py"
+        },
+        {
+          "path": "configs/adatad/thumos/h65_pro/h65_pro_ref_u384.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/e553a5a4a1063a755900d3dfa4bf8909bf97d466/configs/adatad/thumos/h65_pro/h65_pro_ref_u384.py"
+        }
+      ]
+    },
+    {
+      "id": "h65_evaluator",
+      "route": "H65-Pro",
+      "role": "独立评测器，不替代训练 SHA",
+      "branch": "codex/h65-pro-eval-binding-repair-20260903",
+      "sha": "67c8f39fa7d20b865a0f77adf75d418a374c7ff5",
+      "local": "E:/DeskTop/TAD/_duca_fix_worktrees/h65_eval_repair",
+      "full_runtime": false,
+      "patterns": [
+        "tools/experiments/*h65*",
+        "tools/bata/*h65*",
+        "tests/*h65*",
+        "opentad/evaluations/*",
+        "opentad/models/utils/post_processing/*"
+      ],
+      "focus": [
+        "tools/experiments/run_h65_pro_eval.sbatch",
+        "tools/test.py"
+      ],
+      "remote_head_verified": "67c8f39fa7d20b865a0f77adf75d418a374c7ff5",
+      "commit_time": "2026-09-04T02:39:48+08:00",
+      "commit_subject": "fix H65 terminal evaluation identity",
+      "commit_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/67c8f39fa7d20b865a0f77adf75d418a374c7ff5",
+      "branch_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/codex/h65-pro-eval-binding-repair-20260903",
+      "local_head": "67c8f39fa7d20b865a0f77adf75d418a374c7ff5",
+      "local_tracked_clean": true,
+      "local_untracked_count": 0,
+      "omitted_credential_bearing_files": [],
+      "exported_file_count": 49,
+      "exported_source_bytes": 833799,
+      "archive_prefix": "snapshots/h65_evaluator__67c8f39f/",
+      "focus_links": [
+        {
+          "path": "tools/experiments/run_h65_pro_eval.sbatch",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/67c8f39fa7d20b865a0f77adf75d418a374c7ff5/tools/experiments/run_h65_pro_eval.sbatch"
+        },
+        {
+          "path": "tools/test.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/67c8f39fa7d20b865a0f77adf75d418a374c7ff5/tools/test.py"
+        }
+      ]
+    },
+    {
+      "id": "ctdp_train",
+      "route": "CT-DP",
+      "role": "当前 successful-update 修复训练实现；坐标问题尚未修复",
+      "branch": "codex/duca-ctdp-successful-updates-20260907",
+      "sha": "78cde1be1cb8b3acc7d750afc92ea740f2a03d06",
+      "local": "E:/DeskTop/TAD/_duca_fix_worktrees/ctdp_successful_updates",
+      "full_runtime": true,
+      "patterns": [
+        "configs/adatad/thumos/duca_ct*",
+        "configs/adatad/thumos/duca_dual_phase*",
+        "scripts/*ctdp*",
+        "scripts/*duca_ct*",
+        "tools/bata/*ctdp*",
+        "tests/*ctdp*",
+        "tests/test_ct_advanced_mechanisms.py",
+        "docs/methods/2026-09-01-duca-ct-dp-bamod-comprehensive-roadmap-report.md"
+      ],
+      "focus": [
+        "configs/adatad/thumos/duca_ctdp_geometry_g0.py",
+        "configs/adatad/thumos/duca_ctdp_geometry_g1.py",
+        "configs/adatad/thumos/duca_ctdp_geometry_g2.py",
+        "configs/adatad/thumos/duca_ctdp_geometry_g3.py",
+        "configs/adatad/thumos/duca_ctdp_mechanism_m00.py",
+        "configs/adatad/thumos/duca_ctdp_mechanism_m01.py",
+        "configs/adatad/thumos/duca_ctdp_mechanism_m10.py",
+        "configs/adatad/thumos/duca_ctdp_mechanism_m11.py",
+        "opentad/models/selectors/dual_phase_frame_selector.py",
+        "opentad/models/dense_heads/anchor_free_head.py",
+        "opentad/models/utils/post_processing/utils.py",
+        "tools/bata/ctdp_training.py"
+      ],
+      "remote_head_verified": "78cde1be1cb8b3acc7d750afc92ea740f2a03d06",
+      "commit_time": "2026-09-07T17:52:11+08:00",
+      "commit_subject": "test(ctdp): isolate single-process CUDA witness logging",
+      "commit_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/78cde1be1cb8b3acc7d750afc92ea740f2a03d06",
+      "branch_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/codex/duca-ctdp-successful-updates-20260907",
+      "local_head": "78cde1be1cb8b3acc7d750afc92ea740f2a03d06",
+      "local_tracked_clean": true,
+      "local_untracked_count": 0,
+      "omitted_credential_bearing_files": [],
+      "exported_file_count": 262,
+      "exported_source_bytes": 2575397,
+      "archive_prefix": "snapshots/ctdp_train__78cde1be/",
+      "focus_links": [
+        {
+          "path": "configs/adatad/thumos/duca_ctdp_geometry_g0.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/78cde1be1cb8b3acc7d750afc92ea740f2a03d06/configs/adatad/thumos/duca_ctdp_geometry_g0.py"
+        },
+        {
+          "path": "configs/adatad/thumos/duca_ctdp_geometry_g1.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/78cde1be1cb8b3acc7d750afc92ea740f2a03d06/configs/adatad/thumos/duca_ctdp_geometry_g1.py"
+        },
+        {
+          "path": "configs/adatad/thumos/duca_ctdp_geometry_g2.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/78cde1be1cb8b3acc7d750afc92ea740f2a03d06/configs/adatad/thumos/duca_ctdp_geometry_g2.py"
+        },
+        {
+          "path": "configs/adatad/thumos/duca_ctdp_geometry_g3.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/78cde1be1cb8b3acc7d750afc92ea740f2a03d06/configs/adatad/thumos/duca_ctdp_geometry_g3.py"
+        },
+        {
+          "path": "configs/adatad/thumos/duca_ctdp_mechanism_m00.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/78cde1be1cb8b3acc7d750afc92ea740f2a03d06/configs/adatad/thumos/duca_ctdp_mechanism_m00.py"
+        },
+        {
+          "path": "configs/adatad/thumos/duca_ctdp_mechanism_m01.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/78cde1be1cb8b3acc7d750afc92ea740f2a03d06/configs/adatad/thumos/duca_ctdp_mechanism_m01.py"
+        },
+        {
+          "path": "configs/adatad/thumos/duca_ctdp_mechanism_m10.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/78cde1be1cb8b3acc7d750afc92ea740f2a03d06/configs/adatad/thumos/duca_ctdp_mechanism_m10.py"
+        },
+        {
+          "path": "configs/adatad/thumos/duca_ctdp_mechanism_m11.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/78cde1be1cb8b3acc7d750afc92ea740f2a03d06/configs/adatad/thumos/duca_ctdp_mechanism_m11.py"
+        },
+        {
+          "path": "opentad/models/selectors/dual_phase_frame_selector.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/78cde1be1cb8b3acc7d750afc92ea740f2a03d06/opentad/models/selectors/dual_phase_frame_selector.py"
+        },
+        {
+          "path": "opentad/models/dense_heads/anchor_free_head.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/78cde1be1cb8b3acc7d750afc92ea740f2a03d06/opentad/models/dense_heads/anchor_free_head.py"
+        },
+        {
+          "path": "opentad/models/utils/post_processing/utils.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/78cde1be1cb8b3acc7d750afc92ea740f2a03d06/opentad/models/utils/post_processing/utils.py"
+        },
+        {
+          "path": "tools/bata/ctdp_training.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/78cde1be1cb8b3acc7d750afc92ea740f2a03d06/tools/bata/ctdp_training.py"
+        }
+      ]
+    },
+    {
+      "id": "ctdp_evaluator",
+      "route": "CT-DP",
+      "role": "为 78cde1be 绑定的独立评测器",
+      "branch": "codex/duca-ctdp-terminal-eval-20260907",
+      "sha": "11ced13ac6b72091d26405c5d6f152f09914c22d",
+      "local": "E:/DeskTop/TAD/_duca_fix_worktrees/ctdp_terminal_eval",
+      "full_runtime": false,
+      "patterns": [
+        "scripts/*ctdp*",
+        "tools/bata/*ctdp*",
+        "tests/*ctdp*",
+        "opentad/evaluations/*",
+        "opentad/models/utils/post_processing/*"
+      ],
+      "focus": [
+        "tools/bata/ctdp_terminal_receipt.py",
+        "scripts/run_ctdp_terminal_eval_n16r4.sbatch"
+      ],
+      "remote_head_verified": "11ced13ac6b72091d26405c5d6f152f09914c22d",
+      "commit_time": "2026-09-07T21:17:36+08:00",
+      "commit_subject": "feat(ctdp): evaluate frozen terminal EMA with verified update counts",
+      "commit_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/11ced13ac6b72091d26405c5d6f152f09914c22d",
+      "branch_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/codex/duca-ctdp-terminal-eval-20260907",
+      "local_head": "11ced13ac6b72091d26405c5d6f152f09914c22d",
+      "local_tracked_clean": true,
+      "local_untracked_count": 0,
+      "omitted_credential_bearing_files": [],
+      "exported_file_count": 36,
+      "exported_source_bytes": 399528,
+      "archive_prefix": "snapshots/ctdp_evaluator__11ced13a/",
+      "focus_links": [
+        {
+          "path": "tools/bata/ctdp_terminal_receipt.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/11ced13ac6b72091d26405c5d6f152f09914c22d/tools/bata/ctdp_terminal_receipt.py"
+        },
+        {
+          "path": "scripts/run_ctdp_terminal_eval_n16r4.sbatch",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/11ced13ac6b72091d26405c5d6f152f09914c22d/scripts/run_ctdp_terminal_eval_n16r4.sbatch"
+        }
+      ]
+    },
+    {
+      "id": "unified_implementation",
+      "route": "DUCA-Unified",
+      "role": "当前系统消融实现，缺失机制仍阻塞正式矩阵",
+      "branch": "codex/duca-unified-formal-gates-20260903",
+      "sha": "793c4f9cdf7dac4f224bc73012aff8bc93949f87",
+      "local": "E:/DeskTop/TAD/OpenTAD_DUCA_Unified_FormalGates_20260903",
+      "full_runtime": true,
+      "patterns": [
+        "configs/adatad/thumos/duca_unified_fullmatrix/*",
+        "scripts/duca_unified_fullmatrix/*",
+        "tools/bata/*duca_unified*",
+        "tests/*duca_unified*",
+        "docs/experiments/duca_unified_matrix_manifest.yaml",
+        "docs/experiments/DUCA_UNIFIED_FULLMATRIX_FREEZE.md"
+      ],
+      "focus": [
+        "docs/experiments/duca_unified_matrix_manifest.yaml",
+        "tools/bata/generate_duca_unified_fullmatrix.py",
+        "scripts/duca_unified_fullmatrix/matrix.json",
+        "opentad/models/duca/acquisition.py",
+        "opentad/models/selectors/pc_ot_mras_prebackbone_frame_selector.py",
+        "opentad/models/bricks/scale_adaptive_conv1d.py"
+      ],
+      "remote_head_verified": "793c4f9cdf7dac4f224bc73012aff8bc93949f87",
+      "commit_time": "2026-09-03T14:44:56+08:00",
+      "commit_subject": "fix(unified): keep mechanism gates and make profiling optional",
+      "commit_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/793c4f9cdf7dac4f224bc73012aff8bc93949f87",
+      "branch_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/codex/duca-unified-formal-gates-20260903",
+      "local_head": "793c4f9cdf7dac4f224bc73012aff8bc93949f87",
+      "local_tracked_clean": true,
+      "local_untracked_count": 0,
+      "omitted_credential_bearing_files": [],
+      "exported_file_count": 298,
+      "exported_source_bytes": 3187125,
+      "archive_prefix": "snapshots/unified_implementation__793c4f9c/",
+      "focus_links": [
+        {
+          "path": "docs/experiments/duca_unified_matrix_manifest.yaml",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/793c4f9cdf7dac4f224bc73012aff8bc93949f87/docs/experiments/duca_unified_matrix_manifest.yaml"
+        },
+        {
+          "path": "tools/bata/generate_duca_unified_fullmatrix.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/793c4f9cdf7dac4f224bc73012aff8bc93949f87/tools/bata/generate_duca_unified_fullmatrix.py"
+        },
+        {
+          "path": "scripts/duca_unified_fullmatrix/matrix.json",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/793c4f9cdf7dac4f224bc73012aff8bc93949f87/scripts/duca_unified_fullmatrix/matrix.json"
+        },
+        {
+          "path": "opentad/models/duca/acquisition.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/793c4f9cdf7dac4f224bc73012aff8bc93949f87/opentad/models/duca/acquisition.py"
+        },
+        {
+          "path": "opentad/models/selectors/pc_ot_mras_prebackbone_frame_selector.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/793c4f9cdf7dac4f224bc73012aff8bc93949f87/opentad/models/selectors/pc_ot_mras_prebackbone_frame_selector.py"
+        },
+        {
+          "path": "opentad/models/bricks/scale_adaptive_conv1d.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/793c4f9cdf7dac4f224bc73012aff8bc93949f87/opentad/models/bricks/scale_adaptive_conv1d.py"
+        }
+      ]
+    },
+    {
+      "id": "bafdr_train",
+      "route": "BAFDR",
+      "role": "当前 6000 successful-update 修复训练实现",
+      "branch": "codex/zoomtoken-bafdr-successful-updates-20260907",
+      "sha": "710ce8a6246c471742c83bf7c180d9ab87c36fac",
+      "local": "E:/DeskTop/TAD/_duca_fix_worktrees/bafdr_successful_updates",
+      "full_runtime": true,
+      "patterns": [
+        "configs/adatad/thumos/bafdr_k16*",
+        "tools/bata/*bafdr*",
+        "scripts/*bafdr*",
+        "tests/*bafdr*",
+        "docs/methods/bafdr_k16_implementation_map.md"
+      ],
+      "focus": [
+        "configs/adatad/thumos/bafdr_k16_full_seed4407.py",
+        "tools/bata/bafdr_k16_fullmatrix_train.py",
+        "tools/bata/bafdr_k16_fullmatrix.py",
+        "tools/bata/bafdr_training_contract.py",
+        "opentad/datasets/transforms/bafdr.py",
+        "opentad/models/backbones/bafdr_wrapper.py",
+        "opentad/models/projections/bafdr_asymmetric_proj.py"
+      ],
+      "remote_head_verified": "710ce8a6246c471742c83bf7c180d9ab87c36fac",
+      "commit_time": "2026-09-07T16:05:29+08:00",
+      "commit_subject": "Fix BA-FDR successful optimizer update accounting and replay",
+      "commit_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/710ce8a6246c471742c83bf7c180d9ab87c36fac",
+      "branch_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/codex/zoomtoken-bafdr-successful-updates-20260907",
+      "local_head": "710ce8a6246c471742c83bf7c180d9ab87c36fac",
+      "local_tracked_clean": true,
+      "local_untracked_count": 0,
+      "omitted_credential_bearing_files": [],
+      "exported_file_count": 295,
+      "exported_source_bytes": 3530675,
+      "archive_prefix": "snapshots/bafdr_train__710ce8a6/",
+      "focus_links": [
+        {
+          "path": "configs/adatad/thumos/bafdr_k16_full_seed4407.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/710ce8a6246c471742c83bf7c180d9ab87c36fac/configs/adatad/thumos/bafdr_k16_full_seed4407.py"
+        },
+        {
+          "path": "tools/bata/bafdr_k16_fullmatrix_train.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/710ce8a6246c471742c83bf7c180d9ab87c36fac/tools/bata/bafdr_k16_fullmatrix_train.py"
+        },
+        {
+          "path": "tools/bata/bafdr_k16_fullmatrix.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/710ce8a6246c471742c83bf7c180d9ab87c36fac/tools/bata/bafdr_k16_fullmatrix.py"
+        },
+        {
+          "path": "tools/bata/bafdr_training_contract.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/710ce8a6246c471742c83bf7c180d9ab87c36fac/tools/bata/bafdr_training_contract.py"
+        },
+        {
+          "path": "opentad/datasets/transforms/bafdr.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/710ce8a6246c471742c83bf7c180d9ab87c36fac/opentad/datasets/transforms/bafdr.py"
+        },
+        {
+          "path": "opentad/models/backbones/bafdr_wrapper.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/710ce8a6246c471742c83bf7c180d9ab87c36fac/opentad/models/backbones/bafdr_wrapper.py"
+        },
+        {
+          "path": "opentad/models/projections/bafdr_asymmetric_proj.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/710ce8a6246c471742c83bf7c180d9ab87c36fac/opentad/models/projections/bafdr_asymmetric_proj.py"
+        }
+      ]
+    },
+    {
+      "id": "bafdr_old_receipt",
+      "route": "BAFDR",
+      "role": "旧结果独立补封存；不能使 5994-5997 次更新成为合格 6000",
+      "branch": "codex/zoomtoken-bafdr-receipt-seal-20260907",
+      "sha": "84f1f0356766ed9e695ff55244b0a1ad429cd84c",
+      "local": "E:/DeskTop/TAD/_duca_fix_worktrees/bafdr_receipt_seal",
+      "full_runtime": false,
+      "patterns": [
+        "tools/bata/*bafdr*",
+        "scripts/*bafdr*",
+        "tests/*bafdr*"
+      ],
+      "focus": [
+        "tools/bata/seal_bafdr_receipt.py",
+        "tools/bata/bafdr_k16_fullmatrix_train.py"
+      ],
+      "remote_head_verified": "84f1f0356766ed9e695ff55244b0a1ad429cd84c",
+      "commit_time": "2026-09-07T12:03:46+08:00",
+      "commit_subject": "Add retrospective BAFDR receipt sealing without changing evaluation provenance",
+      "commit_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/84f1f0356766ed9e695ff55244b0a1ad429cd84c",
+      "branch_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/codex/zoomtoken-bafdr-receipt-seal-20260907",
+      "local_head": "84f1f0356766ed9e695ff55244b0a1ad429cd84c",
+      "local_tracked_clean": true,
+      "local_untracked_count": 0,
+      "omitted_credential_bearing_files": [],
+      "exported_file_count": 58,
+      "exported_source_bytes": 1518431,
+      "archive_prefix": "snapshots/bafdr_old_receipt__84f1f035/",
+      "focus_links": [
+        {
+          "path": "tools/bata/seal_bafdr_receipt.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/84f1f0356766ed9e695ff55244b0a1ad429cd84c/tools/bata/seal_bafdr_receipt.py"
+        },
+        {
+          "path": "tools/bata/bafdr_k16_fullmatrix_train.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/84f1f0356766ed9e695ff55244b0a1ad429cd84c/tools/bata/bafdr_k16_fullmatrix_train.py"
+        }
+      ]
+    },
+    {
+      "id": "ettrc_train",
+      "route": "ET-TRC",
+      "role": "OFF/ON 已出分的正式训练实现",
+      "branch": "codex/zoomtoken-et-trc-formal-repair-20260903",
+      "sha": "74473c2775caebf0da9d368ce8009d78e2942098",
+      "local": "E:/DeskTop/TAD/zoomtoken_ettrc_correction_20260902",
+      "full_runtime": true,
+      "patterns": [
+        "configs/adatad/thumos/et_trc*",
+        "tools/bata/*et_trc*",
+        "tools/bata/*ettrc*",
+        "scripts/*et_trc*",
+        "scripts/*ettrc*",
+        "tests/*et_trc*",
+        "tests/*ettrc*",
+        "docs/methods/ZOOMTOKEN_ET_TRC_TAYLOR_MANIFOLD_DESIGN.md"
+      ],
+      "focus": [
+        "configs/adatad/thumos/et_trc_videomae_s_768x1_160_adapter_seed4407.py",
+        "configs/adatad/thumos/et_trc_videomae_s_768x1_160_adapter_off_seed4407.py",
+        "configs/adatad/thumos/continuous_roi_s2_v3_d160_seed4407.py",
+        "opentad/models/backbones/et_trc_videomae.py",
+        "opentad/models/backbones/backbone_wrapper.py"
+      ],
+      "remote_head_verified": "74473c2775caebf0da9d368ce8009d78e2942098",
+      "commit_time": "2026-09-03T14:41:15+08:00",
+      "commit_subject": "fix(et-trc): gate formal pair on real two-GPU update",
+      "commit_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/74473c2775caebf0da9d368ce8009d78e2942098",
+      "branch_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/codex/zoomtoken-et-trc-formal-repair-20260903",
+      "local_head": "74473c2775caebf0da9d368ce8009d78e2942098",
+      "local_tracked_clean": true,
+      "local_untracked_count": 0,
+      "omitted_credential_bearing_files": [],
+      "exported_file_count": 260,
+      "exported_source_bytes": 3367470,
+      "archive_prefix": "snapshots/ettrc_train__74473c27/",
+      "focus_links": [
+        {
+          "path": "configs/adatad/thumos/et_trc_videomae_s_768x1_160_adapter_seed4407.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/74473c2775caebf0da9d368ce8009d78e2942098/configs/adatad/thumos/et_trc_videomae_s_768x1_160_adapter_seed4407.py"
+        },
+        {
+          "path": "configs/adatad/thumos/et_trc_videomae_s_768x1_160_adapter_off_seed4407.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/74473c2775caebf0da9d368ce8009d78e2942098/configs/adatad/thumos/et_trc_videomae_s_768x1_160_adapter_off_seed4407.py"
+        },
+        {
+          "path": "configs/adatad/thumos/continuous_roi_s2_v3_d160_seed4407.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/74473c2775caebf0da9d368ce8009d78e2942098/configs/adatad/thumos/continuous_roi_s2_v3_d160_seed4407.py"
+        },
+        {
+          "path": "opentad/models/backbones/et_trc_videomae.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/74473c2775caebf0da9d368ce8009d78e2942098/opentad/models/backbones/et_trc_videomae.py"
+        },
+        {
+          "path": "opentad/models/backbones/backbone_wrapper.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/74473c2775caebf0da9d368ce8009d78e2942098/opentad/models/backbones/backbone_wrapper.py"
+        }
+      ]
+    },
+    {
+      "id": "ettrc_evaluator",
+      "route": "ET-TRC",
+      "role": "当前独立终态 EMA 评测器；不是新训练模型",
+      "branch": "codex/zoomtoken-ettrc-terminal-eval-20260907",
+      "sha": "67d7079d0d1c33e129d31cd3a45aaf93a67db252",
+      "local": "E:/DeskTop/TAD/_duca_fix_worktrees/ettrc_terminal_eval",
+      "full_runtime": false,
+      "patterns": [
+        "tools/bata/*ettrc*",
+        "scripts/*ettrc*",
+        "tests/*ettrc*",
+        "opentad/evaluations/*",
+        "opentad/models/utils/post_processing/*"
+      ],
+      "focus": [
+        "tools/bata/ettrc_terminal_receipt.py",
+        "scripts/run_ettrc_terminal_eval_n16r4.sbatch"
+      ],
+      "remote_head_verified": "67d7079d0d1c33e129d31cd3a45aaf93a67db252",
+      "commit_time": "2026-09-07T13:07:17+08:00",
+      "commit_subject": "Write independent ETTRC terminal EMA official evaluation receipts",
+      "commit_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/67d7079d0d1c33e129d31cd3a45aaf93a67db252",
+      "branch_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/codex/zoomtoken-ettrc-terminal-eval-20260907",
+      "local_head": "67d7079d0d1c33e129d31cd3a45aaf93a67db252",
+      "local_tracked_clean": true,
+      "local_untracked_count": 0,
+      "omitted_credential_bearing_files": [],
+      "exported_file_count": 53,
+      "exported_source_bytes": 1452583,
+      "archive_prefix": "snapshots/ettrc_evaluator__67d7079d/",
+      "focus_links": [
+        {
+          "path": "tools/bata/ettrc_terminal_receipt.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/67d7079d0d1c33e129d31cd3a45aaf93a67db252/tools/bata/ettrc_terminal_receipt.py"
+        },
+        {
+          "path": "scripts/run_ettrc_terminal_eval_n16r4.sbatch",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/67d7079d0d1c33e129d31cd3a45aaf93a67db252/scripts/run_ettrc_terminal_eval_n16r4.sbatch"
+        }
+      ]
+    },
+    {
+      "id": "evidence_resume",
+      "route": "Evidence-Recovery",
+      "role": "当前存储迁移/精确恢复实现；需保留原始训练来源",
+      "branch": "codex/duca-evidence-storage-resume-20260907",
+      "sha": "ce767b4df49a82b42f4fab4897ac4ea562e4b548",
+      "local": "E:/DeskTop/TAD/_duca_fix_worktrees/evidence_storage_resume",
+      "full_runtime": true,
+      "patterns": [
+        "configs/adatad/thumos/duca_evidence_recovery*",
+        "tools/bata/*duca_evidence*",
+        "scripts/*duca_evidence*",
+        "tests/*duca_evidence*",
+        "tests/*duca_optimizer*",
+        "docs/experiments/DUCA_EVIDENCE_STORAGE_RESUME_20260907.md"
+      ],
+      "focus": [
+        "configs/adatad/thumos/duca_evidence_recovery_base.py",
+        "configs/adatad/thumos/duca_evidence_recovery_full.py",
+        "opentad/models/duca/evidence_recovery.py",
+        "opentad/models/bricks/dense_temporal_recovery.py",
+        "opentad/models/bricks/bounded_interval_adapter.py",
+        "opentad/models/bricks/temporal_token_merge.py",
+        "scripts/run_duca_evidence_recovery_train_array_n16r4.sbatch",
+        "scripts/run_duca_evidence_recovery_eval_array_n16r4.sbatch",
+        "tools/train.py",
+        "tools/test.py"
+      ],
+      "remote_head_verified": "ce767b4df49a82b42f4fab4897ac4ea562e4b548",
+      "commit_time": "2026-09-07T19:42:35+08:00",
+      "commit_subject": "Preserve original workdir spelling in Evidence resume binding",
+      "commit_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/ce767b4df49a82b42f4fab4897ac4ea562e4b548",
+      "branch_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/codex/duca-evidence-storage-resume-20260907",
+      "local_head": "ce767b4df49a82b42f4fab4897ac4ea562e4b548",
+      "local_tracked_clean": true,
+      "local_untracked_count": 0,
+      "omitted_credential_bearing_files": [],
+      "exported_file_count": 267,
+      "exported_source_bytes": 3174926,
+      "archive_prefix": "snapshots/evidence_resume__ce767b4d/",
+      "focus_links": [
+        {
+          "path": "configs/adatad/thumos/duca_evidence_recovery_base.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/ce767b4df49a82b42f4fab4897ac4ea562e4b548/configs/adatad/thumos/duca_evidence_recovery_base.py"
+        },
+        {
+          "path": "configs/adatad/thumos/duca_evidence_recovery_full.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/ce767b4df49a82b42f4fab4897ac4ea562e4b548/configs/adatad/thumos/duca_evidence_recovery_full.py"
+        },
+        {
+          "path": "opentad/models/duca/evidence_recovery.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/ce767b4df49a82b42f4fab4897ac4ea562e4b548/opentad/models/duca/evidence_recovery.py"
+        },
+        {
+          "path": "opentad/models/bricks/dense_temporal_recovery.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/ce767b4df49a82b42f4fab4897ac4ea562e4b548/opentad/models/bricks/dense_temporal_recovery.py"
+        },
+        {
+          "path": "opentad/models/bricks/bounded_interval_adapter.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/ce767b4df49a82b42f4fab4897ac4ea562e4b548/opentad/models/bricks/bounded_interval_adapter.py"
+        },
+        {
+          "path": "opentad/models/bricks/temporal_token_merge.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/ce767b4df49a82b42f4fab4897ac4ea562e4b548/opentad/models/bricks/temporal_token_merge.py"
+        },
+        {
+          "path": "scripts/run_duca_evidence_recovery_train_array_n16r4.sbatch",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/ce767b4df49a82b42f4fab4897ac4ea562e4b548/scripts/run_duca_evidence_recovery_train_array_n16r4.sbatch"
+        },
+        {
+          "path": "scripts/run_duca_evidence_recovery_eval_array_n16r4.sbatch",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/ce767b4df49a82b42f4fab4897ac4ea562e4b548/scripts/run_duca_evidence_recovery_eval_array_n16r4.sbatch"
+        },
+        {
+          "path": "tools/train.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/ce767b4df49a82b42f4fab4897ac4ea562e4b548/tools/train.py"
+        },
+        {
+          "path": "tools/test.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/ce767b4df49a82b42f4fab4897ac4ea562e4b548/tools/test.py"
+        }
+      ]
+    },
+    {
+      "id": "evidence_optimizer_source",
+      "route": "Evidence-Recovery",
+      "role": "A1/A6 恢复前训练来源",
+      "branch": "codex/duca-evidence-optimizer-repair-20260907",
+      "sha": "1570a72507491899a50767700a35a04eee3f5fe9",
+      "local": "E:/DeskTop/TAD/_duca_fix_worktrees/evidence_optimizer_repair",
+      "full_runtime": false,
+      "patterns": [
+        "configs/adatad/thumos/duca_evidence_recovery*",
+        "opentad/cores/optimizer.py",
+        "opentad/cores/train_engine.py",
+        "opentad/models/duca/evidence_recovery.py",
+        "opentad/models/bricks/bounded_interval_adapter.py",
+        "opentad/models/bricks/dense_temporal_recovery.py",
+        "scripts/*duca_evidence*",
+        "tests/*duca_optimizer*"
+      ],
+      "focus": [
+        "opentad/cores/optimizer.py",
+        "tools/train.py"
+      ],
+      "remote_head_verified": "1570a72507491899a50767700a35a04eee3f5fe9",
+      "commit_time": "2026-09-07T11:49:44+08:00",
+      "commit_subject": "Isolate injected time-gradient overflow in CUDA test",
+      "commit_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/1570a72507491899a50767700a35a04eee3f5fe9",
+      "branch_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/codex/duca-evidence-optimizer-repair-20260907",
+      "local_head": "1570a72507491899a50767700a35a04eee3f5fe9",
+      "local_tracked_clean": true,
+      "local_untracked_count": 0,
+      "omitted_credential_bearing_files": [],
+      "exported_file_count": 56,
+      "exported_source_bytes": 845520,
+      "archive_prefix": "snapshots/evidence_optimizer_source__1570a725/",
+      "focus_links": [
+        {
+          "path": "opentad/cores/optimizer.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/1570a72507491899a50767700a35a04eee3f5fe9/opentad/cores/optimizer.py"
+        },
+        {
+          "path": "tools/train.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/1570a72507491899a50767700a35a04eee3f5fe9/tools/train.py"
+        }
+      ]
+    },
+    {
+      "id": "evidence_remaining_source",
+      "route": "Evidence-Recovery",
+      "role": "F/A3/A4/A5 恢复前训练来源",
+      "branch": "codex/duca-evidence-remaining-arms-20260907",
+      "sha": "73bdd34ae21c6c675a00d1927b8af7c12f9edc05",
+      "local": "E:/DeskTop/TAD/_duca_fix_worktrees/evidence_remaining_arms",
+      "full_runtime": false,
+      "patterns": [
+        "configs/adatad/thumos/duca_evidence_recovery*",
+        "opentad/cores/optimizer.py",
+        "opentad/cores/train_engine.py",
+        "opentad/models/duca/evidence_recovery.py",
+        "scripts/*duca_evidence*"
+      ],
+      "focus": [
+        "tools/train.py",
+        "scripts/run_duca_evidence_recovery_train_array_n16r4.sbatch"
+      ],
+      "remote_head_verified": "73bdd34ae21c6c675a00d1927b8af7c12f9edc05",
+      "commit_time": "2026-09-07T12:54:46+08:00",
+      "commit_subject": "Add real-data optimizer prechecks for remaining Evidence arms",
+      "commit_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/73bdd34ae21c6c675a00d1927b8af7c12f9edc05",
+      "branch_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/codex/duca-evidence-remaining-arms-20260907",
+      "local_head": "73bdd34ae21c6c675a00d1927b8af7c12f9edc05",
+      "local_tracked_clean": true,
+      "local_untracked_count": 0,
+      "omitted_credential_bearing_files": [],
+      "exported_file_count": 57,
+      "exported_source_bytes": 828583,
+      "archive_prefix": "snapshots/evidence_remaining_source__73bdd34a/",
+      "focus_links": [
+        {
+          "path": "tools/train.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/73bdd34ae21c6c675a00d1927b8af7c12f9edc05/tools/train.py"
+        },
+        {
+          "path": "scripts/run_duca_evidence_recovery_train_array_n16r4.sbatch",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/73bdd34ae21c6c675a00d1927b8af7c12f9edc05/scripts/run_duca_evidence_recovery_train_array_n16r4.sbatch"
+        }
+      ]
+    },
+    {
+      "id": "evidence_published_results",
+      "route": "Evidence-Recovery",
+      "role": "C0/A2 已出分来源，不能归到最新恢复代码",
+      "branch": "codex/duca-evidence-fullgrid-repair-20260904",
+      "sha": "246058f2c24edc78818ada60eec26249bbf7d5d2",
+      "local": null,
+      "full_runtime": false,
+      "patterns": [
+        "configs/adatad/thumos/duca_evidence_recovery*",
+        "opentad/models/duca/evidence_recovery.py",
+        "scripts/*duca_evidence*"
+      ],
+      "focus": [
+        "configs/adatad/thumos/duca_evidence_recovery_matched_h65_60.py",
+        "configs/adatad/thumos/duca_evidence_recovery_no_time.py",
+        "tools/test.py"
+      ],
+      "remote_head_verified": "246058f2c24edc78818ada60eec26249bbf7d5d2",
+      "commit_time": "2026-09-04T03:00:58+08:00",
+      "commit_subject": "fix(evidence): validate normalized ledger positions",
+      "commit_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/246058f2c24edc78818ada60eec26249bbf7d5d2",
+      "branch_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/codex/duca-evidence-fullgrid-repair-20260904",
+      "omitted_credential_bearing_files": [],
+      "exported_file_count": 46,
+      "exported_source_bytes": 782289,
+      "archive_prefix": "snapshots/evidence_published_results__246058f2/",
+      "focus_links": [
+        {
+          "path": "configs/adatad/thumos/duca_evidence_recovery_matched_h65_60.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/246058f2c24edc78818ada60eec26249bbf7d5d2/configs/adatad/thumos/duca_evidence_recovery_matched_h65_60.py"
+        },
+        {
+          "path": "configs/adatad/thumos/duca_evidence_recovery_no_time.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/246058f2c24edc78818ada60eec26249bbf7d5d2/configs/adatad/thumos/duca_evidence_recovery_no_time.py"
+        },
+        {
+          "path": "tools/test.py",
+          "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/246058f2c24edc78818ada60eec26249bbf7d5d2/tools/test.py"
+        }
+      ]
+    }
+  ],
+  "github_heads_checked_at_utc": "2026-09-07T17:11:25.861094+00:00",
+  "related_github_heads": [
+    {
+      "branch": "codex/duca-cellcf-evidence-20260717",
+      "sha": "4ce69c852bdbd902046b47bc6019ae11e850dbe4"
+    },
+    {
+      "branch": "codex/duca-ctdp-admission-fix-20260902",
+      "sha": "d62cab763c8e0478e73c6c47a4c185db45164dda"
+    },
+    {
+      "branch": "codex/duca-ctdp-calibrated-revision-20260902",
+      "sha": "94cd08f24f46d3a446e21653b13f3514fc733413"
+    },
+    {
+      "branch": "codex/duca-ctdp-formal-repair-20260903",
+      "sha": "c0fae67a1236f2c47e6c2935d217659cd1f8fb9d"
+    },
+    {
+      "branch": "codex/duca-ctdp-geometry-mechanism-correction-20260902",
+      "sha": "2b7f81808006c6cb09a4d21a7f6fdc8ed3f6babc"
+    },
+    {
+      "branch": "codex/duca-ctdp-successful-updates-20260907",
+      "sha": "78cde1be1cb8b3acc7d750afc92ea740f2a03d06"
+    },
+    {
+      "branch": "codex/duca-ctdp-terminal-eval-20260907",
+      "sha": "11ced13ac6b72091d26405c5d6f152f09914c22d"
+    },
+    {
+      "branch": "codex/duca-evidence-a6-numerical-repair-20260904",
+      "sha": "9739811e89acef380806a271bc224c61c66bce0f"
+    },
+    {
+      "branch": "codex/duca-evidence-eval-path-repair-20260903",
+      "sha": "d6f1cc282ea29d2e0d9915338185c3c52401eb88"
+    },
+    {
+      "branch": "codex/duca-evidence-formal-repair-20260903",
+      "sha": "77c8d173c95aef153c04fd1355a0e75a63ff22c9"
+    },
+    {
+      "branch": "codex/duca-evidence-fullgrid-repair-20260904",
+      "sha": "246058f2c24edc78818ada60eec26249bbf7d5d2"
+    },
+    {
+      "branch": "codex/duca-evidence-optimizer-repair-20260907",
+      "sha": "1570a72507491899a50767700a35a04eee3f5fe9"
+    },
+    {
+      "branch": "codex/duca-evidence-recovery-diagnostic-20260902",
+      "sha": "acbc2443b0e8d010d8047a79d61968d7a6960aa4"
+    },
+    {
+      "branch": "codex/duca-evidence-recovery-fullmatrix-20260901",
+      "sha": "4f553174087f4bdcac63ce052a5589edc08e3f82"
+    },
+    {
+      "branch": "codex/duca-evidence-recovery-numerical-correction-20260902",
+      "sha": "08d425a259fc468dde7c496e77b4c43e953d8d0c"
+    },
+    {
+      "branch": "codex/duca-evidence-remaining-arms-20260907",
+      "sha": "73bdd34ae21c6c675a00d1927b8af7c12f9edc05"
+    },
+    {
+      "branch": "codex/duca-evidence-storage-resume-20260907",
+      "sha": "ce767b4df49a82b42f4fab4897ac4ea562e4b548"
+    },
+    {
+      "branch": "codex/duca-h65-60-curriculum-20260823",
+      "sha": "04c35a3b76897e6c1569eeede41ed3aecaf7f854"
+    },
+    {
+      "branch": "codex/duca-h65-60-lr-schedules-20260824",
+      "sha": "ae3642a138c5b2e1ac2daad75a6d43d17cdb6c2f"
+    },
+    {
+      "branch": "codex/duca-h65-first-matched-cycle3-20260822",
+      "sha": "5e4b7d3790803b5b7adcf7ee182d8e9d3b747ce5"
+    },
+    {
+      "branch": "codex/duca-h65-first-matched-cycle4-20260822",
+      "sha": "2edd62713199531ca7c165b843feb3bd7c364e0e"
+    },
+    {
+      "branch": "codex/duca-h65-first-matched-cycle5-20260822",
+      "sha": "800e8b70193d907c3554ceb60f7ee1ea7eca6c1f"
+    },
+    {
+      "branch": "codex/duca-h65-first-matched-cycle6-20260822",
+      "sha": "61397c0ed8beda8b0b87e1f6ca3be02046614e02"
+    },
+    {
+      "branch": "codex/duca-h65-first-singleclock-cycle2-20260822",
+      "sha": "e12257d77547efb82a36f01844ee2c9d6289ac32"
+    },
+    {
+      "branch": "codex/duca-h65-firstmix-singleclock-20260824",
+      "sha": "61065a50dc044f54876de5abfcad8c25559fede4"
+    },
+    {
+      "branch": "codex/duca-h65-pro-discussion-20260822",
+      "sha": "59f11325b1e84f7b14a428d14cd8e939d3c789b9"
+    },
+    {
+      "branch": "codex/duca-h65c-singleclock-unit1-20260822",
+      "sha": "87d9a1aef355a508b5324b0469f5a68d0f967cfe"
+    },
+    {
+      "branch": "codex/duca-multibranch-audit-20260902",
+      "sha": "327df30525d3e093ad4ad59b6a00674440c28283"
+    },
+    {
+      "branch": "codex/duca-unified-admission-gates-20260902",
+      "sha": "98d559ee414504caaa480294ce4d066276cdebe6"
+    },
+    {
+      "branch": "codex/duca-unified-formal-gates-20260903",
+      "sha": "793c4f9cdf7dac4f224bc73012aff8bc93949f87"
+    },
+    {
+      "branch": "codex/duca-unified-fullmatrix-20260902",
+      "sha": "89b9ea3e8e018b41034917ee14de7f409354a7e9"
+    },
+    {
+      "branch": "codex/duca-unified-single-seed-20260903",
+      "sha": "076f8e9821140e4ad90cc60961f484555a8e6bdf"
+    },
+    {
+      "branch": "codex/h65-pro-admission-fix-20260902",
+      "sha": "e553a5a4a1063a755900d3dfa4bf8909bf97d466"
+    },
+    {
+      "branch": "codex/h65-pro-eval-binding-repair-20260903",
+      "sha": "67c8f39fa7d20b865a0f77adf75d418a374c7ff5"
+    },
+    {
+      "branch": "codex/h65-pro-fullmatrix-strict60-20260902",
+      "sha": "cfb7041d876f6e38e9ef6ce77cef7cee04b79659"
+    },
+    {
+      "branch": "codex/h65-pro-paction-tolerance-repair-20260904",
+      "sha": "30514803d00bde579c9872cbcb77141aba8ecb3e"
+    },
+    {
+      "branch": "codex/h65-pro-physical-time-optimizer-repair-20260904",
+      "sha": "f2068e18e2c68bdbdd7a607b47f32d05ac3beed7"
+    },
+    {
+      "branch": "codex/zoomtoken-bafdr-admission-fix-20260903",
+      "sha": "54bd3cf2c69abe31f3385601e7055e66bf143273"
+    },
+    {
+      "branch": "codex/zoomtoken-bafdr-eval-metadata-repair-20260904",
+      "sha": "29b5a7a2b291203ea7b697cfe416b64f0d365d02"
+    },
+    {
+      "branch": "codex/zoomtoken-bafdr-eval-pipeline-repair-20260904",
+      "sha": "02d34e6b146c62df0300007d75019a6c665ef2cf"
+    },
+    {
+      "branch": "codex/zoomtoken-bafdr-gradient-correction-20260902",
+      "sha": "fdeaeb98340bf7070201a02feb8093f50486aeaa"
+    },
+    {
+      "branch": "codex/zoomtoken-bafdr-receipt-seal-20260907",
+      "sha": "84f1f0356766ed9e695ff55244b0a1ad429cd84c"
+    },
+    {
+      "branch": "codex/zoomtoken-bafdr-successful-updates-20260907",
+      "sha": "710ce8a6246c471742c83bf7c180d9ab87c36fac"
+    },
+    {
+      "branch": "codex/zoomtoken-et-trc-correction-20260902",
+      "sha": "e173f84ee6713e4e42bde61b5c5cd97afc20f1eb"
+    },
+    {
+      "branch": "codex/zoomtoken-et-trc-formal-repair-20260903",
+      "sha": "74473c2775caebf0da9d368ce8009d78e2942098"
+    },
+    {
+      "branch": "codex/zoomtoken-et-trc-taylor-manifold-v001",
+      "sha": "863c0e3995c2f8f6f0979e12534c08e90e3cb441"
+    },
+    {
+      "branch": "codex/zoomtoken-ettrc-terminal-eval-20260907",
+      "sha": "67d7079d0d1c33e129d31cd3a45aaf93a67db252"
+    }
+  ],
+  "legacy_integration_checkout": {
+    "local": "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702",
+    "branch": "codex/duca-unified-single-seed-20260903",
+    "local_head": "dd0efcbd466c368e16c9dbcb1779eedb1711ed2c",
+    "github_head": "076f8e9821140e4ad90cc60961f484555a8e6bdf",
+    "tracked_clean": false,
+    "included_as_current_six_route_source": false,
+    "note": "Local-only integration commits are not pushed or substituted for route sources."
+  },
+  "source_archive_local_path": "E:/DeskTop/TAD/_pro_review_packets/DUCA_SIX_ROUTES_20260908/DUCA_SIX_ROUTES_PRO_REVIEW_20260908.zip",
+  "source_archive_note": "Review subset exported byte-for-byte from exact Git blobs. Full opentad runtime for official reference and six primary implementations; selected lineage/evaluator supplements. Config base closure and statically named tools imports included. No data/checkpoints/logs. For executing tests or training use the full repository at the pinned SHA."
+}
