@@ -28,9 +28,11 @@ if str(root_dir) not in sys.path:
     sys.path.insert(0, str(root_dir))
 
 from opentad.cores import build_optimizer, build_scheduler, eval_one_epoch
+from opentad.cores.train_engine import _capture_model_buffers, _restore_model_buffers
 from opentad.datasets import build_dataloader, build_dataset
 from opentad.models import build_detector
 from opentad.utils import ModelEma, setup_logger
+from tools.bata.bafdr_training_contract import validate_terminal_checkpoint, validate_update_progress
 
 PROTOCOL_ID = "ZOOMTOKEN-BA-FDR-K16-FULLMATRIX-v001"
 EXPECTED_EPOCHS = 60
@@ -157,6 +159,7 @@ def validate_teacher_identity(
     checkpoint_epoch = checkpoint.get("epoch", checkpoint.get("meta", {}).get("epoch"))
     if checkpoint_epoch not in (59, "59"):
         raise RuntimeError(f"BAFDR teacher checkpoint must be terminal epoch 59, got {checkpoint_epoch!r}")
+    validate_terminal_checkpoint(checkpoint)
     checkpoint_sha = sha256_file(teacher_ckpt_path)
     config_sha = sha256_file(teacher_cfg_path)
     expected_checkpoint_sha = os.environ.get("BAFDR_TEACHER_CHECKPOINT_SHA256", "").strip().lower()
@@ -164,6 +167,10 @@ def validate_teacher_identity(
     teacher_commit = os.environ.get("BAFDR_TEACHER_COMMIT", "").strip()
     if not teacher_commit or len(teacher_commit) != 40 or any(c not in "0123456789abcdefABCDEF" for c in teacher_commit):
         raise RuntimeError("BAFDR-K16-FULL requires BAFDR_TEACHER_COMMIT as a full 40-character SHA")
+    if checkpoint.get("commit_sha") != teacher_commit:
+        raise RuntimeError("BAFDR teacher checkpoint commit differs from the bound teacher commit")
+    if checkpoint.get("arm") != "D160" or checkpoint.get("seed") != int(teacher_seed):
+        raise RuntimeError("BAFDR teacher checkpoint arm/seed mismatch")
     if expected_checkpoint_sha != checkpoint_sha:
         raise RuntimeError(
             "BAFDR teacher checkpoint SHA mismatch: "
@@ -596,60 +603,97 @@ def train_epoch(
     logger: Any,
     teacher: Optional[nn.Module] = None,
     use_amp: bool = True,
+    update_audit: Optional[Dict[str, int]] = None,
+    updates_per_epoch: int = EXPECTED_UPDATES_PER_EPOCH,
+    max_amp_retries_per_batch: int = 8,
 ) -> int:
     model.train()
     successful_updates = 0
+    audit = update_audit if update_audit is not None else {}
+    for key in ("optimizer_attempts", "amp_skipped_attempts", "replay_attempts",
+                "successful_optimizer_updates", "scheduler_updates", "ema_updates",
+                "nonfinite_loss_attempts", "replay_exhaustions"):
+        audit.setdefault(key, 0)
 
-    for _, data in enumerate(loader):
+    for batch_index, data in enumerate(loader):
         kwargs = prepare_forward_kwargs(data, device)
-        optimizer.zero_grad(set_to_none=True)
-        with autocast(enabled=use_amp):
-            losses = model(
-                inputs=kwargs["inputs"],
-                masks=kwargs["masks"],
-                metas=kwargs.get("metas", None),
-                gt_segments=kwargs["gt_segments"],
-                gt_labels=kwargs["gt_labels"],
-                return_loss=True,
-            )
-            base_loss = losses["cost"]
-            if teacher is not None:
-                if not isinstance(kwargs["inputs"], Mapping):
-                    raise TypeError("BA-FDR FULL distillation requires mapping inputs")
-                kd_losses = compute_bafdr_distillation_losses(
-                    student_model=model,
-                    teacher_model=teacher,
+        rng = (random.getstate(), np.random.get_state(), torch.get_rng_state(),
+               torch.cuda.get_rng_state_all() if use_amp else None)
+        buffers = _capture_model_buffers(model)
+        teacher_buffers = _capture_model_buffers(teacher) if teacher is not None else None
+        for attempt in range(max_amp_retries_per_batch + 1):
+            if attempt:
+                audit["replay_attempts"] += 1
+                random.setstate(rng[0])
+                np.random.set_state(rng[1])
+                torch.set_rng_state(rng[2])
+                if rng[3] is not None:
+                    torch.cuda.set_rng_state_all(rng[3])
+            optimizer.zero_grad(set_to_none=True)
+            with autocast(enabled=use_amp):
+                losses = model(
                     inputs=kwargs["inputs"],
                     masks=kwargs["masks"],
                     metas=kwargs.get("metas", None),
                     gt_segments=kwargs["gt_segments"],
                     gt_labels=kwargs["gt_labels"],
-                    device=device,
+                    return_loss=True,
                 )
-                distill_loss = sum(kd_losses.values())
-                losses.update(kd_losses)
-                losses["distill_loss"] = distill_loss
-                losses["cost"] = base_loss + distill_loss
+                base_loss = losses["cost"]
+                if teacher is not None:
+                    if not isinstance(kwargs["inputs"], Mapping):
+                        raise TypeError("BA-FDR FULL distillation requires mapping inputs")
+                    kd_losses = compute_bafdr_distillation_losses(
+                        student_model=model, teacher_model=teacher,
+                        inputs=kwargs["inputs"], masks=kwargs["masks"],
+                        metas=kwargs.get("metas", None),
+                        gt_segments=kwargs["gt_segments"], gt_labels=kwargs["gt_labels"],
+                        device=device,
+                    )
+                    distill_loss = sum(kd_losses.values())
+                    losses.update(kd_losses)
+                    losses["distill_loss"] = distill_loss
+                    losses["cost"] = base_loss + distill_loss
 
-        total_loss = losses["cost"]
-        scaler.scale(total_loss).backward()
-        scaler.unscale_(optimizer)
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-        scaler.step(optimizer)
-        scaler.update()
+            if not all(bool(torch.isfinite(value).all()) for value in losses.values()):
+                audit["nonfinite_loss_attempts"] += 1
+                raise FloatingPointError(f"BAFDR non-finite loss at epoch {epoch} batch {batch_index}")
+            scaler.scale(losses["cost"]).backward()
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            scale_before = float(scaler.get_scale())
+            audit["optimizer_attempts"] += 1
+            scaler.step(optimizer)
+            scaler.update()
+            if float(scaler.get_scale()) >= scale_before:
+                break
+            audit["amp_skipped_attempts"] += 1
+            # Retry the same sample without retaining failed-forward buffer/RNG effects.
+            _restore_model_buffers(model, buffers)
+            if teacher is not None:
+                _restore_model_buffers(teacher, teacher_buffers)
+            if attempt == max_amp_retries_per_batch:
+                audit["replay_exhaustions"] += 1
+                raise FloatingPointError(f"BAFDR AMP replay exhausted at epoch {epoch} batch {batch_index}")
+            logger.info("BAFDR AMP replay epoch=%d batch=%d retry=%d scale=%g",
+                        epoch, batch_index, attempt + 1, scaler.get_scale())
+
+        audit["successful_optimizer_updates"] += 1
         scheduler.step()
+        audit["scheduler_updates"] += 1
 
         if ema is not None:
             ema.update(model)
+            audit["ema_updates"] += 1
 
         successful_updates += 1
-        if successful_updates >= EXPECTED_UPDATES_PER_EPOCH:
+        if successful_updates >= updates_per_epoch:
             break
 
-    if successful_updates != EXPECTED_UPDATES_PER_EPOCH:
+    if successful_updates != updates_per_epoch:
         raise RuntimeError(
             f"Epoch {epoch} produced {successful_updates} updates; "
-            f"expected {EXPECTED_UPDATES_PER_EPOCH}"
+            f"expected {updates_per_epoch}"
         )
     return successful_updates
 
@@ -758,10 +802,12 @@ def main() -> None:
     parser.add_argument("--eval-only", action="store_true", help="run evaluation only")
     parser.add_argument("--prediction-only", action="store_true", help="save raw predictions without opening metrics")
     parser.add_argument("--open-metrics", action="store_true", help="load sealed raw predictions and run the evaluator")
-    parser.add_argument("--precheck-only", action="store_true", help="build and validate objects without training")
+    parser.add_argument("--precheck-only", action="store_true", help="run two three-batch training epochs without a formal checkpoint or evaluation")
     parser.add_argument("--allow-single-process", action="store_true", help="allow local single-process smoke/precheck execution")
     parser.add_argument("--expected-world-size", type=int, default=EXPECTED_WORLD_SIZE, help="formal DDP world size")
     args = parser.parse_args()
+    if args.checkpoint and not args.eval_only:
+        parser.error("--checkpoint is evaluation-only; replacement training starts fresh")
 
     cfg_path = resolve_existing_path(args.config, repo_root=root_dir, label="config")
     cfg = Config.fromfile(str(cfg_path))
@@ -806,6 +852,7 @@ def main() -> None:
         ckpt_path = resolve_existing_path(checkpoint_to_load, repo_root=root_dir, label="checkpoint")
         loaded_ckpt_path = ckpt_path
         loaded_ckpt = torch.load(ckpt_path, map_location="cpu")
+        validate_terminal_checkpoint(loaded_ckpt)
         state_dict = loaded_ckpt.get("state_dict_ema", loaded_ckpt.get("state_dict", loaded_ckpt))
         load_state_dict_strict(model, state_dict, label=f"model checkpoint {ckpt_path}")
         logger.info(f"Loaded checkpoint: {ckpt_path}")
@@ -896,9 +943,9 @@ def main() -> None:
         drop_last=True,
         num_workers=train_num_workers,
     )
-    if len(train_loader) < EXPECTED_UPDATES_PER_EPOCH:
+    if len(train_loader) != EXPECTED_UPDATES_PER_EPOCH:
         raise RuntimeError(
-            f"Train loader has {len(train_loader)} local batches; expected at least {EXPECTED_UPDATES_PER_EPOCH}"
+            f"Train loader has {len(train_loader)} local batches; expected exactly {EXPECTED_UPDATES_PER_EPOCH}"
         )
 
     optimizer = build_optimizer(copy.deepcopy(cfg.optimizer), model, logger)
@@ -906,8 +953,21 @@ def main() -> None:
     if int(max_epoch) != EXPECTED_EPOCHS:
         raise RuntimeError(f"BA-FDR protocol requires {EXPECTED_EPOCHS} epochs; scheduler produced {max_epoch}")
     scaler = GradScaler(enabled=use_amp)
+    if ema is None:
+        raise RuntimeError("BAFDR successful-update training requires EMA")
+    update_audit = {}
 
     if args.precheck_only:
+        if (work_dir / "train_receipt.json").exists() or list(ckpt_dir.glob("epoch_*.pth")):
+            raise RuntimeError("BAFDR PRECHECK requires a separate non-formal work directory")
+        for epoch in range(2):
+            if hasattr(train_loader.sampler, "set_epoch"):
+                train_loader.sampler.set_epoch(epoch)
+            train_epoch(model, train_loader, optimizer, scheduler, scaler, ema,
+                        device, epoch, logger, teacher=teacher, use_amp=use_amp,
+                        update_audit=update_audit, updates_per_epoch=3)
+            validate_update_progress(optimizer.state_dict(), scheduler.state_dict(),
+                                     update_audit, (epoch + 1) * 3)
         if is_rank0():
             atomic_publish_json(
                 work_dir / "precheck_receipt.json",
@@ -920,6 +980,8 @@ def main() -> None:
                     "train_len": len(train_dataset),
                     "eval_windows": len(val_dataset),
                     "teacher_loaded": teacher is not None,
+                    "formal_result": False,
+                    "update_audit": update_audit,
                     "status": "PASS",
                     "timestamp": time.time(),
                 },
@@ -943,8 +1005,18 @@ def main() -> None:
             logger=logger,
             teacher=teacher,
             use_amp=use_amp,
+            update_audit=update_audit,
         )
         total_successful_updates += epoch_updates
+        validate_update_progress(optimizer.state_dict(), scheduler.state_dict(),
+                                 update_audit, total_successful_updates)
+        if is_rank0():
+            atomic_publish_json(work_dir / "bafdr_training_audit.json", {
+                "commit_sha": git_head(root_dir), "arm": arm, "seed": seed,
+                "epoch": epoch, "update_audit": dict(update_audit),
+                "total_successful_updates": total_successful_updates,
+                "status": "complete" if epoch == EXPECTED_EPOCHS - 1 else "in_progress",
+            })
 
         if is_rank0() and ((total_successful_updates % 500 == 0) or (epoch == EXPECTED_EPOCHS - 1)):
             ckpt_name = f"epoch_{epoch}.pth"
@@ -960,6 +1032,8 @@ def main() -> None:
                     "state_dict_ema": ema.module.state_dict() if ema is not None else None,
                     "optimizer": optimizer.state_dict(),
                     "scheduler": scheduler.state_dict(),
+                    "update_audit": dict(update_audit),
+                    "grad_scaler": scaler.state_dict(),
                     "arm": arm,
                     "seed": seed,
                     "world_size": world_size,

@@ -4980,3 +4980,9 @@ append_only: true
   `STOP_R1_CURRENT_CONTIGUOUS_SUPPORT_AS_SINGLE_GPU_EFFICIENCY_ROUTE`。这是 validation/single-RTX4090 上的窄负
   系统结果；不形成正向 latency、official-test、matched-training、多 seed、边界保护或家族级主张。终态材料将只
   提交一次 fresh exact-Project Pro，裁决前没有 successor。
+
+- 2026-09-07: The separately user-authorized BA-FDR six-route audit found actual
+  terminal AdamW counts 5996/5997/5996/5996/5994/5995 for D160/G96/U16/LATE/NOKD/FULL,
+  despite 6000 in receipt counters and scheduler state. Preserve original artifacts
+  as protocol-invalid diagnostics. Minimal successful-update replay and checkpoint
+  consumer checks are recorded in `experiments/bafdr-successful-update-repair-20260907.md`.

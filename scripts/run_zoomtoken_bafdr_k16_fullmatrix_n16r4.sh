@@ -64,6 +64,9 @@ if [[ "${PRECHECK_ONLY:-0}" == "1" ]]; then
     CONFIG="${PRECHECK_CONFIG:-configs/adatad/thumos/bafdr_k16_d160_seed4407.py}"
   fi
 fi
+if [[ "${mode}" == "precheck" ]]; then
+  WORK_DIR_ROOT="${RUN_ROOT}/precheck_work_dirs"
+fi
 
 case "${mode}" in
   train|precheck|eval|metrics|summary|summary-strict)
