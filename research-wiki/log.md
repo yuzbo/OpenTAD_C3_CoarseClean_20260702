@@ -7372,3 +7372,8 @@ admissible replacement full-ASFormer gradient gate, bound to the full commit.
   launcher-only compile check. CUDA admission and formal replacement jobs
   are not claimed until their actual results/job identities are recorded.
 - Details: `experiments/ctdp-successful-update-repair-20260907.md`.
+- Exact-SHA remote CPU validation at 3a9f3dfe passed 40 tests; one CUDA
+  witness was skipped outside a GPU allocation. The GPU admission submission
+  returned AssocMaxSubmitJobLimit without a job ID. No formal job was submitted.
+  The existing CUDA admission script now directly runs the focused suite and
+  all four real-video prechecks; the final successor SHA still needs admission.

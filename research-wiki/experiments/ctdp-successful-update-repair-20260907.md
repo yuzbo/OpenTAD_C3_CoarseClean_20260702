@@ -25,3 +25,12 @@ on Windows; py_compile and launcher bash syntax passed. A fresh read-only
 review found no blocking defect in this patch. Exact-SHA N16R4 CUDA
 witness/PRECHECK must pass before formal replacement jobs. No new performance is
 available, and a budget repair alone does not establish mechanism efficacy.
+
+The initial exact-SHA remote CPU run at 3a9f3dfe also passed 40 tests with
+the CUDA witness skipped. The GPU admission submission was rejected with
+AssocMaxSubmitJobLimit and did not receive a job ID. Its stdout/stderr were
+read; this is a scheduler limit, not a model failure. The existing
+run_duca_ctdp_cuda_gate_n16r4.sbatch now contains the exact-SHA tests and
+four real-video prechecks directly, so the continuation need not rebuild a
+quoted shell command. The successor SHA must run this admission before
+formal G0-G3 are resubmitted.
