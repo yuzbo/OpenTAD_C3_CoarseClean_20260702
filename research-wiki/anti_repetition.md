@@ -1435,3 +1435,13 @@ updated: 2026-08-31
     前向。PRECHECK `1274657/1274658` 已 `COMPLETED 0:0`；新正式完整矩阵仅为
     D2S `1274666` 与 PA-TAD `1274667`，各自使用全新 namespace。运行中、部分 cell、
     recovery 或 epoch 日志均不得解释为准确率或论文证据。
+
+56. D2S `1274666` 与 PA-TAD `1274667` 已于 2026-09-07 因 JuiceFS 容量耗尽失败，
+    分别为 `FAILED 120:0` 和 `FAILED 1:0`。两者均未进入候选臂，不能解释为模型性能失败。
+    `d2s_tad_full200_compute_21aa2945_formal_r4` 与
+    `patad_full200_compute_21aa2945_formal_r3` 永久保留，不得续跑、覆盖或清理其中权重。
+    本轮只清理了 `tmp/xdg-cache/pip` 的 200 个可重新下载缓存文件；清理后一次观测仅余
+    9.8 GiB。按现有完整单元占用，两套新矩阵 checkpoint 约需 143 GiB，另需预测输出余量。
+    不得以少量释放空间或旧 PRECHECK 通过为由直接重提。先恢复足够完整运行的容量，
+    再对 clean immutable source 重跑 PRECHECK、使用新 namespace；不得盲删其他实验、
+    数据、预训练权重或失败证据以腾空间。没有新存储证据时保持容量阻塞并由既有心跳监督。

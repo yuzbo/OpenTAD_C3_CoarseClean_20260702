@@ -1,5 +1,31 @@
 # ZoomToken CVPR 2027 全量实验跟踪账本 (Experiment Tracking Ledger)
 
+## 2026-09-07 D2S / PA-TAD 最新核验
+
+本节覆盖下方 2026-09-01 历史快照中的 D2S / PA-TAD 状态；其他路线本轮未查询。
+本地代码：`E:\ztv3fullcompute`。运行版本为
+[`21aa2945`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/21aa2945b934a0dba469a517c224efe9b30d3967)，
+分支为 `codex/zoomtoken-d2s-patad-deploy-fix-20260903`。
+
+| 实验名称 | 作业与终态（UTC+8） | 失败位置与已完成记录 | 实验结果 |
+| --- | --- | --- | --- |
+| 全局低分辨率加动态局部片段的双分辨率检测（D2S，9单元） | `1274666`，`FAILED 120:0`，16:55:31 | D160/4408 写训练日志时磁盘配额耗尽；仅 D160/4407 有训练终态记录 | 候选臂未开始，无完整准确率结果；等待存储容量恢复 |
+| 局部细节仅注入低层金字塔的检测（PA-TAD，9单元） | `1274667`，`FAILED 1:0`，16:49:12 | 创建 D160/4409 目录时磁盘配额耗尽；D160/4407、4408 有训练终态记录 | 候选臂未开始，无完整准确率结果；等待存储容量恢复 |
+
+远端源码：`/data/run01/sczc063/yuzibo/projects/zoomtoken_d2s_patad_21aa2945_src`。
+失败实验根（永久保留，不续跑）：
+
+- D2S：`/data/run01/sczc063/yuzibo/projects/d2s_tad_full200_compute_21aa2945_formal_r4`
+- PA-TAD：`/data/run01/sczc063/yuzibo/projects/patad_full200_compute_21aa2945_formal_r3`
+
+各根下 `slurm_logs/` 保存 stdout/stderr；`work_dirs/*/training_terminal_receipt.json`
+仅证明对应单元训练完成，不能作为矩阵准确率结果。预检 `1274657/1274658` 的计算代理
+比值 `0.503766/0.504085` 仍为预检证据。清理约 3,152 MB pip 下载缓存后，远端一次
+观测可用 9.8 GiB；两套新矩阵仅 checkpoint 预计约需 143 GiB。未修改模型、未重提。
+待容量足够完整运行后重新 PRECHECK，并在新目录提交。研究结论见 `query_pack.md`。
+
+## 以下为 2026-09-01 历史快照
+
 > **当前裁决状态**: `REVISE` (全量数据与准确率训练继续保留；所有 efficiency / Pareto 主张标记为 `UNVERIFIED`，待算子级对账核验)  
 > **最后更新时间**: 2026-09-01 16:32 (UTC+8)  
 > **远程集群环境**: 国家超级计算中卫节点 (BSCC-N16R4), 节点 GPU: NVIDIA GeForce RTX 4090 (24GB)  

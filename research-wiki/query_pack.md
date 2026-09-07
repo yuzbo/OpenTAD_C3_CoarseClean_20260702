@@ -1561,8 +1561,31 @@ max_chars: 8000
   proved 48 global chunks, 16 executed local chunks and 32 physical skips per
   sample. Their audited candidate/D160 full-operator `C_exec` ratios are
   `0.503766065467287` and `0.5040854723114946`. Fresh complete 3x3 formal jobs
-  D2S `1274666` and PA-TAD `1274667` were submitted in new namespaces; they are
-  running evidence acquisition, not completed accuracy or paper evidence.
+  D2S `1274666` and PA-TAD `1274667` were submitted in new namespaces. Both
+  subsequently failed due to storage exhaustion, as recorded below.
+
+- **D2S/PA-TAD storage failures (2026-09-07).** PA-TAD `1274667` ended
+  `FAILED 1:0` at 16:49:12 (UTC+8): stderr lines 32-41 report `OSError: [Errno 122]
+  Disk quota exceeded` while creating `work_dirs/D160_seed4409`. Only the
+  D160/4407 and D160/4408 training-terminal receipts exist. D2S `1274666` ended
+  `FAILED 120:0` at 16:55:31; stderr records the same quota error during
+  D160/4408 training-log writes, and only D160/4407 has a training-terminal
+  receipt. Neither matrix reached G96 or its candidate arm, and neither has a
+  complete accuracy result. This is a storage blocker, not model-quality
+  evidence or a recurrence of the repaired DDP input-device error.
+  Preserve `d2s_tad_full200_compute_21aa2945_formal_r4` and
+  `patad_full200_compute_21aa2945_formal_r3`, including all logs and checkpoints;
+  do not resume or overwrite either root. JuiceFS `/data` initially reported
+  zero free capacity, while inode use was only 1%. Purging 200 pip HTTP-cache
+  files (3,152 MB) was the only cleanup; no experiment weights were deleted.
+  A subsequent storage snapshot showed 9.8 GiB available. A completed D160
+  cell occupies 8,312,456 KiB including recovery and final output, giving a
+  planning estimate of about 143 GiB for two fresh nine-cell matrices before
+  prediction files. Storage sufficient for complete runs must be restored
+  before a fresh PRECHECK and new-namespace deployment. Runtime remains
+  `21aa2945b934a0dba469a517c224efe9b30d3967`; no model-code repair is supported
+  by these failures. Current status and exact paths are in
+  `research-wiki/experiment_tracking_ledger.md`.
 
 ## Pointers
 
