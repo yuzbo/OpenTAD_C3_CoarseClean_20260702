@@ -205,7 +205,8 @@ def test_evaluation_capability_requires_real_pipeline_receipt_for_same_configura
     precheck["routes"]["B"]["evaluation_pipeline_check"] = dict(status="PASS")
     path.write_text(json.dumps(precheck))
     assert certify(jobs, path, bindings)["evaluation"] == 3
-    cap = json.loads((tmp_path / "caps/evaluation.json").read_text())
-    selected = [job for job in jobs if job["job_id"] in cap["supported_variants"]]
+    caps = [json.loads(path.read_text()) for path in (tmp_path / "caps").glob("*/evaluation.json")]
+    selected_ids = {jid for cap in caps for jid in cap["supported_variants"]}
+    selected = [job for job in jobs if job["job_id"] in selected_ids]
     assert {job["seed"] for job in selected} == {0, 1, 2}
     assert all(job["model"] == checked["model"] and job["dataset"] == checked["dataset"] for job in selected)

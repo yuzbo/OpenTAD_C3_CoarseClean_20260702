@@ -222,13 +222,38 @@ def test_per_configuration_certification_and_failed_rerun_withdrawal(tmp_path):
     path.write_text(json.dumps(precheck))
     bindings = dict(source_commit="unit-fixture", capability_dir=str(tmp_path / "capabilities"))
     certify(jobs, path, bindings)
-    capability = json.loads((tmp_path / "capabilities/evaluation.json").read_text())
-    assert capability["ready"] and len(capability["supported_variants"]) == 3
+    cap_path = tmp_path / "capabilities" / checked["job_id"] / "evaluation.json"
+    capability = json.loads(cap_path.read_text())
+    assert capability["ready"] and capability["supported_variants"] == [checked["job_id"]]
     row["status"] = "FAIL"
     path.write_text(json.dumps(precheck))
     certify(jobs, path, bindings)
-    capability = json.loads((tmp_path / "capabilities/evaluation.json").read_text())
+    capability = json.loads(cap_path.read_text())
     assert not capability["ready"] and capability["supported_variants"] == []
+
+
+def test_independent_precheck_reports_do_not_overwrite_other_routes(tmp_path):
+    from geosparse_ext.capabilities import certify
+    from geosparse_ext.slurm_queue import capabilities_for
+    jobs, _ = compile_all()
+    checks = [next(j for j in jobs if j["kind"] == "train" and j["route"] == route
+                   and j["family"] == "F01" and j["seed"] == 0 and j["dataset"] == "thumos14") for route in ["B", "C"]]
+    bindings = dict(source_commit="unit-fixture", capability_dir=str(tmp_path / "caps"))
+    reports = []
+    for job in checks:
+        report = dict(source_commit="unit-fixture", is_mock=False, completed_epochs=0, routes={job["job_id"]:
+                      dict(status="PASS", job_id=job["job_id"], optimizer_updates=1, ema_update="PASS")})
+        path = tmp_path / (job["job_id"] + ".json")
+        path.write_text(json.dumps(report))
+        certify(jobs, path, bindings)
+        reports.append((path, report))
+    assert all(not capabilities_for(job, bindings)[1] for job in checks)
+    path, report = reports[0]
+    report["routes"][checks[0]["job_id"]]["status"] = "FAIL"
+    path.write_text(json.dumps(report))
+    certify(jobs, path, bindings)
+    assert capabilities_for(checks[0], bindings)[1]
+    assert not capabilities_for(checks[1], bindings)[1]
 
 
 def test_benchmark_queries_the_allocated_visible_gpu(monkeypatch):

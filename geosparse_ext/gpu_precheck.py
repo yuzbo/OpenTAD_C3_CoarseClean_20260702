@@ -41,8 +41,12 @@ def dense_limit(model, batch, route):
     try:
         for block in source.blocks:
             block.with_cp = False
-        direct = source(frames.detach().clone().requires_grad_())
-        checkpoint_difference = float((direct.detach() - reference).abs().max())
+        # This extra comparison checks outputs only. Retaining a second full
+        # uncheckpointed graph exhausts the 24 GB N16 allocation unnecessarily;
+        # the two required gradient comparisons remain unchanged below/above.
+        with torch.no_grad():
+            direct = source(frames.detach())
+        checkpoint_difference = float((direct - reference).abs().max())
         del direct
     finally:
         for block, flag in zip(source.blocks, checkpoint_flags):

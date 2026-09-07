@@ -19,24 +19,29 @@ def certify(jobs, precheck_path, bindings):
     if precheck["source_commit"] != bindings["source_commit"]:
         raise ValueError("precheck and bound source commits differ")
     supported = supported_training_jobs(jobs, precheck)
-    caps = {}
+    counts = {}
     by_id = {j["job_id"]: j for j in jobs if j["kind"] == "train"}
-    for job in supported:
-        for name in job["capabilities"]:
-            caps.setdefault(name, []).append(job["job_id"])
+    # Independent prechecks must not withdraw each other's configurations.
+    # A failed rerun only withdraws the variants covered by that report.
+    observed = [by_id[row["job_id"]] for row in precheck["routes"].values() if row.get("job_id") in by_id]
+    covered = [j for j in by_id.values() if any(j["model"] == checked["model"] and j["dataset"] == checked["dataset"] for checked in observed)]
+    supported_ids = {j["job_id"] for j in supported}
+    for job in covered:
+        caps = set(job["capabilities"]) if job["job_id"] in supported_ids else set()
         checked = [row for row in precheck["routes"].values() if row.get("status") == "PASS"
                    and by_id[row["job_id"]]["model"] == job["model"] and by_id[row["job_id"]]["dataset"] == job["dataset"]]
-        if any(row.get("evaluation_pipeline_check", {}).get("status") == "PASS" for row in checked):
-            caps.setdefault("evaluation", []).append(job["job_id"])
-    for path in Path(bindings["capability_dir"]).glob("*.json"):
-        if load_json(path).get("commit") == precheck["source_commit"]:
-            caps.setdefault(path.stem, [])  # A failed rerun must withdraw its earlier capability.
-    for name, variants in caps.items():
-        save_json(Path(bindings["capability_dir"]) / f"{name}.json",
-                  dict(ready=bool(variants), commit=precheck["source_commit"], test_receipt=str(Path(precheck_path).resolve()),
-                       supported_variants=sorted(variants), protocol_version="geosparse-official-full-data-20260908",
-                       scope="production forward/backward, optimizer/EMA and numerical correctness; evaluation additionally requires real video inference/NMS/mAP; no accuracy criterion"))
-    return {key: len(value) for key, value in caps.items()}
+        if caps and any(row.get("evaluation_pipeline_check", {}).get("status") == "PASS" for row in checked):
+            caps.add("evaluation")
+        directory = Path(bindings["capability_dir"]) / job["job_id"]
+        names = caps | {path.stem for path in directory.glob("*.json")}
+        for name in names:
+            ready = name in caps
+            save_json(directory / f"{name}.json",
+                      dict(ready=ready, commit=precheck["source_commit"], test_receipt=str(Path(precheck_path).resolve()),
+                           supported_variants=[job["job_id"]] if ready else [], protocol_version="geosparse-official-full-data-20260908",
+                           scope="production forward/backward, optimizer/EMA and numerical correctness; evaluation additionally requires real video inference/NMS; no partial-set scientific metric or accuracy criterion"))
+            counts[name] = counts.get(name, 0) + int(ready)
+    return counts
 
 
 def main():

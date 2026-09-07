@@ -53,7 +53,7 @@ def capabilities_for(job, bindings):
     receipts, missing = {}, []
     variant = job.get("source_train_id", job["job_id"])
     for name in job["capabilities"]:
-        path = Path(bindings["capability_dir"]) / f"{name}.json"
+        path = Path(bindings["capability_dir"]) / variant / f"{name}.json"
         if not path.is_file():
             missing.append(name)
             continue
