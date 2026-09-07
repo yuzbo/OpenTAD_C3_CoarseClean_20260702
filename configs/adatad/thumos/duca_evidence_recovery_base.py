@@ -191,7 +191,12 @@ optimizer = dict(
     backbone=dict(
         lr=0,
         weight_decay=0,
-        custom=[dict(name="adapter", lr=2e-4, weight_decay=0.05)],
+        # Forward re-enables these time parameters, so AMP must own their gradients.
+        custom=[
+            dict(name="adapter", lr=2e-4, weight_decay=0.05),
+            dict(name="continuous_timestamp_conditioner", lr=2e-4, weight_decay=0.05),
+            dict(name="relative_physical_time_scale", lr=2e-4, weight_decay=0.0),
+        ],
         exclude=["backbone"],
     ),
 )
