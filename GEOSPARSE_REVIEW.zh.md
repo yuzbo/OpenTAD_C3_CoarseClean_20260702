@@ -2,6 +2,8 @@
 
 这份快照汇集当前负责的 GeoSparse 实验源码、撤销版本源码、原始实验方案、修订矩阵和真实执行证据，用于独立审查。**审查 prompt 已准备，不代表 Pro 已完成审查。**
 
+**最新用户修订**：[A/B/C完整动态方法与固定50%并行](review/amendments/20260908-full-methods/README.zh.md)。当前优先六项seed0主实验，B-full与额外稠密对照延期；原五项focus的状态页是之前时间点的证据，不能覆盖本次执行修订。模型代码仍为902fa05。
+
 ## 从这里开始
 
 1. [可直接复制的 Pro 严格审查 prompt](review/PRO_REVIEW_PROMPT.zh.md)

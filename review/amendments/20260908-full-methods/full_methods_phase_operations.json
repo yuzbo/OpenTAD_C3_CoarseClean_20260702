@@ -1,0 +1,109 @@
+{
+  "controls_deferred": {
+    "deferred": [
+      {
+        "job_id": "tr-c2d93c4c3979",
+        "slurm_id": "244976",
+        "observed_slurm": [
+          [
+            "244976",
+            "tr-c2d93c4c3979",
+            "PENDING"
+          ]
+        ],
+        "progress": null,
+        "reason": "DEFERRED_USER_PHASE: complete fixed .5 and dynamic A/B/C methods first; not a scientific failure",
+        "deferred_at": 1788802296.37106
+      },
+      {
+        "job_id": "tr-bacdbb058eca",
+        "slurm_id": "244977",
+        "observed_slurm": [
+          [
+            "244977",
+            "tr-bacdbb058eca",
+            "PENDING"
+          ]
+        ],
+        "progress": null,
+        "reason": "DEFERRED_USER_PHASE: complete fixed .5 and dynamic A/B/C methods first; not a scientific failure",
+        "deferred_at": 1788802296.4349072
+      }
+    ],
+    "coordinator": {
+      "pid": 2764536,
+      "host": "ln311",
+      "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+      "started_at": 1788802296.4485567,
+      "assigned_training_ids": [
+        "tr-be89cd6cb2ca",
+        "tr-a45686a40afa"
+      ]
+    },
+    "assigned_training_ids": [
+      "tr-be89cd6cb2ca",
+      "tr-a45686a40afa"
+    ],
+    "official_jobs_untouched": true
+  },
+  "dynamic": {
+    "N16R4": {
+      "cluster": "N16R4",
+      "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+      "coordinator": {
+        "pid": 3805939,
+        "host": "ln01",
+        "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+        "started_at": 1788802307.6447487
+      },
+      "prechecks": {
+        "tr-32754eef72d1": {
+          "slurm_id": "1277998",
+          "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+          "submitted_at": 1788802551.3183703
+        }
+      }
+    },
+    "A100": {
+      "cluster": "A100",
+      "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+      "coordinator": {
+        "pid": 2494351,
+        "host": "ln301",
+        "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+        "started_at": 1788802306.7558262
+      },
+      "prechecks": {
+        "tr-8a922c4e6ca7": {
+          "slurm_id": "244986",
+          "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+          "submitted_at": 1788802550.352107
+        },
+        "tr-72ba800e6f08": {
+          "slurm_id": "244987",
+          "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+          "submitted_at": 1788802550.3890836
+        }
+      }
+    }
+  },
+  "fixed_assignments": {
+    "N16R4": [
+      "tr-c43d3e9cad58"
+    ],
+    "A100": [
+      "tr-be89cd6cb2ca",
+      "tr-a45686a40afa"
+    ]
+  },
+  "dynamic_assignments": {
+    "N16R4": [
+      "tr-32754eef72d1"
+    ],
+    "A100": [
+      "tr-8a922c4e6ca7",
+      "tr-72ba800e6f08"
+    ]
+  },
+  "updated_at_utc": "2026-09-07T17:35:50.648101+00:00"
+}

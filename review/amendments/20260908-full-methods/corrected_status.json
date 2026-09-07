@@ -1,0 +1,748 @@
+{
+  "N16R4": {
+    "cluster": "N16R4",
+    "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+    "runs": {
+      "tr-c43d3e9cad58": {
+        "queue": {
+          "status": "SUBMITTED",
+          "attempts": [
+            {
+              "slurm_id": "1277994",
+              "submitted_at": 1788799683.344218,
+              "node": "g0015"
+            }
+          ],
+          "reason": [],
+          "slurm_id": "1277994",
+          "slurm_state": "RUNNING"
+        },
+        "progress": {
+          "job_id": "tr-c43d3e9cad58",
+          "status": "RUNNING",
+          "completed_epochs": 5,
+          "successful_optimizer_updates": 498,
+          "checkpoint_path": "<MACHINE_PATH>/last.pth",
+          "last_validation": {
+            "status": "completed_validation",
+            "completed_epochs": 5,
+            "seconds": 1137.8116651438177
+          },
+          "validation_metrics": {
+            "average_mAP": 0.04306090358542107,
+            "mAP@0.3": 0.10374716622307487,
+            "mAP@0.4": 0.06486608888473523,
+            "mAP@0.5": 0.031864674187915235,
+            "mAP@0.6": 0.011105409614338063,
+            "mAP@0.7": 0.003721179017041977
+          },
+          "best": {
+            "checkpoint_path": "<MACHINE_PATH>/best.pth",
+            "completed_epochs": 5,
+            "checkpoint_epoch": 4,
+            "score": 0.04306090358542107,
+            "selection_metric": "average_mAP@0.3:0.1:0.7",
+            "selection_subset": "validation",
+            "weights": "ema",
+            "source_train_id": "tr-c43d3e9cad58",
+            "seed": 0,
+            "provenance": {
+              "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+              "resolved_config_sha256": "0b34bec83ac269011371531245684fe0ef438b258c4b5d66fc5777bccfbf8bdd",
+              "split_sha256": "88b5d7b12f6780cae70fb0eb27e7bedd580fd6326a725e3287738e3431ecaf95",
+              "weights_sha256": "860a3cd317c642183c6ba8eac8ce0c27674f528566536cd95e650a0b6c378f44"
+            }
+          }
+        },
+        "best": {
+          "checkpoint_path": "<MACHINE_PATH>/best.pth",
+          "completed_epochs": 5,
+          "checkpoint_epoch": 4,
+          "score": 0.04306090358542107,
+          "selection_metric": "average_mAP@0.3:0.1:0.7",
+          "selection_subset": "validation",
+          "weights": "ema",
+          "source_train_id": "tr-c43d3e9cad58",
+          "seed": 0,
+          "provenance": {
+            "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+            "resolved_config_sha256": "0b34bec83ac269011371531245684fe0ef438b258c4b5d66fc5777bccfbf8bdd",
+            "split_sha256": "88b5d7b12f6780cae70fb0eb27e7bedd580fd6326a725e3287738e3431ecaf95",
+            "weights_sha256": "860a3cd317c642183c6ba8eac8ce0c27674f528566536cd95e650a0b6c378f44"
+          }
+        },
+        "result": null,
+        "failure": null,
+        "precheck_submission": {
+          "slurm_id": "1277993",
+          "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+          "submitted_at": 1788799564.4671955
+        },
+        "precheck": {
+          "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+          "gpu": "NVIDIA GeForce RTX 4090",
+          "torch": "2.0.1",
+          "slurm_job_gpus": "1",
+          "cuda_visible_devices": "0",
+          "cuda": "11.8",
+          "completed_epochs": 0,
+          "is_mock": false,
+          "routes": {
+            "tr-c43d3e9cad58": {
+              "status": "PASS",
+              "job_id": "tr-c43d3e9cad58",
+              "input_shape": [
+                1,
+                1,
+                3,
+                768,
+                160,
+                160
+              ],
+              "finite_gradient_tensors": 373,
+              "detection_video_count": 1,
+              "peak_allocated_bytes": 5754589696,
+              "optimizer_updates": 1,
+              "ema_update": "PASS",
+              "source_limit": {
+                "status": "PASS",
+                "actual_source": "upstream VisionTransformerAdapter",
+                "frames": 768,
+                "parent_count": 48,
+                "native_tokens_per_parent": 800,
+                "reference_attention_kernel": "math_sdpa",
+                "deterministic_convolution": true,
+                "output_max_abs_error": 0.0,
+                "source_checkpoint_vs_direct_max_abs_error": 0.0,
+                "gradient_max_abs_error": 0.0
+              },
+              "evaluation_pipeline_check": {
+                "status": "PASS",
+                "observed_windows": 1,
+                "registered_full_test_windows": 792,
+                "scope": "correctness only; no partial-set scientific metric"
+              }
+            }
+          }
+        },
+        "dynamic_policy_check": null,
+        "last_update": {
+          "epoch": 5,
+          "step": 65,
+          "successful_update": true,
+          "gradient_status": "finite",
+          "seconds": 1.8307644426822662,
+          "lr": 9.998880322764422e-05
+        },
+        "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+        "work_root": "<MACHINE_PATH>/902fa05b"
+      },
+      "tr-32754eef72d1": {
+        "queue": {
+          "status": "QUEUED_RESOURCE",
+          "attempts": [],
+          "reason": "storage wait: 11.4 GiB free; 20 GiB required before starting another run"
+        },
+        "progress": null,
+        "best": null,
+        "result": null,
+        "failure": null,
+        "precheck_submission": {
+          "slurm_id": "1277998",
+          "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+          "submitted_at": 1788802551.3183703
+        },
+        "precheck": {
+          "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+          "gpu": "NVIDIA GeForce RTX 4090",
+          "torch": "2.0.1",
+          "slurm_job_gpus": "1",
+          "cuda_visible_devices": "0",
+          "cuda": "11.8",
+          "completed_epochs": 0,
+          "is_mock": false,
+          "routes": {
+            "tr-32754eef72d1": {
+              "status": "PASS",
+              "job_id": "tr-32754eef72d1",
+              "input_shape": [
+                1,
+                1,
+                3,
+                768,
+                160,
+                160
+              ],
+              "finite_gradient_tensors": 373,
+              "detection_video_count": 1,
+              "peak_allocated_bytes": 5754474496,
+              "optimizer_updates": 1,
+              "ema_update": "PASS",
+              "source_limit": {
+                "status": "PASS",
+                "actual_source": "upstream VisionTransformerAdapter",
+                "frames": 768,
+                "parent_count": 48,
+                "native_tokens_per_parent": 800,
+                "reference_attention_kernel": "math_sdpa",
+                "deterministic_convolution": true,
+                "output_max_abs_error": 0.0,
+                "source_checkpoint_vs_direct_max_abs_error": 0.0,
+                "gradient_max_abs_error": 0.0
+              },
+              "evaluation_pipeline_check": {
+                "status": "PASS",
+                "observed_windows": 1,
+                "registered_full_test_windows": 792,
+                "scope": "correctness only; no partial-set scientific metric"
+              }
+            }
+          }
+        },
+        "dynamic_policy_check": {
+          "status": "PASS",
+          "job_id": "tr-32754eef72d1",
+          "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+          "scope": "correctness witness only; discarded model, zero formal training epochs, no scientific metrics",
+          "is_mock": false,
+          "actual_input_shape": [
+            2,
+            1,
+            3,
+            768,
+            160,
+            160
+          ],
+          "budget_mode": "dynamic",
+          "curriculum_epoch": 21,
+          "probe_minibatch": 32,
+          "learned_samples": [
+            true,
+            false
+          ],
+          "sampled_budgets": [
+            [
+              0.0,
+              0.75
+            ]
+          ],
+          "budget_gradient_norm": 0.05656487122178078,
+          "gain_gradient_norm": 0.0006935541168786585,
+          "acquisition": {
+            "kind": "acquisition",
+            "row": 0,
+            "atom": 44,
+            "signed_target": -1.6257166862487793e-05,
+            "extra_heavy_cost": [
+              8.883444388629869e-05,
+              0.722445011138916
+            ]
+          },
+          "optimizer_updated_budget_head": true,
+          "controller_before": {
+            "dual": 0.10000000149011612,
+            "cost_ema": 0.5
+          },
+          "controller_after": {
+            "dual": 0.09998612105846405,
+            "cost_ema": 0.4861222505569458
+          },
+          "peak_allocated_bytes": 9986242048
+        },
+        "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+        "work_root": "<MACHINE_PATH>/902fa05b"
+      }
+    },
+    "official": {},
+    "slurm": "1277994|tr-c43d3e9cad58|RUNNING|51:21|g0015|g0015\n",
+    "coordinator": {
+      "pid": 3431054,
+      "host": "ln01",
+      "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+      "started_at": 1788799561.4215143
+    },
+    "coordinators": [
+      {
+        "pid": 3431054,
+        "host": "ln01",
+        "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+        "started_at": 1788799561.4215143
+      },
+      {
+        "pid": 3805939,
+        "host": "ln01",
+        "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+        "started_at": 1788802307.6447487
+      }
+    ]
+  },
+  "A100": {
+    "cluster": "A100",
+    "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+    "runs": {
+      "tr-be89cd6cb2ca": {
+        "queue": {
+          "status": "SUBMITTED",
+          "attempts": [
+            {
+              "slurm_id": "244973",
+              "submitted_at": 1788800399.13854,
+              "node": "slurm-selected"
+            }
+          ],
+          "reason": [],
+          "slurm_id": "244973",
+          "slurm_state": "PENDING"
+        },
+        "progress": null,
+        "best": null,
+        "result": null,
+        "failure": null,
+        "precheck_submission": {
+          "slurm_id": "244965",
+          "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+          "submitted_at": 1788799560.1736572
+        },
+        "precheck": {
+          "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+          "gpu": "NVIDIA A100-SXM4-80GB",
+          "torch": "2.0.1",
+          "slurm_job_gpus": "4",
+          "cuda_visible_devices": "0",
+          "cuda": "11.8",
+          "completed_epochs": 0,
+          "is_mock": false,
+          "routes": {
+            "tr-be89cd6cb2ca": {
+              "status": "PASS",
+              "job_id": "tr-be89cd6cb2ca",
+              "input_shape": [
+                1,
+                1,
+                3,
+                768,
+                160,
+                160
+              ],
+              "finite_gradient_tensors": 308,
+              "detection_video_count": 1,
+              "peak_allocated_bytes": 4533105664,
+              "optimizer_updates": 1,
+              "ema_update": "PASS",
+              "source_limit": "not_applicable",
+              "evaluation_pipeline_check": {
+                "status": "PASS",
+                "observed_windows": 1,
+                "registered_full_test_windows": 792,
+                "scope": "correctness only; no partial-set scientific metric"
+              }
+            }
+          }
+        },
+        "dynamic_policy_check": null,
+        "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+        "work_root": "<MACHINE_PATH>/902fa05b"
+      },
+      "tr-a45686a40afa": {
+        "queue": {
+          "status": "SUBMITTED",
+          "attempts": [
+            {
+              "slurm_id": "244975",
+              "submitted_at": 1788800459.7204072,
+              "node": "slurm-selected"
+            }
+          ],
+          "reason": [],
+          "slurm_id": "244975",
+          "slurm_state": "PENDING"
+        },
+        "progress": null,
+        "best": null,
+        "result": null,
+        "failure": null,
+        "precheck_submission": {
+          "slurm_id": "244966",
+          "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+          "submitted_at": 1788799560.213412
+        },
+        "precheck": {
+          "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+          "gpu": "NVIDIA A100-SXM4-80GB",
+          "torch": "2.0.1",
+          "slurm_job_gpus": "6",
+          "cuda_visible_devices": "0",
+          "cuda": "11.8",
+          "completed_epochs": 0,
+          "is_mock": false,
+          "routes": {
+            "tr-a45686a40afa": {
+              "status": "PASS",
+              "job_id": "tr-a45686a40afa",
+              "input_shape": [
+                1,
+                1,
+                3,
+                768,
+                160,
+                160
+              ],
+              "finite_gradient_tensors": 385,
+              "detection_video_count": 1,
+              "peak_allocated_bytes": 6596814848,
+              "optimizer_updates": 1,
+              "ema_update": "PASS",
+              "source_limit": {
+                "status": "PASS",
+                "actual_source": "upstream VisionTransformerAdapter",
+                "frames": 768,
+                "parent_count": 48,
+                "native_tokens_per_parent": 800,
+                "reference_attention_kernel": "math_sdpa",
+                "deterministic_convolution": true,
+                "output_max_abs_error": 0.0,
+                "source_checkpoint_vs_direct_max_abs_error": 0.0,
+                "gradient_max_abs_error": 0.0
+              },
+              "evaluation_pipeline_check": {
+                "status": "PASS",
+                "observed_windows": 1,
+                "registered_full_test_windows": 792,
+                "scope": "correctness only; no partial-set scientific metric"
+              }
+            }
+          }
+        },
+        "dynamic_policy_check": null,
+        "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+        "work_root": "<MACHINE_PATH>/902fa05b"
+      },
+      "tr-8a922c4e6ca7": {
+        "queue": {
+          "status": "SUBMITTED",
+          "attempts": [
+            {
+              "slurm_id": "244989",
+              "submitted_at": 1788802668.9928963,
+              "node": "slurm-selected"
+            }
+          ],
+          "reason": [],
+          "slurm_id": "244989",
+          "slurm_state": "PENDING"
+        },
+        "progress": null,
+        "best": null,
+        "result": null,
+        "failure": null,
+        "precheck_submission": {
+          "slurm_id": "244986",
+          "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+          "submitted_at": 1788802550.352107
+        },
+        "precheck": {
+          "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+          "gpu": "NVIDIA A100-SXM4-80GB",
+          "torch": "2.0.1",
+          "slurm_job_gpus": "6",
+          "cuda_visible_devices": "0",
+          "cuda": "11.8",
+          "completed_epochs": 0,
+          "is_mock": false,
+          "routes": {
+            "tr-8a922c4e6ca7": {
+              "status": "PASS",
+              "job_id": "tr-8a922c4e6ca7",
+              "input_shape": [
+                1,
+                1,
+                3,
+                768,
+                160,
+                160
+              ],
+              "finite_gradient_tensors": 276,
+              "detection_video_count": 1,
+              "peak_allocated_bytes": 4123132928,
+              "optimizer_updates": 1,
+              "ema_update": "PASS",
+              "source_limit": "not_applicable",
+              "evaluation_pipeline_check": {
+                "status": "PASS",
+                "observed_windows": 1,
+                "registered_full_test_windows": 792,
+                "scope": "correctness only; no partial-set scientific metric"
+              }
+            }
+          }
+        },
+        "dynamic_policy_check": {
+          "status": "PASS",
+          "job_id": "tr-8a922c4e6ca7",
+          "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+          "scope": "correctness witness only; discarded model, zero formal training epochs, no scientific metrics",
+          "is_mock": false,
+          "actual_input_shape": [
+            2,
+            1,
+            3,
+            768,
+            160,
+            160
+          ],
+          "budget_mode": "dynamic",
+          "curriculum_epoch": 21,
+          "probe_minibatch": 32,
+          "learned_samples": [
+            true,
+            false
+          ],
+          "sampled_budgets": [
+            [
+              0.0,
+              0.75
+            ]
+          ],
+          "budget_gradient_norm": 0.10064484179019928,
+          "gain_gradient_norm": 0.0009007070912048221,
+          "acquisition": {
+            "kind": "acquisition",
+            "row": 0,
+            "atom": 44,
+            "signed_target": 2.7865171432495117e-06,
+            "extra_heavy_cost": [
+              8.883444388629869e-05,
+              0.722445011138916
+            ]
+          },
+          "optimizer_updated_budget_head": true,
+          "controller_before": {
+            "dual": 0.10000000149011612,
+            "cost_ema": 0.5
+          },
+          "controller_after": {
+            "dual": 0.09998612105846405,
+            "cost_ema": 0.4861222505569458
+          },
+          "peak_allocated_bytes": 7590563840
+        },
+        "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+        "work_root": "<MACHINE_PATH>/902fa05b"
+      },
+      "tr-72ba800e6f08": {
+        "queue": {
+          "status": "SUBMITTED",
+          "attempts": [
+            {
+              "slurm_id": "244991",
+              "submitted_at": 1788802729.2889755,
+              "node": "slurm-selected"
+            }
+          ],
+          "reason": [],
+          "slurm_id": "244991",
+          "slurm_state": "PENDING"
+        },
+        "progress": null,
+        "best": null,
+        "result": null,
+        "failure": null,
+        "precheck_submission": {
+          "slurm_id": "244987",
+          "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+          "submitted_at": 1788802550.3890836
+        },
+        "precheck": {
+          "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+          "gpu": "NVIDIA A100-SXM4-80GB",
+          "torch": "2.0.1",
+          "slurm_job_gpus": "6",
+          "cuda_visible_devices": "0",
+          "cuda": "11.8",
+          "completed_epochs": 0,
+          "is_mock": false,
+          "routes": {
+            "tr-72ba800e6f08": {
+              "status": "PASS",
+              "job_id": "tr-72ba800e6f08",
+              "input_shape": [
+                1,
+                1,
+                3,
+                768,
+                160,
+                160
+              ],
+              "finite_gradient_tensors": 385,
+              "detection_video_count": 1,
+              "peak_allocated_bytes": 5949650944,
+              "optimizer_updates": 1,
+              "ema_update": "PASS",
+              "source_limit": {
+                "status": "PASS",
+                "actual_source": "upstream VisionTransformerAdapter",
+                "frames": 768,
+                "parent_count": 48,
+                "native_tokens_per_parent": 800,
+                "reference_attention_kernel": "math_sdpa",
+                "deterministic_convolution": true,
+                "output_max_abs_error": 0.0,
+                "source_checkpoint_vs_direct_max_abs_error": 0.0,
+                "gradient_max_abs_error": 0.0
+              },
+              "evaluation_pipeline_check": {
+                "status": "PASS",
+                "observed_windows": 1,
+                "registered_full_test_windows": 792,
+                "scope": "correctness only; no partial-set scientific metric"
+              }
+            }
+          }
+        },
+        "dynamic_policy_check": {
+          "status": "PASS",
+          "job_id": "tr-72ba800e6f08",
+          "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+          "scope": "correctness witness only; discarded model, zero formal training epochs, no scientific metrics",
+          "is_mock": false,
+          "actual_input_shape": [
+            2,
+            1,
+            3,
+            768,
+            160,
+            160
+          ],
+          "budget_mode": "dynamic",
+          "curriculum_epoch": 21,
+          "probe_minibatch": 32,
+          "learned_samples": [
+            true,
+            false
+          ],
+          "sampled_budgets": [
+            [
+              0.25,
+              1.0
+            ]
+          ],
+          "budget_gradient_norm": 0.06760308146476746,
+          "gain_gradient_norm": 0.000752984662540257,
+          "acquisition": {
+            "kind": "acquisition",
+            "row": 0,
+            "atom": 44,
+            "signed_target": -1.189112663269043e-05,
+            "extra_heavy_cost": [
+              0.22233569622039795,
+              1.0
+            ]
+          },
+          "optimizer_updated_budget_head": true,
+          "controller_before": {
+            "dual": 0.10000000149011612,
+            "cost_ema": 0.5
+          },
+          "controller_after": {
+            "dual": 0.10001111775636673,
+            "cost_ema": 0.511113166809082
+          },
+          "peak_allocated_bytes": 11785275392
+        },
+        "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+        "work_root": "<MACHINE_PATH>/902fa05b"
+      }
+    },
+    "official": {
+      "train": {
+        "submission": {
+          "slurm_id": "244947",
+          "mode": "train",
+          "submitted_at": 1788797902.8735087,
+          "gpus": 2,
+          "global_train_batch": 2,
+          "train_videos": 200,
+          "test_videos": 211,
+          "upstream_commit": "346d09d19e2091372cec48172dbe40f7b28bdee6"
+        },
+        "progress": null,
+        "best": null,
+        "result": null,
+        "metrics": null
+      },
+      "evaluate": {
+        "submission": {
+          "slurm_id": "244949",
+          "mode": "evaluate",
+          "submitted_at": 1788798165.0641422,
+          "previous_attempt": "244946",
+          "fix": "use resolved config file; DictAction removes spaces in data paths"
+        },
+        "progress": null,
+        "best": null,
+        "result": {
+          "status": "COMPLETED",
+          "exit_code": 0,
+          "source_commit": "346d09d19e2091372cec48172dbe40f7b28bdee6",
+          "is_mock": false,
+          "mode": "evaluate",
+          "completed_epochs": null,
+          "ended_at": 1788800379.4695315,
+          "seed": 0
+        },
+        "metrics": {
+          "metrics": {
+            "average_mAP": 0.7113879489702108,
+            "mAP@0.3": 0.8596337197884967,
+            "mAP@0.4": 0.8185797683496124,
+            "mAP@0.5": 0.7500131299175179,
+            "mAP@0.6": 0.6329255169363297,
+            "mAP@0.7": 0.49578760985909814
+          },
+          "checkpoint_epoch": null,
+          "evaluated_videos": 211,
+          "inference_windows": 792,
+          "weights": "ema",
+          "seed": 0,
+          "is_mock": false,
+          "source_commit": "346d09d19e2091372cec48172dbe40f7b28bdee6",
+          "mode": "evaluate"
+        },
+        "inference_progress": {
+          "completed_batches": 396,
+          "total_batches": 396
+        }
+      }
+    },
+    "slurm": "244947|adatad-official-train|PENDING|0:00||(Priority)\n244973|tr-be89cd6cb2ca|PENDING|0:00||(Priority)\n244975|tr-a45686a40afa|PENDING|0:00||(Priority)\n\n244989|tr-8a922c4e6ca7|PENDING|0:00||(Priority)\n244991|tr-72ba800e6f08|PENDING|0:00||(Priority)",
+    "coordinator": {
+      "pid": 2764536,
+      "host": "ln311",
+      "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+      "started_at": 1788802296.4485567,
+      "assigned_training_ids": [
+        "tr-be89cd6cb2ca",
+        "tr-a45686a40afa"
+      ]
+    },
+    "coordinators": [
+      {
+        "pid": 2764536,
+        "host": "ln311",
+        "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+        "started_at": 1788802296.4485567,
+        "assigned_training_ids": [
+          "tr-be89cd6cb2ca",
+          "tr-a45686a40afa"
+        ]
+      },
+      {
+        "pid": 2494351,
+        "host": "ln301",
+        "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+        "started_at": 1788802306.7558262
+      }
+    ]
+  },
+  "observed_at_utc": "2026-09-07T17:39:52.360066+00:00"
+}
