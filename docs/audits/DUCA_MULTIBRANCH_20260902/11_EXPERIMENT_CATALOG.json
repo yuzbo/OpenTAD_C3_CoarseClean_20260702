@@ -1,6 +1,6 @@
 {
   "schema_version": "DUCA-EXPERIMENT-CATALOG-v001",
-  "last_updated_utc": "2026-09-07T04:15:35+00:00",
+  "last_updated_utc": "2026-09-07T05:21:06+00:00",
   "scope": "所有当前 DUCA/ZoomToken 代码实验及其独立修正路线；旧远端作业另列为不纳入结果",
   "repository": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702",
   "entries": [
@@ -116,6 +116,7 @@
       "category": "correction_route",
       "name": "CT-DP 当前正式四臂：基础嵌入、CT-Tubelet、B-AMoD 及二者组合",
       "internal_id": "CT_DP_BAMOD_ACTIVE",
+      "current_cycle": "本轮只读核查四臂 log.json：均记录 Training Over，epoch59 最后 loss 有限，未记录 AMP skip/NaN/Traceback；已结束作业 stdout/stderr 未在已知目录找到。缺少 skip 日志不推翻 checkpoint 的 5997/5996/5996/5997 更新证据。训练协议修复仍未部署，下一轮优先接通成功更新 replay 和审计，不把本次日志核查误报为修复完成",
       "branch": "codex/duca-ctdp-formal-repair-20260903",
       "sha": "c0fae67a1236f2c47e6c2935d217659cd1f8fb9d",
       "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/c0fae67a1236f2c47e6c2935d217659cd1f8fb9d",
@@ -166,15 +167,21 @@
       "category": "correction_route",
       "name": "ET-TRC 当前双臂：完整 Transformer 与局部 Taylor/JVP 近似",
       "internal_id": "ET_TRC_ACTIVE",
-      "branch": "codex/zoomtoken-et-trc-formal-repair-20260903",
-      "sha": "74473c2775caebf0da9d368ce8009d78e2942098",
-      "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/74473c2775caebf0da9d368ce8009d78e2942098",
-      "local_directory": "E:/DeskTop/TAD/zoomtoken_ettrc_correction_20260902",
+      "branch": "codex/zoomtoken-et-trc-formal-repair-20260903（训练） + codex/zoomtoken-ettrc-terminal-eval-20260907（独立评测）",
+      "sha": "74473c2775caebf0da9d368ce8009d78e2942098（训练） / 67d7079d0d1c33e129d31cd3a45aaf93a67db252（评测）",
+      "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/67d7079d0d1c33e129d31cd3a45aaf93a67db252",
+      "local_directory": "E:/DeskTop/TAD/_duca_fix_worktrees/ettrc_terminal_eval",
+      "supporting_local_directories": [
+        "E:/DeskTop/TAD/zoomtoken_ettrc_correction_20260902"
+      ],
+      "current_cycle": "独立评测代码 67d7079d 接住官方 evaluator 返回的 metrics，写出包含原训练 SHA、评测 SHA、epoch59 EMA、实际 optimizer/scheduler 6000、config/annotation/prediction 和自哈希的收据；不改模型和数据配置。本地及双臂远端均 28 tests PASS，exact-SHA clean tests/实际 checkpoint 核验/2-GPU 真推理 PRECHECK 1275569_0/1 均 COMPLETED(0:0)。完整官方评测 1275624_0/1 已提交，尚未形成最终 receipt。标注中的 validation 对应 211 个 video_test_*，不能因名称而换数据划分",
       "deployment_status": "真实 VideoMAE 覆盖与 2-GPU/global-batch=2 admission 已通过；OFF 1267218、ON 1267219 均 COMPLETED(0:0)。2026-09-07 直接读取两份 epoch_59.pth，EMA 存在、所有已记录 optimizer state step 均为 6000、scheduler 也为 6000；尚无独立官方 evaluator receipt",
       "result_status": "双臂 60 轮训练已完成；日志含终轮 validation 指标，但当前路线没有独立终态 evaluator/receipt，因此仍无可裁决最终性能",
       "final_result": "终轮日志 OFF Avg-mAP 62.08%、mAP@0.3/0.4/0.5/0.6/0.7=77.06/71.91/65.34/54.51/41.55%；ON 为 54.81%、70.38/64.89/57.49/46.65/34.63%。这些数值是完整 validation telemetry，不是具备独立终态 receipt 的最终 scientific result",
-      "next_action": "保留已核验的 epoch-59 EMA/6000 optimizer steps，补齐独立 OFF/ON official evaluator 和自哈希 receipt；不把训练内 telemetry 提前称为最终性能，不要求重训已确认达到更新预算的双臂",
-      "local_head": "74473c2775caebf0da9d368ce8009d78e2942098",
+      "next_action": "监督 1275624_0/1 的完整独立官方评测，完成后核验新 metrics.json/self-hash 再报告最终 OFF/ON mAP。训练权重仍为 74473c27，不重复训练；不得把预检或旧训练 telemetry 当成最终 receipt",
+      "remote_eval_root": "/data/run01/sczc063/yuzibo/experiments/ettrc_terminal_eval_67d7079d/formal",
+      "remote_log_root": "/data/run01/sczc063/yuzibo/experiments/ettrc_terminal_eval_67d7079d/slurm_logs",
+      "local_head": "67d7079d0d1c33e129d31cd3a45aaf93a67db252",
       "local_clean_tree": true
     },
     {
@@ -190,48 +197,57 @@
       "final_result": "只按 efe69d2e 的真实训练/teacher/数据/evaluator receipts 报告，绝不迁移为当前 539287fa 结果",
       "next_action": "由历史评测任务读取 1267920 日志并决定修复；当前监督任务保持只读边界",
       "local_head": null,
-      "local_clean_tree": false
+      "local_clean_tree": null
     },
     {
       "category": "correction_route",
       "name": "Evidence-Recovery 当前八臂：预选阶段轻量侦察器、不确定性与最大空洞补漏",
       "internal_id": "EVIDENCE_ACTIVE",
-      "branch": "codex/duca-evidence-fullgrid-repair-20260904（C0/A2） + codex/duca-evidence-optimizer-repair-20260907（时间参数优化器与 DDP 修复）",
-      "sha": "246058f2c24edc78818ada60eec26249bbf7d5d2（C0/A2） / 1570a72507491899a50767700a35a04eee3f5fe9（修复）",
-      "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/1570a72507491899a50767700a35a04eee3f5fe9",
-      "local_directory": "E:/DeskTop/TAD/_duca_fix_worktrees/evidence_optimizer_repair",
+      "branch": "codex/duca-evidence-fullgrid-repair-20260904（C0/A2） + codex/duca-evidence-optimizer-repair-20260907（A1/A6） + codex/duca-evidence-remaining-arms-20260907（F/A3-A5）",
+      "sha": "246058f2c24edc78818ada60eec26249bbf7d5d2（C0/A2） / 1570a72507491899a50767700a35a04eee3f5fe9（A1/A6） / 73bdd34ae21c6c675a00d1927b8af7c12f9edc05（F/A3-A5）",
+      "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/73bdd34ae21c6c675a00d1927b8af7c12f9edc05",
+      "local_directory": "E:/DeskTop/TAD/_duca_fix_worktrees/evidence_remaining_arms",
       "supporting_local_directories": [
+        "E:/DeskTop/TAD/_duca_fix_worktrees/evidence_optimizer_repair",
         "E:/DeskTop/TAD/_duca_fix_worktrees/evidence_eval_repair",
         "E:/DeskTop/TAD/OpenTAD_Evidence_FormalRepair_20260903"
       ],
+      "current_cycle": "A1/A6 的 1274924_2/7 均健康，13:11 读取的训练审计完成 epoch7：各 800 successful optimizer/scheduler/EMA updates；A1 3 次、A6 8 次 AMP skipped attempts 均已 replay，nonfinite_loss_attempts=0、replay_exhaustions=0。73bdd34a 只新增另外四臂真实预检与接线，正式模型沿用 1570a725 修复；本地 28 passed/4 Windows-Torch skipped，远端 admission 1275417 的 68 tests 和 CUDA FP32 gate PASS。F 完整方案、A3 关闭侦察监督、A4 关闭时序合并、A5 关闭密集恢复的两轮真实 PRECHECK 1275466_1/4/5/6 均 COMPLETED(0:0)，正式重训 1275675_1/4/5/6 全部 RUNNING。F 官方评测 1275691_1 已 afterok 依赖 1275675_1；追加 A3 评测时 sbatch 返回 AssocMaxSubmitJobLimit，无 job id，A4/A5 评测随即停止尝试。这三项评测标记 BLOCKED_RESOURCE，等待账户提交额度释放，不改模型代码、不重复提交已登记任务",
       "deployment_status": "C0 训练 1269374_0 / 官方评测 1270672_0 完成；A2 训练 1270870_3 / 独立官方评测 1274711_3 也完成，均为原始 246058f2 训练及评测语义。A2 epoch59 EMA/6000 成功更新训练审计和 evaluation_sha256 自哈希复算通过。旧 A1 1270870_2 在 epoch54 batch11 非有限 utility 失败；A6 1270870_7 在 epoch0 batch2 非有限 cost 失败。FP32 修复 9739811e 的 A6 正式重试 1274671_7 又在 epoch1 batch2 非有限 cost 失败，旧日志/checkpoint 全保留。真实 ViT optimizer 回归定位：forward 重新启用时间参数，但 custom optimizer 只含 adapter，时间参数未被 optimizer/GradScaler 管理，可能经全局 clipping 扩散 NaN。1570a725 补齐 continuous_timestamp_conditioner/relative_physical_time_scale 分组，使用 dynamic DDP 和 non-reentrant checkpoint 支持随真实窗口变化的时间分支；不关闭 time/merge/recovery。远端 clean exact-SHA admission 1274755 全部 49 tests PASS；真实视频 A1/A6 两轮各 200 batch PRECHECK 1274759_2/7 均 COMPLETED(0:0)。正式 A1/A6 1274924_2/7 已 RUNNING；独立官方 evaluator 1274926_2 / 1274927_7 分别 afterok 依赖对应训练任务，尚未运行",
-      "result_status": "C0 和 A2 有效官方结果；旧 F/A3/A4/A5 虽完成训练，但启用时间参数的优化器缺项使机制训练不完整，列为待修复重训而非待评测即可。A1/A6 修复版正式训练运行中，已有逐臂 afterok 官方评测依赖；完整 Evidence 机制结论尚未形成",
+      "result_status": "C0 和 A2 有效官方结果；旧 F/A3/A4/A5 因遗漏时间参数优化而不合格，四臂修复版现已正式重训。A1/A6 修复版也在正式训练；共六个修复臂 RUNNING，但只有 A1/A6/F 已登记逐臂 afterok 评测，A3-A5 评测等待提交额度。完整 Evidence 机制结论尚未形成",
       "final_result": "C0 MATCHED_H65_60 Avg-mAP=59.23%，各 tIoU=75.22/70.01/61.54/50.90/38.48%。A2 NO_TIME official Avg-mAP=54.2756%，各 tIoU=72.2334/67.0169/57.6467/44.8214/29.6595%。C0 是 matched-H65 基线，A2 是关闭物理时间的消融，二者都不是完整 recovery 方法。test 792 次暴露对应 791 个唯一物理窗口（video_test_0001431|7680 重复），246058f2 按唯一物理窗口严格覆盖",
-      "next_action": "监督 1274924_2/7 到 epoch59 EMA/6000 successful updates，随后核验 1274926_2/1274927_7 的 official metrics receipt。为同样受遗漏时间参数影响的 F/A3-A5 安排对应 PRECHECK 和新 SHA 重训，不把旧终态 checkpoint 直接评测后宣称机制有效。预检 200 batches 不等于正式 6000 updates，也不是对旧 epoch54 RNG 序列的精确重放",
+      "next_action": "监督 A1/A6 1274924_2/7、F/A3/A4/A5 1275675_1/4/5/6 到 epoch59 EMA/6000 updates。账户额度释放后只补 A3/A4/A5 的任务索引 4/5/6 评测，各自 afterok 依赖 1275675_4/5/6，使用训练/评测 SHA 73bdd34a、remaining_73bdd34a/formal 与 evaluation 新目录。保留已登记评测 1274926_2、1274927_7、1275691_1，不重复提交。旧受影响 checkpoint 不纳入结果",
       "remote_run_root": "/data/run01/sczc063/yuzibo/experiments/duca_evidence_optimizer_1570a725/formal",
       "remote_log_root": "/data/run01/sczc063/yuzibo/experiments/duca_evidence_optimizer_1570a725/slurm_logs",
       "remote_eval_root": "/data/run01/sczc063/yuzibo/experiments/duca_evidence_optimizer_1570a725/evaluation",
-      "local_head": "1570a72507491899a50767700a35a04eee3f5fe9",
+      "remaining_arms_remote_root": "/data/run01/sczc063/yuzibo/experiments/duca_evidence_remaining_73bdd34a",
+      "local_head": "73bdd34ae21c6c675a00d1927b8af7c12f9edc05",
       "local_clean_tree": true
     }
   ],
   "remote_supervisor": {
     "status": "ACTIVE",
-    "checked_at": "2026-09-07T04:15:03+00:00",
+    "checked_at": "2026-09-07T05:20:31+00:00",
     "dispatcher_status": "BLOCKED",
     "dispatcher_mode": "plan",
     "entries": []
   },
   "cluster_observation": {
-    "checked_at_cst": "2026-09-07 12:13 CST",
-    "public_gpu_available": 22,
+    "checked_at_cst": "2026-09-07 13:18 CST",
+    "public_gpu_available": 28,
     "public_gpu_total": 240,
-    "user_jobs_in_queue": 8,
-    "account_constraint": "公共口径 22/240 可用；本用户 5 RUNNING、3 PENDING。Evidence A1/A6 正式训练已获得各 1 GPU，两项官方评测等待逐臂 afterok；历史 BAFDR 1267921 因 DependencyNeverSatisfied 等待，保持只读"
+    "user_jobs_in_queue": 16,
+    "account_constraint": "公共口径 28/240 可用；本用户 11 RUNNING、5 PENDING。六个 Evidence 修复臂及双 GPU ET-TRC OFF/ON 评测均获得资源；新增 Evidence A3 评测提交被 AssocMaxSubmitJobLimit 拒绝，A3/A4/A5 后续评测等待提交额度，不是缺少公共 GPU。历史 BAFDR 1267921 仍只读"
   },
   "measurement_scope": "当前比较以官方 TAD mAP、固定输入/更新预算和机制消融为主；不把端到端延迟、吞吐量或显存作为强制验收指标",
   "result_policy": "没有 exact SHA、clean-tree、epoch-59 EMA、6000 successful updates、官方 evaluator 和结构化自哈希 receipt，不得报告为最终科学结果；不得用 scheduler steps 替代 optimizer successful updates",
   "excluded_remote_jobs": [
+    {
+      "job_ids": "2026-09-07 13:18 CST 提交失败，无 job id",
+      "remote_directory": "/data/run01/sczc063/yuzibo/projects/duca_evidence_remaining_73bdd34a",
+      "source_head": "73bdd34ae21c6c675a00d1927b8af7c12f9edc05",
+      "reason": "Evidence A3 官方评测 --array=4 --dependency=afterok:1275675_4 的 sbatch 返回 AssocMaxSubmitJobLimit / Job violates accounting/QOS policy；stdout/stderr 已完整读取。F 评测 1275691_1 已成功，A4/A5 未继续尝试。资源类提交失败不改模型代码，额度释放后仅补任务 4/5/6"
+    },
     {
       "job_ids": "1267229-1267232",
       "remote_directory": "/data/run01/sczc063/yuzibo/experiments/duca_ctdp_c0fae67a_seed3407",
