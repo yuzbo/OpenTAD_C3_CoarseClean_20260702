@@ -220,6 +220,8 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=42, help="random seed")
     parser.add_argument("--id", type=int, default=0, help="repeat experiment id")
     parser.add_argument("--resume", type=str, default=None, help="resume from a checkpoint")
+    parser.add_argument("--resume-source-commit", help="original Evidence checkpoint commit for relocated resume")
+    parser.add_argument("--resume-precheck", action="store_true", help="verify one resumed Evidence epoch in an isolated output directory")
     parser.add_argument("--not_eval", action="store_true", help="whether not to eval, only do inference")
     parser.add_argument("--disable_deterministic", action="store_true", help="disable deterministic for faster speed")
     parser.add_argument("--cfg-options", nargs="+", action=DictAction, help="override settings")
@@ -237,6 +239,9 @@ def main():
     source_config_sha256 = _sha256(args.config)
     source_resolved_config_sha256 = _canonical_sha256(cfg.to_dict())
     duca_formal_contract = duca_training.formal_training_contract(cfg)
+    if args.resume_source_commit or args.resume_precheck:
+        if not args.resume or not args.resume_source_commit or duca_training is not duca_evidence_training or duca_formal_contract is None:
+            raise ValueError("relocated resume requires formal Evidence, --resume and --resume-source-commit")
     if duca_training is duca_cellcf_training:
         duca_cellcf_training.assert_safe_cfg_options(
             cfg, args.cfg_options, entrypoint="tools/train.py"
@@ -278,6 +283,12 @@ def main():
             raise RuntimeError("formal DUCA training requires a clean exact-commit checkout")
         if args.disable_deterministic or args.not_eval:
             raise ValueError("formal DUCA training requires deterministic execution")
+        if args.resume_source_commit:
+            subprocess.run(
+                ["git", "diff", "--exit-code", args.resume_source_commit, duca_git_commit,
+                 "--", "opentad", "tools/bata/duca_p0_training.py"],
+                cwd=path, check=True,
+            )
     training_probe_bindings = _build_training_probe_bindings(cfg, args)
     assert_safe_entrypoint_args_for_gated_config(cfg, args, entrypoint="tools/train.py")
     assert_detector_training_allowed(cfg, entrypoint="tools/train.py")
@@ -579,11 +590,24 @@ def main():
         elif duca_formal_contract is not None:
             raise RuntimeError("formal DUCA resume checkpoint lacks GradScaler state")
         if duca_formal_contract is not None:
-            update_audit, epoch_records = duca_training.restore_training_state(
-                checkpoint,
-                contract=duca_formal_contract,
-                bindings=duca_runtime_bindings,
-            )
+            if args.resume_source_commit:
+                update_audit, epoch_records, duca_runtime_bindings = (
+                    duca_evidence_training.restore_relocated_training_state(
+                        checkpoint,
+                        contract=duca_formal_contract,
+                        bindings=duca_runtime_bindings,
+                        checkpoint_path=args.resume,
+                        runtime_config=cfg.to_dict(),
+                        source_commit=args.resume_source_commit,
+                        precheck=args.resume_precheck,
+                    )
+                )
+            else:
+                update_audit, epoch_records = duca_training.restore_training_state(
+                    checkpoint,
+                    contract=duca_formal_contract,
+                    bindings=duca_runtime_bindings,
+                )
             duca_training.validate_checkpoint_successful_optimizer_updates(
                 checkpoint, update_audit
             )
@@ -702,7 +726,7 @@ def main():
                 selector_step=duca_training.selector_schedule_step(model),
                 scaler_scale=None if scaler is None else scaler.get_scale(),
                 uses_ema=model_ema is not None,
-                complete=epoch == max_epoch - 1,
+                complete=epoch == max_epoch - 1 and not args.resume_precheck,
             )
             if args.rank == 0:
                 duca_training.atomic_write_json(
@@ -745,7 +769,7 @@ def main():
 
         # save checkpoint
         if not disable_checkpoint and (
-            (epoch == max_epoch - 1) or ((epoch + 1) % cfg.workflow.checkpoint_interval == 0)
+            args.resume_precheck or (epoch == max_epoch - 1) or ((epoch + 1) % cfg.workflow.checkpoint_interval == 0)
         ):
             if args.rank == 0:
                 checkpoint_metadata = (
@@ -778,6 +802,10 @@ def main():
                         else duca_training.DUCA_P0_CHECKPOINT_SIDECAR_SCHEMA
                     ),
                 )
+
+        if args.resume_precheck:
+            logger.info("DUCA_EVIDENCE_RESUME_PRECHECK_OK epoch=%s successful_updates=%s", epoch, update_audit["successful_optimizer_updates"])
+            break
 
         # val for one epoch
         if epoch >= val_start_epoch:

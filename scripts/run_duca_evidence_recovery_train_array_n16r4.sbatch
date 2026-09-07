@@ -90,6 +90,18 @@ SEED="${SEEDS[$SEED_IDX]}"
 
 CONFIG_PATH="$PROJECT_DIR/configs/adatad/thumos/${CFG_NAME}"
 WORK_DIR="${RUN_ROOT}/${ARM_NAME}/seed_${SEED}"
+RESUME_ARGS=()
+if [[ -n "${DUCA_RESUME_CHECKPOINT:-}" ]]; then
+  [[ -r "$DUCA_RESUME_CHECKPOINT" ]] || fail "resume checkpoint is not readable"
+  SOURCE_COMMIT="${DUCA_RESUME_SOURCE_COMMIT:?original checkpoint commit is required}"
+  [[ ! -e "$WORK_DIR/gpu1_id0" ]] || fail "resume output already exists; use a new namespace"
+  RESUME_ARGS=(--resume "$DUCA_RESUME_CHECKPOINT" --resume-source-commit "$SOURCE_COMMIT")
+  if [[ "${PRECHECK_ONLY:-0}" == "1" ]]; then
+    RESUME_ARGS+=(--resume-precheck)
+  fi
+elif [[ "${PRECHECK_ONLY:-0}" == "1" ]]; then
+  fail "this PRECHECK_ONLY entry requires a resume checkpoint"
+fi
 mkdir -p "${WORK_DIR}"
 
 MASTER_PORT=$(( 29500 + TASK_ID % 1000 ))
@@ -97,5 +109,6 @@ MASTER_PORT=$(( 29500 + TASK_ID % 1000 ))
 echo "[INFO] Task ${TASK_ID}: Arm=${ARM_NAME}, Seed=${SEED}, Config=${CONFIG_PATH}, WorkDir=${WORK_DIR}"
 
 torchrun --nproc_per_node=1 --master_port="${MASTER_PORT}" tools/train.py "${CONFIG_PATH}" \
+  "${RESUME_ARGS[@]}" \
   --seed "${SEED}" \
   --cfg-options seed="${SEED}" work_dir="${WORK_DIR}"

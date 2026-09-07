@@ -498,6 +498,63 @@ def restore_training_state(
     return restored, [dict(item) for item in records]
 
 
+def restore_relocated_training_state(
+    checkpoint: Mapping[str, Any],
+    *,
+    contract: Mapping[str, Any],
+    bindings: Mapping[str, Any],
+    checkpoint_path: str | Path,
+    runtime_config: Mapping[str, Any],
+    source_commit: str,
+    precheck: bool = False,
+) -> tuple[dict[str, int], list[dict[str, Any]], dict[str, Any]]:
+    """Continue an unchanged training recipe in a separate output namespace."""
+    audit = _validated_checkpoint_audit(checkpoint)
+    if len(source_commit) != 40 or source_commit != audit.get("git_commit"):
+        raise RuntimeError("Evidence-Recovery resume source commit mismatch")
+    if audit.get("resume_precheck", False):
+        raise RuntimeError("Evidence-Recovery cannot resume a PRECHECK as formal training")
+    epoch = int(checkpoint.get("epoch", -1))
+    if epoch != int(audit.get("last_completed_epoch", -2)) or not 0 <= epoch < 59:
+        raise RuntimeError("Evidence-Recovery resume checkpoint epoch mismatch")
+    source = Path(checkpoint_path).absolute()
+    old_work_dir = source.parent.parent
+    if Path(str(runtime_config["work_dir"])).resolve() == old_work_dir.resolve():
+        raise RuntimeError("Evidence-Recovery relocated resume must preserve the old work_dir")
+    if Path(str(bindings["source_config_path"])).name != Path(
+        str(audit["source_config_path"])
+    ).name:
+        raise RuntimeError("Evidence-Recovery resume source config name mismatch")
+
+    # Recreate the ORIGINAL runtime digest, changing only the output directory.
+    # All model, data, ledger, optimizer, seed and schedule bindings stay strict.
+    original_runtime = dict(runtime_config)
+    original_runtime["work_dir"] = str(old_work_dir)
+    original_bindings = dict(bindings)
+    original_bindings.update(
+        git_commit=source_commit,
+        source_config_path=audit["source_config_path"],
+        runtime_config_sha256=canonical_sha256(original_runtime),
+    )
+    counters, records = restore_training_state(
+        checkpoint, contract=contract, bindings=original_bindings
+    )
+    lineage = [dict(item) for item in audit.get("resume_lineage", [])]
+    lineage.append(
+        {
+            "git_commit": source_commit,
+            "slurm_job_id": audit["slurm_job_id"],
+            "checkpoint_path": str(source),
+            "checkpoint_epoch": epoch,
+            "training_audit_sha256": audit["audit_sha256"],
+            "successful_optimizer_updates": counters["successful_optimizer_updates"],
+        }
+    )
+    resumed_bindings = dict(bindings)
+    resumed_bindings.update(resume_lineage=lineage, resume_precheck=bool(precheck))
+    return counters, records, resumed_bindings
+
+
 validate_checkpoint_successful_optimizer_updates = (
     legacy.validate_checkpoint_successful_optimizer_updates
 )
@@ -561,6 +618,7 @@ def validate_terminal_checkpoint_binding(
             raise RuntimeError(f"Evidence-Recovery terminal checkpoint binding mismatch: {key}")
     if (
         audit.get("status") != "complete"
+        or audit.get("resume_precheck", False)
         or int(audit.get("last_completed_epoch", -1)) != 59
         or int(audit.get("expected_successful_optimizer_updates", -1)) != 6000
         or int(counters.get("successful_optimizer_updates", -1)) != 6000
@@ -578,6 +636,7 @@ def validate_terminal_checkpoint_binding(
         "checkpoint_sha256": checkpoint_sha256,
         "training_audit_sha256": audit["audit_sha256"],
         "training_slurm_job_id": audit["slurm_job_id"],
+        "resume_lineage": [dict(item) for item in audit.get("resume_lineage", [])],
     }
 
 
@@ -599,6 +658,7 @@ __all__ = [
     "new_update_audit",
     "restore_global_rng_state",
     "restore_training_state",
+    "restore_relocated_training_state",
     "selector_schedule_step",
     "validate_checkpoint_successful_optimizer_updates",
     "validate_ledger_coverage",

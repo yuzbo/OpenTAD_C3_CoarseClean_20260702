@@ -83,6 +83,7 @@ PY
 python -m py_compile tools/train.py tools/test.py tools/bata/duca_evidence_training.py
 python -m pytest -q \
   tests/test_duca_evidence_training_contract.py \
+  tests/test_duca_evidence_relocated_resume.py \
   tests/test_duca_evidence_recovery_matrix.py \
   tests/test_duca_evidence_recovery.py \
   tests/test_evidence_time_optimizer.py \
