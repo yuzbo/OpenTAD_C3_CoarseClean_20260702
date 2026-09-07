@@ -4,6 +4,19 @@ from torch import Tensor
 from .contracts import NativeLayout, VideoBatch
 
 
+def detector_validity(valid_frames: Tensor, query_length: int):
+    """Frame-grid queries keep frame validity; half-grid queries own native pairs.
+
+    A half-grid cell is valid when either of its two source frames is valid.
+    This reduction is never expanded back to the frame detection grid.
+    """
+    if query_length == valid_frames.shape[-1]:
+        return valid_frames.bool()
+    if 2 * query_length == valid_frames.shape[-1]:
+        return valid_frames.reshape(*valid_frames.shape[:-1], query_length, 2).any(-1)
+    raise ValueError("detector queries must use the original frame grid or native pair grid")
+
+
 def native_layout(batch: VideoBatch, patch_size=16, parent_frames=16):
     b, _, t, h, w = batch.frames_hi.shape
     if t % parent_frames or parent_frames % 2 or h % patch_size or w % patch_size:

@@ -49,6 +49,9 @@ def main():
     spec = importlib.util.spec_from_file_location("geosparse_observer", root / "geosparse_ext/analysis_capture.py")
     observer_code = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(observer_code)
+    record_spec = importlib.util.spec_from_file_location("measurement_records", root / "geosparse_ext/records.py")
+    measurement_records = importlib.util.module_from_spec(record_spec)
+    record_spec.loader.exec_module(measurement_records)
     bindings = read(args.training_run / "bindings.json")
     provenance = read(args.training_run / "source_commits.json")
     training_job = read(args.training_run / "job.json")
@@ -58,7 +61,7 @@ def main():
     import torch
     from mmengine.config import Config
     from opentad.models.builder import build_detector
-    from geosparse_ext.records import source_commit, save_json, content_id
+    from geosparse_ext.records import source_commit, save_json, content_id, file_id
     from geosparse_ext.runtime import require_gpu, seed_all, loader, load_trained_model, restore_mutable_state, merge_windows
     from geosparse_ext.prediction_export import training_source
     import geosparse_ext.detector as detector_code
@@ -87,6 +90,7 @@ def main():
         model.epoch, model.inference_seed = checkpoint["epoch"], training_job["seed"]
         final = False
     split = read(Path(bindings["protocol_root"]) / training_job["dataset"] / "split.json")
+    identity = measurement_records.checkpoint_identity(training_job["job_id"], model.epoch, provenance, file_id(checkpoint_path))
     all_names = sorted(split["validation"])
     names = sorted(args.videos) if args.videos else all_names
     if not set(names) <= set(all_names) or not names:
@@ -137,6 +141,7 @@ def main():
         is_final_checkpoint=final, source_train_id=training_job["job_id"], seed=training_job["seed"],
         model_source_commit=provenance["source_commit"], measurement_source_commit=source_commit(root),
         checkpoint_path=checkpoint_path, selected_checkpoint_epoch=model.epoch, weights="ema", videos=names,
+        checkpoint_identity=identity,
         official_split_videos=len(all_names), full_split=names == all_names, windows=len(data),
         thumbnail_policy="first sorted videos; first window; eight evenly spaced native tubelets, both source frames",
         timing_scope="profiling pass; NOT a latency benchmark", training_provenance=provenance))

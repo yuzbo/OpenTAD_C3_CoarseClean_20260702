@@ -12,7 +12,8 @@ from .protocol import resolve_opentad_config
 from .runtime import require_gpu, loader, optimizer_for, seed_all, ModelEMA
 from .data import video_batch
 from .sparse import NativeEncoder
-from .training_validation import validate_dataset
+from .training_validation import validate_dataset, ema_evaluation
+from .cuda_identity import allocated_cuda_device
 from opentad.models.builder import build_detector
 
 
@@ -64,10 +65,42 @@ def dense_limit(model, batch, route):
     torch.testing.assert_close(actual, reference, atol=2e-5, rtol=2e-4)
     for observed, correct in zip(gradients, expected_gradient):
         torch.testing.assert_close(observed, correct, atol=2e-5, rtol=2e-4)
+    # Extend the encoder witness through the real projection/head using an odd
+    # tail on the original 768-position detection grid, including feature grads.
+    from .contracts import DetectionState
+    from .geometry import detector_validity
+    from opentad.models.detectors.actionformer import ActionFormer
+    import torch.nn.functional as F
+    frame_mask = torch.ones_like(batch["masks"], device="cuda", dtype=torch.bool)
+    frame_mask[:, -1] = False
+    valid = detector_validity(frame_mask, model.geosparse.query_length)
+    def detector_features(encoded):
+        value = encoded.reshape(b, t // 16, -1, 8, hn, wn).permute(0, 2, 1, 3, 4, 5)
+        value = value.reshape(b, -1, t // 2, hn, wn).mean((-1, -2))
+        return (F.interpolate(value, model.geosparse.query_length, mode="linear", align_corners=False) * valid[:, None]).detach().requires_grad_()
+    left, right = detector_features(reference), detector_features(actual)
+    model.eval()
+    features_grad, task_losses, proposals = [], [], []
+    for features in (left, right):
+        state = DetectionState(features, video.target_time_s, valid, features.new_ones(b))
+        model.zero_grad(set_to_none=True)
+        with torch.cuda.amp.autocast():
+            losses = model._task_losses(state, frame_mask, batch["metas"], batch["gt_segments"], batch["gt_labels"], t)
+        losses["cost"].backward()
+        features_grad.append(features.grad.detach().clone())
+        task_losses.append({name: value.detach().clone() for name, value in losses.items()})
+        with torch.no_grad(), torch.cuda.amp.autocast():
+            proposals.append(ActionFormer.forward_test(model, features.detach(), valid, batch["metas"]))
+    for name in task_losses[0]:
+        torch.testing.assert_close(task_losses[0][name], task_losses[1][name], atol=2e-3, rtol=2e-3)
+    torch.testing.assert_close(features_grad[0], features_grad[1], atol=2e-3, rtol=2e-3)
+    for a, c in zip(proposals[0][0] + proposals[0][1], proposals[1][0] + proposals[1][1]):
+        torch.testing.assert_close(a, c, atol=2e-3, rtol=2e-3)
     source.zero_grad(set_to_none=True)
     return dict(status="PASS", actual_source="upstream VisionTransformerAdapter", frames=t,
                 parent_count=len(frames), native_tokens_per_parent=8 * hn * wn,
                 reference_attention_kernel="math_sdpa", deterministic_convolution=True,
+                detector_mask_loss_proposals_and_feature_gradient="PASS; original frame mask; fp16 autocast head",
                 output_max_abs_error=float((actual - reference).abs().max()),
                 source_checkpoint_vs_direct_max_abs_error=checkpoint_difference,
                 gradient_max_abs_error=max(float((a - b).abs().max()) for a, b in zip(gradients, expected_gradient)))
@@ -99,6 +132,7 @@ def main():
     if previous and previous["source_commit"] != commit:
         raise RuntimeError("use a new precheck output directory for a changed source snapshot")
     summary = dict(source_commit=commit, gpu=torch.cuda.get_device_name(), torch=torch.__version__,
+                   gpu_identity=allocated_cuda_device(),
                    slurm_job_gpus=os.environ["SLURM_JOB_GPUS"], cuda_visible_devices=os.environ["CUDA_VISIBLE_DEVICES"],
                    cuda=torch.version.cuda, completed_epochs=0, is_mock=False, routes=previous["routes"] if previous else {})
     if args.train_ids:
@@ -149,6 +183,25 @@ def main():
                        peak_allocated_bytes=torch.cuda.max_memory_allocated(), optimizer_updates=1,
                        ema_update="PASS", source_limit="not_applicable")
             losses = predictions = gradients = None
+            odd_mask = torch.ones_like(batch["masks"], dtype=torch.bool)
+            odd_mask[:, -1] = False
+            observed_masks = []
+            hook = model.projection.register_forward_pre_hook(lambda module, args: observed_masks.append(args[1].detach().clone()))
+            with torch.no_grad(), torch.cuda.amp.autocast():
+                model.forward_test(batch["inputs"], odd_mask, batch["metas"])
+            hook.remove()
+            from .geometry import detector_validity
+            assert torch.equal(observed_masks[0], detector_validity(odd_mask.cuda(), job["model"]["query_length"]))
+            before = {n: value.detach().cpu().clone() for n, value in model.state_dict().items()}
+            with ema_evaluation(model, ema, 0, [batch["metas"][0]["video_name"]]):
+                pass
+            assert all(torch.equal(value.cpu(), before[name]) for name, value in model.state_dict().items())
+            del before
+            row["detector_odd_mask_check"] = "PASS"
+            row["ema_complete_state_restore"] = "PASS"
+            if hasattr(model.geosparse, "regular_tia"):
+                assert model.geosparse.regular_tia.temporal_size == batch["inputs"].shape[-3] // 2
+                row["regular_tia_native_length"] = model.geosparse.regular_tia.temporal_size
             # A correctness preflight is not a validation score. Verify the
             # real test loader/decoder/model/NMS once; training validation then
             # covers all 211 videos / 792 windows at every registered epoch.

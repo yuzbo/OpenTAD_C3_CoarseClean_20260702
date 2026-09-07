@@ -3,7 +3,7 @@ import torch
 from dataclasses import replace
 from torch import nn
 from torch.nn import functional as F
-from .geometry import native_layout, canonical_atoms
+from .geometry import native_layout, canonical_atoms, detector_validity
 from .routing import Scout, atom_features, make_plan
 from .sparse import NativeEncoder, heavy_macs
 from .receivers import Receiver
@@ -38,7 +38,7 @@ class GeoSparseModel(nn.Module):
                     raise ValueError("B heavy encoder must disable TIA; regular TIA follows its receiver")
                 self.receiver = Receiver(source.embed_dims, 256, config["receiver"], config["receiver_layers"],
                                          fusion=config["fusion_variant"])
-            self.regular_tia = Adapter(256, temporal_size=8)
+            self.regular_tia = Adapter(256, temporal_size=384)
         self.register_buffer("dual", torch.tensor(0.1))
         self.register_buffer("cost_ema", torch.tensor(float(config["budget"])))
 
@@ -108,22 +108,21 @@ class GeoSparseModel(nn.Module):
                                       / dense_macs for i in range(b)])
         if self.route in {"B", "COARSE"}:
             query = self.query_projection(scout_features.mean((2, 3)))
-            query = F.interpolate(query.transpose(1, 2), self.query_length, mode="linear", align_corners=False).transpose(1, 2)
-            times = F.interpolate(layout.nominal_time_s[:, None], self.query_length, mode="linear", align_corners=False)[:, 0]
+            if query.shape[1] != t // 2:
+                raise ValueError("cheap query must retain the full native tubelet grid")
             if self.route == "B":
                 evidence = spatial_slots(native_features, plan.selected_native.reshape(b, t // 2, hn, wn), layout, config["evidence_slots"], batch.spatial_transform)
                 radius = (layout.nominal_time_s[:, 1:] - layout.nominal_time_s[:, :-1]).median(-1).values * 8
-                query = self.receiver(query, times, evidence, radius)
-            # Keep the source's clip-local temporal scope, on regular query order.
-            if self.query_length % 8:
-                raise ValueError("query grid must partition into native TIA groups")
-            query_valid = F.interpolate(layout.valid.flatten(-2).any(-1).float()[:, None], self.query_length, mode="nearest")[:, 0].bool()
-            query = self.regular_tia(query.reshape(-1, 8, 256), 1, 1).reshape(b, self.query_length, 256)
-            features = query.transpose(1, 2)
+                query = self.receiver(query, layout.nominal_time_s, evidence, radius)
+            # One native full-window TIA per example, before detector resampling.
+            # Heavy self-attention remains independently partitioned into parents.
+            self.regular_tia.temporal_size = t // 2
+            query = self.regular_tia(query, 1, 1)
+            features = F.interpolate(query.transpose(1, 2), self.query_length, mode="linear", align_corners=False)
         else:
             features = F.interpolate(native_features.mean((-1, -2)), self.query_length, mode="linear", align_corners=False)
-            times = F.interpolate(layout.nominal_time_s[:, None], self.query_length, mode="linear", align_corners=False)[:, 0]
-        valid = F.interpolate(layout.valid.flatten(-2).any(-1).float()[:, None], self.query_length, mode="nearest")[:, 0].bool()
+        times = F.interpolate(layout.nominal_time_s[:, None], self.query_length, mode="linear", align_corners=False)[:, 0]
+        valid = detector_validity(batch.valid_frames, self.query_length)
         features = features * valid[:, None]
         stride = (times[:, -1] - times[:, 0]) / max(1, self.query_length - 1)
         return DetectionState(features, times, valid, stride), plan, baseline, cost, actionness

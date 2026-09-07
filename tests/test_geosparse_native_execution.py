@@ -311,7 +311,7 @@ def test_receiver_storage_permutation(mode):
     e = evidence()
     query, times = torch.randn(1, 4, 8), torch.tensor([[10., 20., 30., 51.]])
     expected = model(query, times, e, torch.tensor([10.]))
-    other = EvidenceBatch(**{name: value[:, [1, 0]] for name, value in vars(e).items()})
+    other = EvidenceBatch(**{name: value[:, [1, 0]] if value is not None else None for name, value in vars(e).items()})
     actual = model(query, times, other, torch.tensor([10.]))
     torch.testing.assert_close(actual, expected, atol=1e-6, rtol=1e-5)
 

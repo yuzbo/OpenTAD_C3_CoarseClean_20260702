@@ -256,14 +256,16 @@ def test_independent_precheck_reports_do_not_overwrite_other_routes(tmp_path):
     assert not capabilities_for(checks[1], bindings)[1]
 
 
-def test_benchmark_queries_the_allocated_visible_gpu(monkeypatch):
+def test_benchmark_queries_cuda_uuid_independent_of_visible_index(monkeypatch):
     import os
     from geosparse_ext import benchmark
     calls = []
     def query(command, **kwargs):
         calls.append(command)
         return str(os.getpid()) if "--query-compute-apps=pid" in command else "GPU-unit, A100, driver, memory, clock, power"
-    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "5")
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0")
+    monkeypatch.setenv("SLURM_JOB_GPUS", "1")
+    monkeypatch.setattr(benchmark, "allocated_cuda_device", lambda: dict(cuda_uuid="GPU-unit", nvml_index="5"))
     monkeypatch.setattr(benchmark.subprocess, "check_output", query)
     benchmark.isolated_gpu()
-    assert all(command[command.index("-i") + 1] == "5" for command in calls)
+    assert all(command[command.index("-i") + 1] == "GPU-unit" for command in calls)

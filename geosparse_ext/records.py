@@ -33,6 +33,19 @@ def file_id(path):
     return digest.hexdigest()
 
 
+def checkpoint_identity(train_id, epoch, provenance, checkpoint_sha256):
+    """Identity consumed by evaluation/cost/latency joins, independent of paths."""
+    return dict(source_train_id=train_id, checkpoint_epoch=epoch, weights="ema",
+                checkpoint_sha256=checkpoint_sha256, **provenance)
+
+
+def require_same_checkpoint(left, right):
+    required = {"source_train_id", "checkpoint_epoch", "weights", "checkpoint_sha256",
+                "source_commit", "resolved_config_sha256", "split_sha256", "weights_sha256"}
+    if not left or not right or not required <= left.keys() or left != right:
+        raise ValueError("accuracy, compute and hardware must use the same complete checkpoint identity")
+
+
 def source_commit(root):
     def git(*args):
         return subprocess.check_output(["git", "-C", str(root), *args], text=True).strip()

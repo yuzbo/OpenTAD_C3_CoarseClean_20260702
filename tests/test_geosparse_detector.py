@@ -5,21 +5,21 @@ from geosparse_ext.matrix import base
 from geosparse_ext.detector import GeoSparseDetector
 
 
-def detector(route, estimator="pg_acquisition"):
-    config = base(route, query_length=8, scout_width=16, scout_resolution=32,
+def detector(route, estimator="pg_acquisition", input_positions=16, query_length=8):
+    config = base(route, query_length=query_length, scout_width=16, scout_resolution=32,
                   estimator=estimator, exploration="none", probe_every=1)
     return GeoSparseDetector(
         projection=dict(type="Conv1DTransformerProj", in_channels=256 if route == "B" else 16,
                         out_channels=16, arch=(1, 1, 1), conv_cfg=dict(kernel_size=3, proj_pdrop=0.),
                         norm_cfg=dict(type="LN"), attn_cfg=dict(n_head=2, n_mha_win_size=-1),
-                        path_pdrop=0., use_abs_pe=False, max_seq_len=8),
+                        path_pdrop=0., use_abs_pe=False, max_seq_len=query_length),
         neck=dict(type="FPNIdentity", in_channels=16, out_channels=16, num_levels=2),
         rpn_head=ConfigDict(type="ActionFormerHead", num_classes=2, in_channels=16, feat_channels=16,
                       num_convs=1, prior_generator=dict(type="PointGenerator", strides=[1, 2],
                       regression_range=[(0, 4), (4, 10000)]), loss_normalizer=10,
                       loss=dict(cls_loss=dict(type="FocalLoss"), reg_loss=dict(type="DIOULoss"))),
         geosparse=config,
-        source_config=dict(img_size=32, embed_dims=16, depth=2, num_heads=2, total_frames=16, drop_path_rate=0.,
+        source_config=dict(img_size=32, embed_dims=16, depth=2, num_heads=2, total_frames=input_positions, drop_path_rate=0.,
                            adapter_index=[] if route == "B" else [0, 1]))
 
 

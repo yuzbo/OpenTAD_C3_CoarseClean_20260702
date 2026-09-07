@@ -32,11 +32,13 @@ def spatial_slots(features, selected, layout, slots=4, spatial_transform=None):
     pair_times = (support[..., 0] * support_valid).sum(-1) / support_valid.sum(-1).clamp_min(1)
     parents = (torch.arange(t, device=features.device) // layout.parent_tubelets).repeat_interleave(slots)[None].expand(b, -1)
     boxes = torch.stack((x0 / w, y0 / h, x1 / w, y1 / h), -1).to(features.dtype).repeat(t, 1)[None].expand(b, -1, -1)
+    corners = torch.stack((boxes[..., [0, 1]], boxes[..., [2, 1]],
+                           boxes[..., [2, 3]], boxes[..., [0, 3]]), -2).float()
     if spatial_transform is not None:
-        corners = torch.stack((boxes[..., :2], boxes[..., 2:]), -2)
         homogeneous = torch.cat((corners, torch.ones_like(corners[..., :1])), -1)
-        original = torch.einsum("bij,bekj->beki", torch.linalg.inv(spatial_transform), homogeneous)[..., :2]
-        boxes = torch.cat((original.amin(-2), original.amax(-2)), -1).clamp(0, 1)
+        original = torch.einsum("bij,bekj->beki", torch.linalg.inv(spatial_transform.float()), homogeneous)
+        corners = original[..., :2] / original[..., 2:]
+    boxes = torch.cat((corners.amin(-2), corners.amax(-2)), -1).clamp(0, 1).to(features.dtype)
     return EvidenceBatch(features[:, keep], support[:, keep], support_valid[:, keep], pair_times[:, keep],
                          boxes[:, keep], parents[:, keep], valid[:, keep],
-                         features.new_ones((b, int(keep.sum()))))
+                         features.new_ones((b, int(keep.sum()))), corners[:, keep])

@@ -85,9 +85,9 @@ def detection_risks(annotation, prediction, video_ids, short_seconds, score_thre
 
 
 def calibrate_risk_score(annotation, prediction, split, short_seconds):
-    names = split["internal_dev"]
+    names = split["internal_diagnostic"]
     if not names or set(prediction["results"]) - set(names):
-        raise ValueError("risk score calibration accepts internal_dev predictions only")
+        raise ValueError("risk score calibration accepts internal_diagnostic predictions only")
     candidates = []
     for threshold in (0., .001, .005, .01, .02, .05, .1, .2, .3, .5):
         risk = detection_risks(annotation, prediction, names, short_seconds, threshold)
@@ -95,7 +95,7 @@ def calibrate_risk_score(annotation, prediction, split, short_seconds):
         candidates.append(dict(threshold=threshold, micro_f1=2 * risk["matches"] / denominator if denominator else 0.))
     best = max(candidates, key=lambda row: (row["micro_f1"], -row["threshold"]))
     return dict(score_threshold=best["threshold"], videos=names, candidates=candidates,
-                definition="internal_dev micro F1 at class-aware tIoU .5; top 100; ties prefer lower threshold")
+                definition="internal_diagnostic micro F1 at class-aware tIoU .5; top 100; ties prefer lower threshold")
 
 
 def paired_risk_bootstrap(left, right, samples=1000, seed=0):

@@ -19,6 +19,8 @@ def resolved_model_protocol(model, input_shape):
                 active_source_layers=[] if geo.encoder is None else list(geo.encoder.active_layers),
                 dense_prefix_layers=0 if geo.encoder is None else geo.encoder.prefix_depth,
                 source_tia_temporal_sizes=[] if source is None else [block.adapter.temporal_size for block in source.blocks if block.use_adapter],
+                regular_tia_temporal_size=getattr(getattr(geo, "regular_tia", None), "temporal_size", None),
+                detector_mask_rule="original frame validity" if geo.query_length == input_shape[-3] else "any valid frame per native pair",
                 source_block_order=[] if source is None else ["LN1", "MHSA", "residual", "LN2", "MLP", "residual"] + (["TIA"] if any(block.use_adapter for block in source.blocks) else []),
                 pe=None if source is None else "disabled control" if geo.config["geometry"] == "no_position" else "source native sinusoid; selected indices retain original PE",
                 gt_to_query_scale=geo.query_length / input_shape[-3],
@@ -46,7 +48,7 @@ def implementation_blockers(config):
         "receiver": {"support_attention", "timestamp_attention", "rank_interp", "physical_interp", "concat_scatter"},
         "receiver_layers": {1, 2, 4}, "evidence_slots": {1, 4, 8},
         "coarse_variant": {"mean_shared", "learned_projection", "no_scale_embedding", "coarse_update_no_tia"},
-        "fusion_variant": {"residual", "no_null", "feature_l2", "coarse_overwrite"},
+        "fusion_variant": {"residual", "no_null", "coarse_overwrite"},
         "query_length": {384, 768}, "axis": {"T", "ST"}, "budget_mode": {"fixed", "dynamic"},
         "temporal_atom_tubelets": {1, 2, 4, 8}, "spatial_group": {1, 2, 7},
         "scout_resolution": {80, 112, 160}, "scout_width": {64, 128, 256}, "scout_temporal_stride": {1, 2, 4},
@@ -70,6 +72,10 @@ def implementation_blockers(config):
         problems.append("C requires native time and mutually exclusive 2x2 coarse/fine groups")
     if config["source_resolution"] == 112 and (config["route"] != "B" or config["axis"] != "T"):
         problems.append("112 full-frame fidelity is registered only for B temporal selection")
+    if config["axis"] == "ST" and (config["source_resolution"] // 16) % config["spatial_group"]:
+        problems.append("spatial_group must divide the actual source-resolution patch grid")
+    if config["fusion_variant"] == "feature_l2":
+        problems.append("registered feature L2 alignment loss is not implemented; normalization is not alignment")
     return problems
 
 
@@ -103,6 +109,8 @@ def resolve_opentad_config(job, bindings, annotation_file):
                 transform["crop_size"] = resolution
             elif transform["type"] == "Collect":
                 transform["type"] = "GeoSparseCollect"
+            elif transform["type"] == "mmaction.ImgAug":
+                transform["type"] = "GeoSparseImgAug"
             pipeline.append(transform)
             if transform["type"] == "LoadFrames":
                 pipeline.append(dict(type="CaptureGeoSparseSupport"))

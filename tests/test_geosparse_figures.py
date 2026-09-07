@@ -7,6 +7,12 @@ import pytest
 
 from geosparse_ext.figures import Report, eligible_train, formal_evaluations, intervals_union, plot_pareto, plot_cases, plot_coverage
 from geosparse_ext.selection_viewer import native_polygons, build as viewer
+from geosparse_ext.records import checkpoint_identity
+
+
+def identity(train_id, epoch):
+    return checkpoint_identity(train_id, epoch, {key: "fixture" for key in
+        ("source_commit", "resolved_config_sha256", "split_sha256", "weights_sha256")}, f"fixture-{train_id}-{epoch}")
 
 
 def test_discontinuous_support_keeps_unobserved_gap():
@@ -60,8 +66,10 @@ def test_three_seed_plot_uses_mean_and_sample_sd_not_best_seed(tmp_path):
         job = dict(job_id=f"unit-{seed}", route="A", families=["F01"], dataset="fixture", model=dict(axis="T", budget=.5))
         training = dict(source_commit="fixture", selected_checkpoint_epoch=4 + seed * 5)
         metrics = dict(official=dict(average_mAP=score), selected_checkpoint_epoch=training["selected_checkpoint_epoch"])
+        metrics["checkpoint_identity"] = training["checkpoint_identity"] = identity(job["job_id"], training["selected_checkpoint_epoch"])
         evaluations.append((tmp_path, dict(seed=seed), job, training, metrics))
     export = dict(source_train_id="unit-0", is_final_checkpoint=True, full_split=True, selected_checkpoint_epoch=4, model_source_commit="fixture")
+    export["checkpoint_identity"] = identity("unit-0", 4)
     windows = [dict(heavy_macs=1e9, model_macs_counted=2e9, mac_count_complete=True)]
     report = Report(tmp_path)
     plot_pareto(report, {}, evaluations, [(tmp_path, export, windows)])
@@ -78,6 +86,7 @@ def test_single_seed_feasibility_uses_seed0_without_invented_sd(tmp_path):
     training = dict(source_commit="fixture", selected_checkpoint_epoch=4)
     metrics = dict(official=dict(average_mAP=.25), selected_checkpoint_epoch=4)
     export = dict(source_train_id="unit-0", is_final_checkpoint=True, full_split=True, selected_checkpoint_epoch=4, model_source_commit="fixture")
+    training["checkpoint_identity"] = metrics["checkpoint_identity"] = export["checkpoint_identity"] = identity("unit-0", 4)
     windows = [dict(heavy_macs=1e9, model_macs_counted=2e9, mac_count_complete=True)]
     report = Report(tmp_path)
     plot_pareto(report, {}, [(tmp_path, dict(seed=0), job, training, metrics)], [(tmp_path, export, windows)], single_seed=True)

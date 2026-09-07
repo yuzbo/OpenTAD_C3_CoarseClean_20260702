@@ -17,14 +17,14 @@ def test_capped_boundary_counts_misses_and_separates_class_errors():
     assert result["per_video"]["v"]["per_gt"][1]["capped_end_seconds"] == 4.
 
 
-def test_score_cap_and_internal_dev_calibration_scope():
+def test_score_cap_and_internal_diagnostic_calibration_scope():
     annotation, predictions = payload()
     predictions["results"]["v"] = [dict(label="wrong", segment=[20., 21.], score=.9) for _ in range(100)] + [dict(label="a", segment=[0., 2.], score=.1)]
     result = detection_risks(annotation, predictions, ["v"], 2.)
     assert result["prediction_count"] == 100 and result["matches"] == 0
-    with pytest.raises(ValueError, match="internal_dev"):
-        calibrate_risk_score(annotation, predictions, dict(internal_dev=["other"]), 2.)
-    receipt = calibrate_risk_score(annotation, predictions, dict(internal_dev=["v"]), 2.)
+    with pytest.raises(ValueError, match="internal_diagnostic"):
+        calibrate_risk_score(annotation, predictions, dict(internal_diagnostic=["other"]), 2.)
+    receipt = calibrate_risk_score(annotation, predictions, dict(internal_diagnostic=["v"]), 2.)
     assert receipt["videos"] == ["v"] and receipt["score_threshold"] == 0.
 
 

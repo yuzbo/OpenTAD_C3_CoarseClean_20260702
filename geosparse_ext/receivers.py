@@ -71,7 +71,9 @@ class Receiver(nn.Module):
 
     def __init__(self, evidence_width, width=256, mode="support_attention", layers=2, heads=4, fusion="residual"):
         super().__init__()
-        if mode not in self.modes or fusion not in {"residual", "no_null", "feature_l2", "coarse_overwrite"}:
+        if fusion == "feature_l2":
+            raise NotImplementedError("feature_l2 requires the registered alignment loss, not feature normalization")
+        if mode not in self.modes or fusion not in {"residual", "no_null", "coarse_overwrite"}:
             raise ValueError("unregistered receiver/fusion")
         self.mode, self.fusion = mode, fusion
         self.evidence_proj = nn.Sequential(nn.Linear(evidence_width, width), nn.LayerNorm(width))
@@ -87,8 +89,6 @@ class Receiver(nn.Module):
         if evidence.features.shape[1] == 0:
             return query
         features = evidence.features
-        if self.fusion == "feature_l2":
-            features = F.normalize(features, dim=-1)
         values = self.evidence_proj(features)
         distances = support_distance(times, evidence.source_support, evidence.support_valid)
         relevant = (evidence.valid[:, None] & (distances <= radius_s[:, None, None])).any(-1)

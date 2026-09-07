@@ -128,8 +128,10 @@ def run(job, bindings, output, precheck=False):
         result = benchmark(job, cfg, output, provenance, runtime, split)
     else:
         raise NotImplementedError(job["kind"])
-    save_json(output / "result.json", dict(job_id=job["job_id"], status="completed", is_mock=False, **provenance, **result))
-    return 0
+    complete = job["kind"] != "train" or (result.get("training_complete") and result.get("selection_complete")
+                                         and result.get("best_checkpoint_selection_complete"))
+    save_json(output / "result.json", dict(job_id=job["job_id"], status="completed" if complete else "selection_pending", is_mock=False, **provenance, **result))
+    return 0 if complete else 75
 
 
 def main():

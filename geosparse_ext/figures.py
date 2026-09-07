@@ -10,6 +10,7 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from .records import require_same_checkpoint
 
 COLORS = ["#0072B2", "#D55E00", "#009E73", "#CC79A7", "#E69F00", "#444444"]
 plt.rcParams.update({"font.family": "DejaVu Sans", "font.size": 9, "axes.labelsize": 10,
@@ -288,6 +289,7 @@ def formal_evaluations(runs):
         metrics = read(path / "metrics.json")
         if metrics["selected_checkpoint_epoch"] != training[2]["selected_checkpoint_epoch"]:
             raise ValueError("evaluation metrics and training best checkpoint differ")
+        require_same_checkpoint(metrics.get("checkpoint_identity"), training[2].get("checkpoint_identity"))
         result.append((path, job, training[1], training[2], metrics))
     return result
 
@@ -408,6 +410,7 @@ def plot_pareto(report, runs, evaluations, exports, single_seed=False):
         receipt, windows = costs[0]
         if receipt["selected_checkpoint_epoch"] != seeds[0][2]["selected_checkpoint_epoch"] or receipt["model_source_commit"] != seeds[0][1]["source_commit"]:
             raise ValueError("Pareto cost did not use seed0's selected checkpoint")
+        require_same_checkpoint(receipt.get("checkpoint_identity"), seeds[0][2].get("checkpoint_identity"))
         scores = [seeds[s][2]["official"]["average_mAP"] * 100 for s in required]
         label = f'{train_job["route"]} {train_job["model"]["axis"]} b={train_job["model"]["budget"]}'
         point = dict(label=label, dataset=train_job["dataset"], source_train_id=train_job["job_id"], mean_mAP=np.mean(scores),
@@ -418,7 +421,12 @@ def plot_pareto(report, runs, evaluations, exports, single_seed=False):
         for benchmark_path, benchmark_job, benchmark_receipt in runs.values():
             if benchmark_job["kind"] != "benchmark" or benchmark_job["source_train_id"] != train_job["job_id"] or benchmark_receipt.get("is_mock") is not False or not (benchmark_path / "hardware.json").is_file():
                 continue
-            for case in read(benchmark_path / "hardware.json")["cases"]:
+            hardware = read(benchmark_path / "hardware.json")
+            require_same_checkpoint(hardware.get("checkpoint_identity"), seeds[0][2].get("checkpoint_identity"))
+            require_same_checkpoint(benchmark_receipt.get("checkpoint_identity"), hardware.get("checkpoint_identity"))
+            if not hardware.get("dataset_window_indices") or not hardware.get("gpu_identity", {}).get("cuda_uuid"):
+                raise ValueError("hardware lacks its measured window set or CUDA/NVML UUID mapping")
+            for case in hardware["cases"]:
                 if case["status"] == "MEASURED" and case["batch"] == 1 and case["implementation"] == "optimized":
                     point["gpu_model"] = case["gpu_start"].split(",")[1].strip()
                     point[case["mode"] + "_p50_ms"] = case["p50_ms"]

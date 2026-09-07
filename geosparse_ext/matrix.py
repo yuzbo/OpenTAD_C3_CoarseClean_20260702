@@ -62,7 +62,7 @@ def compile_all():
         for dataset in datasets:
             for seed in seeds:
                 signature = dict(model=cfg, dataset=dataset, seed=seed,
-                                 protocol_version="geosparse-official-full-data-20260908", epochs=60)
+                                 protocol_version="geosparse-audit-repair-20260908", epochs=60)
                 sig = digest(signature)
                 jid = "tr-" + sig
                 if sig not in train_by_sig:
@@ -78,10 +78,13 @@ def compile_all():
                     train_by_sig[sig] = dict(
                       job_id=jid, kind="train", family=family, families=[family],
                       label=label, route=route, dataset=dataset, seed=seed,
-                      model=cfg, epochs=60, checkpoints=[5,20,40,59],
+                      model=cfg, epochs=60, checkpoints=list(range(4,60,5)),
+                      artifact_contract=dict(version="audit-repair-20260908", checkpoint_indexing="zero_based",
+                                             saved_completed_epochs=list(range(5,61,5)),
+                                             diagnostic_completed_epochs=[5,20,40,60]),
                       depends_on=[], capabilities=sorted(set(caps)),
                       external_requirements=req, slot_class="gpu", exclusive=False,
-                      protocol_version="geosparse-official-full-data-20260908", is_mock=False)
+                      protocol_version="geosparse-audit-repair-20260908", is_mock=False)
                 else:
                     job = train_by_sig[sig]
                     if family not in job["families"]: job["families"].append(family)
@@ -244,7 +247,7 @@ def compile_all():
         jobs.append(j)
         return j
     for tr in trains:
-        child(tr,"evaluate","official_and_all_risk_slices",checkpoint_epoch=59)
+        child(tr,"evaluate","official_and_all_risk_slices",checkpoint_selection="best_full_validation_average_mAP")
         if tr["seed"] == 0:
             child(tr,"benchmark","isolated_end_to_end",batches=[1,8,32],
                   warmup=50,repeats=200,video_subset_size=100,
@@ -254,7 +257,7 @@ def compile_all():
         if cfg==base(tr["route"]) and tr["route"] in ["A","B","C"] and tr["dataset"]=="thumos14":
             for suite in ["D01_finite_menu_and_utility","D02_support_gap_geometry", 
                           "D04_time_space_interaction","D05_mask_content_switch","D06_cache_validity"]:
-                child(tr,"diagnostic",suite,checkpoint_epochs=[5,20,40,59],
+                child(tr,"diagnostic",suite,checkpoint_epochs=[4,19,39,59],
                       diagnostic_split="internal_diagnostic",finite_menu_atoms=8,
                       max_windows=128,oracle_label="finite_menu_loss_best")
         if cfg["budget_mode"]=="dynamic" and cfg["route"] in ["A","B","C"]:
@@ -272,6 +275,10 @@ def validate(jobs):
         if any(d not in ids for d in j["depends_on"]): raise ValueError("missing dependency")
         if j["kind"]=="train" and j["epochs"]!=60: raise ValueError("unregistered epoch length")
         if "metric_gate" in j: raise ValueError("metric gates prohibited")
+        if j["kind"] == "diagnostic":
+            parent = next(p for p in jobs if p["job_id"] == j["source_train_id"])
+            if not set(j["checkpoint_epochs"]) <= set(parent["checkpoints"]):
+                raise ValueError("diagnostic requests a checkpoint outside its training artifact contract")
     visiting,done=set(),set()
     byid={x["job_id"]:x for x in jobs}
     def visit(i):
@@ -283,6 +290,18 @@ def validate(jobs):
     for i in ids:visit(i)
 
 
+def matrix_summary(jobs, refs):
+    content="".join(canonical(j)+"\n" for j in jobs)
+    count=Counter(j["kind"] for j in jobs)
+    return {"protocol_version":"geosparse-audit-repair-20260908","artifact_contract_version":"audit-repair-20260908","counts":dict(count),
+             "total_jobs":len(jobs),"training_epochs_total":60*count["train"],
+             "train_jobs_have_experiment_dependencies":False,
+             "matrix_sha256":hashlib.sha256(content.encode()).hexdigest(),
+             "families":{f:{"name":FAMILIES[f],"unique_train_jobs":len(set(refs[f]))} for f in FAMILIES},
+             "training_by_dataset":dict(Counter(j["dataset"] for j in jobs if j["kind"]=="train")),
+             "training_by_route":dict(Counter(j["route"] for j in jobs if j["kind"]=="train"))}
+
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument("--out",type=Path,default=ROOT/"manifests")
@@ -291,13 +310,7 @@ def main():
     content="".join(canonical(j)+"\n" for j in jobs)
     (a.out/"experiments.jsonl").write_text(content,encoding="utf-8")
     count=Counter(j["kind"] for j in jobs)
-    summary={"protocol_version":"geosparse-official-full-data-20260908","counts":dict(count),
-             "total_jobs":len(jobs),"training_epochs_total":60*count["train"],
-             "train_jobs_have_experiment_dependencies":False,
-             "matrix_sha256":hashlib.sha256(content.encode()).hexdigest(),
-             "families":{f:{"name":FAMILIES[f],"unique_train_jobs":len(set(refs[f]))} for f in FAMILIES},
-             "training_by_dataset":dict(Counter(j["dataset"] for j in jobs if j["kind"]=="train")),
-             "training_by_route":dict(Counter(j["route"] for j in jobs if j["kind"]=="train"))}
+    summary=matrix_summary(jobs,refs)
     (a.out/"summary.json").write_text(json.dumps(summary,ensure_ascii=False,indent=2),encoding="utf-8")
     lines=["# 完整预注册实验矩阵", "", "这是设计清单，不是运行结果。所有train为60 epochs；所有训练配置seed=0,1,2。", "",
            "|实验族|问题|关联训练任务（跨族可复用）|","|---|---|---:|"]

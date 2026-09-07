@@ -13,7 +13,7 @@ def test_official_recipe_keeps_full_grid_augmentation_and_scheduler():
     assert cfg.scheduler.max_epoch == 100 and cfg.scheduler.warmup_epoch == 5
     assert cfg.workflow.end_epoch == 60 and cfg.model.projection.max_seq_len == 768
     assert cfg.solver.train.batch_size == 2
-    assert any(p.type == "mmaction.ImgAug" for p in cfg.dataset.train.pipeline)
+    assert any(p.type == "GeoSparseImgAug" and p.transforms == "default" for p in cfg.dataset.train.pipeline)
     assert any(p.type == "mmaction.Resize" and p.scale == (160, 160) for p in cfg.dataset.train.pipeline)
     assert cfg.dataset.train.ann_file == cfg.dataset.test.ann_file == "original_annotations.json"
     assert cfg.dataset.test.subset_name == "validation" and cfg.dataset.test.window_overlap_ratio == .5

@@ -1,8 +1,21 @@
 """Run as a file: model imports come from the training run's frozen snapshot."""
 import argparse
+import copy
 import json
 from pathlib import Path
 import sys
+
+
+def evaluation_dataset(cfg, subset):
+    """Use deterministic test transforms on the requested physical video split."""
+    if subset not in {"internal_diagnostic", "validation"}:
+        raise ValueError("unsupported evaluation subset")
+    dataset = copy.deepcopy(cfg.dataset.test)
+    physical_subset = "training" if subset == "internal_diagnostic" else "validation"
+    dataset.subset_name = physical_subset
+    if physical_subset == "training":
+        dataset.data_path = cfg.dataset.train.data_path
+    return dataset, physical_subset
 
 
 def training_source(training):
@@ -21,7 +34,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--training-run", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
-    parser.add_argument("--subset", choices=["internal_dev", "validation"], required=True)
+    parser.add_argument("--subset", choices=["internal_diagnostic", "validation"], required=True)
     args = parser.parse_args()
     bindings, receipt, provenance, training_job = training_source(args.training_run)
     root = Path(bindings["repo_root"])
@@ -55,9 +68,10 @@ def main():
     split = load_json(Path(bindings["protocol_root"]) / training_job["dataset"] / "split.json")
     names = split[args.subset]
     model.inference_video_index = {name: i for i, name in enumerate(sorted(names))}
-    dataset_cfg = copy.deepcopy(cfg.dataset.test)
-    dataset_cfg.subset_name = args.subset
-    dataset_cfg.data_path = bindings["video_roots"]["training" if args.subset == "internal_dev" else "validation"]
+    dataset_cfg, physical_subset = evaluation_dataset(cfg, args.subset)
+    annotation = load_json(dataset_cfg.ann_file)
+    if set(names) != {name for name, row in annotation["database"].items() if row["subset"] == physical_subset}:
+        raise ValueError("diagnostic/validation split differs from its full physical annotation subset")
     data = loader(dataset_cfg, bindings["runtime"]["evaluation_batch"], bindings["runtime"]["num_workers"], training_job["seed"])
     post = copy.deepcopy(cfg.post_processing)
     post.sliding_window = True
@@ -88,6 +102,7 @@ def main():
     save_json(args.output / "prediction_receipt.json", dict(status="completed_prediction_export", is_mock=False,
               source_train_id=training_job["job_id"], model_source_commit=receipt["source_commit"], subset=args.subset,
               videos=names, training_checkpoint=receipt["checkpoint_path"], selected_checkpoint_epoch=model.epoch,
+              checkpoint_identity=model.checkpoint_identity,
               training_provenance=provenance))
 
 

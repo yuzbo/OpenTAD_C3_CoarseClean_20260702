@@ -5,7 +5,7 @@ import subprocess
 import sys
 import numpy as np
 from .metrics import detection_risks, calibrate_risk_score
-from .records import load_json, save_json
+from .records import load_json, save_json, require_same_checkpoint
 from .prediction_export import training_source
 
 
@@ -32,6 +32,23 @@ def duration_slices(risk, annotation, train_videos):
     return dict(training_duration_q1_seconds=q1, training_duration_q3_seconds=q3, strata=rows)
 
 
+def epoch_selection_supplements(training, provenance):
+    """Re-use scheduled full-test predictions; never retrain for these reports."""
+    rows = []
+    for completed in (50, 60):
+        row = load_json(Path(training) / "intermediate_eval" / f"epoch_{completed:03d}" / "metrics.json")
+        if (row.get("status") != "completed_validation" or row.get("provenance") != provenance
+                or row.get("completed_epochs") != completed or row.get("subset") != "validation" or row.get("weights") != "ema"):
+            raise ValueError("supplement requires the scheduled full-test EMA result for its exact epoch")
+        rows.append(row)
+    common = max(rows, key=lambda row: (row["metrics"]["average_mAP"], -row["completed_epochs"]))
+    report = lambda row: dict(completed_epochs=row["completed_epochs"], checkpoint_epoch=row["completed_epochs"] - 1,
+                              metrics=row["metrics"], predictions_path=row["predictions_path"], weights="ema")
+    return dict(amendment="audit-repair-20260908; supplemental analysis, not original preregistration",
+                fixed_completed_60=report(rows[1]), common_completed_50_60_best=report(common),
+                selection_caveat="full-test checkpoint selection; seed0 is not training-seed uncertainty")
+
+
 def evaluate(job, cfg, output, provenance, runtime, split, thresholds):
     from .runtime import require_gpu
     from opentad.evaluations.builder import build_evaluator
@@ -44,15 +61,17 @@ def evaluate(job, cfg, output, provenance, runtime, split, thresholds):
         if provenance[key] != training_provenance[key]:
             raise ValueError(f"evaluation {key} differs from its training")
     exports = {}
-    for subset in ("internal_dev", "validation"):
+    for subset in ("internal_diagnostic", "validation"):
         destination = Path(output) / subset
         command = [sys.executable, str(Path(__file__).with_name("prediction_export.py")),
                    "--training-run", str(training), "--output", str(destination), "--subset", subset]
         subprocess.run(command, check=True)
         exports[subset] = load_json(destination / "predictions.json")
+        require_same_checkpoint(training_receipt.get("checkpoint_identity"),
+                                load_json(destination / "prediction_receipt.json").get("checkpoint_identity"))
         if set(exports[subset]["results"]) != set(split[subset]):
             raise ValueError("prediction export does not cover the exact split")
-        if subset == "internal_dev":
+        if subset == "internal_diagnostic":
             annotation = load_json(cfg.evaluation.ground_truth_filename)
             calibration = calibrate_risk_score(annotation, exports[subset], split, thresholds["short_action_seconds"])
             # Freeze before the validation predictions are generated.
@@ -66,6 +85,8 @@ def evaluate(job, cfg, output, provenance, runtime, split, thresholds):
     risk = detection_risks(annotation, exports["validation"], split["validation"], thresholds["short_action_seconds"],
                            score_threshold=calibration["score_threshold"])
     metrics = dict(official={key: float(value) for key, value in official.items()},
+                   checkpoint_identity=training_receipt["checkpoint_identity"],
+                   epoch_selection_supplements=epoch_selection_supplements(training, training_provenance),
                    high_tiou={key: float(value) for key, value in high.items()}, risk=risk,
                    duration_slices=duration_slices(risk, annotation, split["training"]), metric_scale="0 to 1",
                    checkpoint_selection=training_receipt.get("checkpoint_selection", "final_epoch"),
@@ -76,5 +97,6 @@ def evaluate(job, cfg, output, provenance, runtime, split, thresholds):
                 raw_predictions_path=str(Path(output) / "validation/raw_predictions"),
                 risk_calibration_path=str(Path(output) / "risk_calibration.json"),
                 model_source_commit=training_receipt["source_commit"], training_provenance=training_provenance,
+                checkpoint_identity=training_receipt["checkpoint_identity"],
                 checkpoint_selection=metrics["checkpoint_selection"], selected_checkpoint_epoch=metrics["selected_checkpoint_epoch"],
                 measurement_source_commit=provenance["source_commit"])

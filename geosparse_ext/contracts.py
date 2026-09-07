@@ -56,13 +56,16 @@ class RoutePlan:
 @dataclass
 class EvidenceBatch:
     features: Tensor                 # [B,E,D]
-    source_support: Tensor           # [B,E,U,2], union, never a hull
+    source_support: Tensor           # [B,E,U,2], anchor union, never a hull/receptive field
     support_valid: Tensor            # [B,E,U]
     physical_time_s: Tensor          # [B,E]
     roi_xyxy: Tensor                 # [B,E,4], original normalized coordinates
     parent_clip_id: Tensor           # [B,E]
     valid: Tensor                    # [B,E]
     fidelity: Tensor                 # [B,E]
+    roi_polygon: Optional[Tensor] = None  # [B,E,4,2], unclipped inverse-mapped anchor corners
+    # Features depend on all selected tokens in parent_clip_id, not only this
+    # anchor. This structure is not an independent packet cache key.
 
 
 @dataclass

@@ -13,7 +13,7 @@ from opentad.datasets.builder import build_dataset, collate
 from opentad.models.builder import build_detector
 from opentad.cores.scheduler import build_scheduler
 from . import detector as registration  # register the concrete model and transforms
-from .records import save_json, load_json
+from .records import save_json, load_json, file_id, checkpoint_identity, require_same_checkpoint
 from .protocol import resolved_model_protocol
 
 
@@ -132,7 +132,7 @@ def save_checkpoint(path, model, ema, optimizer, scheduler, scaler, epoch, prove
 
 
 def train(job, cfg, output, provenance, runtime):
-    from .training_validation import periodic_validation, update_best_checkpoint
+    from .training_validation import periodic_validation, update_best_checkpoint, repair_missing_validations
 
     require_gpu()
     if job["epochs"] != 60 or job["seed"] not in {0, 1, 2}:
@@ -242,15 +242,17 @@ def train(job, cfg, output, provenance, runtime):
     final = checkpoint_dir / "epoch_59.pth"
     if not final.is_file():
         raise RuntimeError("final checkpoint was not produced")
-    validations = [load_json(path) for path in sorted((Path(output) / "intermediate_eval").glob("epoch_*/metrics.json"))]
-    best = load_json(Path(output) / "best.json")
-    passed = {row["completed_epochs"] for row in validations if row["status"] == "completed_validation"}
-    return dict(completed_epochs=60, checkpoint_path=best["checkpoint_path"],
-                last_checkpoint_path=str(final.resolve()), selected_checkpoint_epoch=best["checkpoint_epoch"],
-                checkpoint_selection="best_full_validation_average_mAP", best_validation_score=best["score"],
-                best_checkpoint_selection_complete=passed == set(range(5, 61, 5)), successful_optimizer_updates=updates,
+    missing = repair_missing_validations(model, ema, cfg, runtime, job, provenance, output)
+    best_path = Path(output) / "best.json"
+    best = load_json(best_path) if best_path.exists() else {}
+    return dict(completed_epochs=60, training_complete=True, selection_complete=not missing,
+                checkpoint_path=best.get("checkpoint_path"),
+                checkpoint_identity=best.get("checkpoint_identity"),
+                last_checkpoint_path=str(final.resolve()), selected_checkpoint_epoch=best.get("checkpoint_epoch"),
+                checkpoint_selection="best_full_validation_average_mAP", best_validation_score=best.get("score"),
+                best_checkpoint_selection_complete=not missing, successful_optimizer_updates=updates,
                 intermediate_validation_path=str(Path(output) / "intermediate_eval"),
-                failed_validation_epochs=sorted(set(range(5, 61, 5)) - passed))
+                failed_validation_epochs=missing)
 
 
 def load_trained_model(job, cfg, output, provenance):
@@ -258,7 +260,11 @@ def load_trained_model(job, cfg, output, provenance):
     receipt = load_json(dependency / "result.json")
     if receipt["status"] != "completed" or receipt["is_mock"] or receipt["completed_epochs"] != 60:
         raise ValueError("dependency is not its completed real training run")
+    if not receipt.get("best_checkpoint_selection_complete") or not receipt.get("selection_complete"):
+        raise ValueError("dependency requires complete scheduled best checkpoint selection")
     checkpoint = torch.load(receipt["checkpoint_path"], map_location="cpu")
+    identity = checkpoint_identity(receipt["job_id"], checkpoint["epoch"], checkpoint["provenance"], file_id(receipt["checkpoint_path"]))
+    require_same_checkpoint(identity, receipt.get("checkpoint_identity"))
     if checkpoint["epoch"] != receipt.get("selected_checkpoint_epoch", 59):
         raise ValueError("selected checkpoint epoch differs from its training receipt")
     for key in ("source_commit", "resolved_config_sha256", "split_sha256", "weights_sha256"):
@@ -268,6 +274,7 @@ def load_trained_model(job, cfg, output, provenance):
     restore_mutable_state(model, checkpoint, "state_dict_ema")
     model.epoch = checkpoint["epoch"]
     model.inference_seed = job["seed"]
+    model.checkpoint_identity = identity
     return model
 
 

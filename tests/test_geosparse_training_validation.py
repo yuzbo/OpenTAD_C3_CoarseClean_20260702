@@ -84,7 +84,7 @@ def validation_fixture(tmp_path, monkeypatch, omit_second_video=False):
     annotation.write_text(json.dumps(dict(database={
         "v1": dict(subset="validation", annotations=[dict(label="a", segment=[0., 1.])]),
         "v2": dict(subset="validation", annotations=[dict(label="a", segment=[2., 3.])]),
-        "dev": dict(subset="internal_dev", annotations=[dict(label="a", segment=[0., 1.])]),
+        "dev": dict(subset="training", annotations=[dict(label="a", segment=[0., 1.])]),
     })))
     cfg = ConfigDict(dict(dataset=dict(train=dict(data_path="train-videos"),
         test=dict(ann_file=str(annotation), data_path="all-test-videos", subset_name="validation")),
@@ -174,8 +174,10 @@ def test_final_model_loader_uses_selected_best_epoch_and_ema(tmp_path, monkeypat
     checkpoint = tmp_path / "best.pth"
     torch.save(dict(format="geosparse_full_state_v2", epoch=9, provenance=provenance,
                     state_dict_ema=ema.state_dict()), checkpoint)
-    receipt = dict(status="completed", is_mock=False, completed_epochs=60, selected_checkpoint_epoch=9,
-                   checkpoint_path=str(checkpoint))
+    from geosparse_ext.records import checkpoint_identity, file_id
+    receipt = dict(job_id="own-training", status="completed", is_mock=False, completed_epochs=60, selected_checkpoint_epoch=9,
+                   checkpoint_path=str(checkpoint), best_checkpoint_selection_complete=True, selection_complete=True,
+                   checkpoint_identity=checkpoint_identity("own-training", 9, provenance, file_id(checkpoint)))
     (tmp_path / "result.json").write_text(json.dumps(receipt))
     monkeypatch.setattr("geosparse_ext.runtime.build_detector", lambda cfg: copy.deepcopy(model))
     monkeypatch.setattr(torch.nn.Module, "cuda", lambda self: self)

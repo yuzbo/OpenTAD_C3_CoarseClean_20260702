@@ -114,6 +114,8 @@ class SelectionObserver:
         evidence = args[2]
         self.evidence = {name: cpu(getattr(evidence, name)[0]) for name in
                          ("source_support", "support_valid", "physical_time_s", "roi_xyxy", "parent_clip_id", "valid", "fidelity")}
+        if getattr(evidence, "roi_polygon", None) is not None:
+            self.evidence["roi_polygon"] = cpu(evidence.roi_polygon[0])
 
     def close(self):
         for handle in self.handles:
@@ -131,9 +133,9 @@ class SelectionObserver:
         width = (1024 if job["model"]["backbone"] == "videomae_l" else 768) if encoder is None else encoder.source.embed_dims
         depth = (24 if width == 1024 else 12) if encoder is None else len(encoder.source.blocks)
         heavy = sum(12 * row["qkv_tokens"] * width**2 + 2 * row["qkv_tokens"]**2 * width for row in trace)
-        # The registered denominator remains full 224-resolution native Heavy,
-        # including padded computation, even for the B-112 fidelity variant.
-        native_n = 8 * 14 * 14
+        # Same-resolution full Heavy, including padding. Resolution reduction is
+        # not sparse-update savings; cross-resolution comparisons use absolute MACs.
+        native_n = 8 * side * side
         reference = depth * (temporal // 8) * (12 * native_n * width**2 + 2 * native_n**2 * width)
         arrays = {key: value for key, value in p.items() if isinstance(value, np.ndarray)}
         if self.evidence is not None:
@@ -141,11 +143,15 @@ class SelectionObserver:
         counts = selected.sum((1, 2))
         summary = dict(window_index=index, video_id=p["video_id"], window_id=p["window_id"], route=job["route"],
             selected_semantics="fine refinement; coarse Heavy remains" if job["route"] == "C" else "Heavy evidence" if job["route"] == "B" else "Heavy updates",
+            evidence_support_semantics="anchor support; encoded features depend on all selected tokens in the same parent; not an independent cache key",
             requested_budget=p["requested_budget"], selected_native_members=int(counts.sum()), valid_native_members=int(valid.sum() * side * side),
             selected_native_ratio=float(counts.sum() / max(1, valid.sum() * side * side)),
             selected_temporal_ratio=float(((counts > 0) & valid).sum() / max(1, valid.sum())),
             native_shape=[temporal, side, side], temporal_selected_fraction=(counts / (side * side)).tolist(),
             heavy_macs=heavy, heavy_reference_macs=reference, heavy_mac_ratio=heavy / reference,
+            heavy_reference=dict(resolution=side * 16, backbone=job["model"]["backbone"],
+                                 parent_shape=[8, side, side], width=width, depth=depth,
+                                 scope="same-resolution full Heavy including padded positions"),
             model_macs_counted=counter["macs"], mac_components=counter["components"], mac_scope=counter["scope"],
             mac_count_complete=counter["complete_for_conv_linear_matmul"], unsupported_ops=counter["unsupported"],
             parent_heavy_tokens=[sum(row["qkv_tokens"] for row in trace if row["parent"] == parent) for parent in range(temporal // 8)],

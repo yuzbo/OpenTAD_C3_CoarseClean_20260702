@@ -123,9 +123,16 @@ def reconcile(job, state, root):
     if (output / "result.json").is_file():
         result = load_json(output / "result.json")
         recorded = load_json(output / "source_commits.json") if (output / "source_commits.json").is_file() else {}
-        if (result.get("job_id") != job["job_id"] or result.get("status") != "completed" or result.get("is_mock") is not False
+        if (job["kind"] == "train" and result.get("status") == "selection_pending"
+                and result.get("job_id") == job["job_id"] and result.get("training_complete")
+                and result.get("completed_epochs") == 60 and result.get("is_mock") is False
+                and recorded and all(result.get(key) == value for key, value in recorded.items())):
+            state.update(status="SELECTION_PENDING", reason="optimization complete; repair saved-epoch validations before formal downstream tasks")
+        elif (result.get("job_id") != job["job_id"] or result.get("status") != "completed" or result.get("is_mock") is not False
                 or not recorded or any(result.get(key) != value for key, value in recorded.items())
-                or (job["kind"] == "train" and (result.get("completed_epochs") != 60 or not Path(result.get("checkpoint_path", "/missing")).is_file()))):
+                or (job["kind"] == "train" and (result.get("completed_epochs") != 60
+                    or not result.get("selection_complete") or not result.get("best_checkpoint_selection_complete")
+                    or not Path(result.get("checkpoint_path") or "/missing").is_file()))):
             state.update(status="FAILED", reason="invalid completion receipt")
         else:
             state.update(status="DONE", result=str(output / "result.json"))
@@ -196,7 +203,7 @@ def main():
             item = state["jobs"].setdefault(job["job_id"], dict(status="PENDING", attempts=[]))
             if args.execute:
                 reconcile(job, item, root)
-            if item["status"] in {"DONE", "FAILED", "SUBMITTED", "SUBMITTING", "BLOCKED_EXECUTION"}:
+            if item["status"] in {"DONE", "FAILED", "SUBMITTED", "SUBMITTING", "BLOCKED_EXECUTION", "SELECTION_PENDING"}:
                 continue
             status, reason = readiness(job, by_id, bindings, root, state["jobs"])
             item.update(status=status, reason=reason)

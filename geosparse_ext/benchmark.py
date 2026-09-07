@@ -15,6 +15,7 @@ from opentad.datasets.builder import build_dataset, collate
 from .data import video_batch
 from .records import save_json
 from .runtime import require_gpu, load_trained_model, seed_all
+from .cuda_identity import allocated_cuda_device
 
 
 def timing_summary(samples_ms, batch_size):
@@ -28,7 +29,7 @@ def timing_summary(samples_ms, batch_size):
 
 def isolated_gpu():
     """Query the single visible allocated device on either cluster."""
-    device = os.environ["CUDA_VISIBLE_DEVICES"]
+    device = allocated_cuda_device()["cuda_uuid"]
     output = subprocess.check_output(["nvidia-smi", "-i", device, "--query-compute-apps=pid", "--format=csv,noheader,nounits"], text=True)
     pids = {int(value.strip()) for value in output.splitlines() if value.strip()}
     if pids - {os.getpid()}:
@@ -72,6 +73,9 @@ def benchmark(job, cfg, output, provenance, runtime, split):
     post.sliding_window = False
     output = Path(output)
     summary = dict(job_id=job["job_id"], units="batch of 768-position windows", videos=names,
+        source_train_id=job["source_train_id"], selected_checkpoint_epoch=model.epoch,
+        checkpoint_identity=model.checkpoint_identity, gpu_identity=allocated_cuda_device(),
+        dataset_window_indices=indices,
         slurm_job_gpus=os.environ["SLURM_JOB_GPUS"], cuda_visible_devices=os.environ["CUDA_VISIBLE_DEVICES"],
         warmup=job["warmup"], repeats=job["repeats"], torch=torch.__version__, cuda=torch.version.cuda,
         precision="fp16_autocast" if cfg.solver.amp else "fp32", num_decode_workers=0,
@@ -130,6 +134,7 @@ def benchmark(job, cfg, output, provenance, runtime, split):
                                 values.append(ms)
                                 raw.write(json.dumps(dict(**case, repeat=step - job["warmup"], ms=ms,
                                     video_ids=[m["video_name"] for m in batch["metas"]],
+                                    window_ids=[f"{m['video_name']}:{int(m['geosparse']['source_frame_id'][0])}" for m in batch["metas"]],
                                     selected_tokens=model.latest_route_plan.realized_token_count.tolist()), allow_nan=False) + "\n")
                             if step == job["warmup"]:
                                 save_json(output / f"trace-{implementation}-b{size}-{mode}.json",
@@ -155,5 +160,7 @@ def benchmark(job, cfg, output, provenance, runtime, split):
     if failed:
         raise RuntimeError(f"{len(failed)} benchmark cases failed or OOM; all per-case evidence retained in hardware.json")
     return dict(hardware_path=str(output / "hardware.json"), timing_samples_path=str(output / "timings.jsonl"),
+                checkpoint_identity=model.checkpoint_identity, selected_checkpoint_epoch=model.epoch,
+                gpu_identity=summary["gpu_identity"], dataset_window_indices=indices,
                 measured_cases=sum(c["status"] == "MEASURED" for c in summary["cases"]),
                 failed_cases=sum(c["status"] != "MEASURED" for c in summary["cases"]))
