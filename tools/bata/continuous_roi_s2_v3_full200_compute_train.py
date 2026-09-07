@@ -84,6 +84,21 @@ REQUIRED_PAYLOAD_KEYS = {
 }
 
 
+def formal_ddp_options() -> dict[str, Any]:
+    """Preserve the caller-managed CPU/GPU split for structured model inputs."""
+    return {
+        "device_ids": None,
+        "find_unused_parameters": False,
+        "static_graph": True,
+    }
+
+
+def build_formal_ddp(model):
+    from torch.nn.parallel import DistributedDataParallel
+
+    return DistributedDataParallel(model, **formal_ddp_options())
+
+
 def capture_rng_state(
     *,
     rank: int,
@@ -451,8 +466,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     from mmengine.config import Config
     from torch.cuda.amp import GradScaler
     from torch.distributed.algorithms.ddp_comm_hooks import default as comm_hooks
-    from torch.nn.parallel import DistributedDataParallel
-
     from opentad.cores import build_optimizer, build_scheduler, train_one_epoch
     from opentad.datasets import build_dataloader, build_dataset
     from opentad.models import build_detector
@@ -555,13 +568,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if rank == 0:
             logger.info(f"[RUNTIME_IDENTITY_AUDIT] {runtime_identity_receipt}")
 
-        model = DistributedDataParallel(
-            model,
-            device_ids=[local_rank],
-            output_device=local_rank,
-            find_unused_parameters=False,
-            static_graph=True,
-        )
+        model = build_formal_ddp(model)
         if not bool(cfg.solver.fp16_compress):
             raise ValueError("formal cell changed the frozen FP16 communication policy")
         model.register_comm_hook(state=None, hook=comm_hooks.fp16_compress_hook)
@@ -763,9 +770,11 @@ __all__ = [
     "RECOVERY_SCHEMA",
     "REQUIRED_PAYLOAD_KEYS",
     "build_epoch_sampler_state",
+    "build_formal_ddp",
     "build_recovery_payload",
     "bind_pretrained_checkpoint",
     "capture_rng_state",
+    "formal_ddp_options",
     "validate_epoch_sampler_state",
     "validate_full_data_manifest",
     "load_recovery_checkpoint",

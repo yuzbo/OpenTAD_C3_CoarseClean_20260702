@@ -12,11 +12,13 @@ if str(root_dir) not in sys.path:
     sys.path.insert(0, str(root_dir))
 
 import torch
+import torch.distributed as dist
 from mmengine.config import Config
 
 import opentad.datasets  # noqa: F401 - registers config-driven data transforms
 from opentad.models import build_detector
 from tools.bata.continuous_roi_s2_v3_full200_compute import canonical_sha256
+from tools.bata.continuous_roi_s2_v3_full200_compute_train import build_formal_ddp
 from tools.bata.zoomtoken_full200_matrix_spec import (
     binding_from_config,
     get_matrix_spec,
@@ -33,10 +35,37 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+class _DistributedProjectionWitness(torch.nn.Module):
+    def __init__(self, detector):
+        super().__init__()
+        self.detector = detector
+
+    def forward(self, inputs, masks):
+        backbone_output = self.detector.backbone(inputs, masks)
+        self.detector._assert_feature_mask_temporal_match(
+            backbone_output, masks, "runtime witness"
+        )
+        padded, padded_masks = self.detector.pad_data(backbone_output, masks)
+        projected, projected_masks = self.detector.projection(padded, padded_masks)
+        primary = self.detector._primary_backbone_features(backbone_output)
+        return primary, tuple(projected), tuple(projected_masks)
+
+
 def main() -> int:
     args = parse_args()
-    if "SLURM_JOB_ID" not in os.environ or not torch.cuda.is_available():
-        raise RuntimeError("D2S/PA-TAD runtime witness requires a Slurm GPU allocation")
+    required_runtime = {"SLURM_JOB_ID", "LOCAL_RANK", "RANK", "WORLD_SIZE"}
+    if not required_runtime.issubset(os.environ) or not torch.cuda.is_available():
+        raise RuntimeError(
+            "D2S/PA-TAD runtime witness requires torchrun inside a Slurm GPU allocation"
+        )
+    local_rank = int(os.environ["LOCAL_RANK"])
+    rank = int(os.environ["RANK"])
+    world_size = int(os.environ["WORLD_SIZE"])
+    if world_size != 2:
+        raise RuntimeError("D2S/PA-TAD runtime witness requires exactly two ranks")
+    torch.cuda.set_device(local_rank)
+    dist.init_process_group(backend="nccl")
+    device = torch.device("cuda", local_rank)
     spec = get_matrix_spec()
     if spec.key != args.matrix_kind:
         raise ValueError("matrix-kind differs from ZOOMTOKEN_MATRIX_KIND")
@@ -50,7 +79,8 @@ def main() -> int:
     )
     model_cfg = copy.deepcopy(cfg.model)
     model_cfg.backbone.custom.pretrain = str(args.pretrained.resolve())
-    model = build_detector(model_cfg).to("cuda:0").eval()
+    model = build_detector(model_cfg).to(device).eval()
+    distributed_model = build_formal_ddp(_DistributedProjectionWitness(model))
 
     global_view = torch.zeros(1, 1, 3, 768, 96, 96, dtype=torch.uint8)
     source_view = torch.zeros(1, 1, 3, 768, 180, 320, dtype=torch.uint8)
@@ -59,7 +89,7 @@ def main() -> int:
             "inputs": {"global": global_view, "source": source_view},
             "masks": torch.ones(1, 768, dtype=torch.bool),
         },
-        torch.device("cuda", 0),
+        device,
     )
     if prepared["inputs"]["source"].device.type != "cpu":
         raise RuntimeError("runtime witness moved source-native video off CPU")
@@ -67,14 +97,9 @@ def main() -> int:
         raise RuntimeError("runtime witness did not move the global view to CUDA")
     masks = prepared["masks"]
     with torch.inference_mode(), torch.cuda.amp.autocast(dtype=torch.float16):
-        backbone_output = model.backbone(
-            prepared["inputs"], masks=masks
+        primary, projected, projected_masks = distributed_model(
+            prepared["inputs"], masks
         )
-        model._assert_feature_mask_temporal_match(
-            backbone_output, masks, "runtime witness"
-        )
-        padded, padded_masks = model.pad_data(backbone_output, masks)
-        projected, projected_masks = model.projection(padded, padded_masks)
 
     wrapper = model.backbone
     audit = dict(wrapper.latest_d2s_audit or {})
@@ -82,9 +107,11 @@ def main() -> int:
         raise RuntimeError("runtime physical-skip counters differ from 16/32")
     if len(projected) != 6 or len(projected_masks) != 6:
         raise RuntimeError("runtime projection did not produce six pyramid levels")
-    if spec.key == "d2s" and not torch.is_tensor(backbone_output):
+    if tuple(primary.shape) != (1, 384, 768):
+        raise RuntimeError("runtime witness backbone output geometry changed")
+    if spec.key == "d2s" and bool(wrapper.return_feature_bundle):
         raise RuntimeError("plain D2S must return a fused feature tensor")
-    if spec.key == "patad" and not isinstance(backbone_output, dict):
+    if spec.key == "patad" and not bool(wrapper.return_feature_bundle):
         raise RuntimeError("PA-TAD must receive the explicit G/R feature bundle")
 
     payload = {
@@ -100,7 +127,12 @@ def main() -> int:
         "status": "PASS",
     }
     payload["receipt_sha256"] = canonical_sha256(payload)
-    print(json.dumps(payload, sort_keys=True))
+    if distributed_model.device_ids is not None:
+        raise RuntimeError("formal DDP must preserve caller-managed mixed-device inputs")
+    if rank == 0:
+        print(json.dumps(payload, sort_keys=True))
+    dist.barrier()
+    dist.destroy_process_group()
     return 0
 
 

@@ -19,6 +19,7 @@ from tools.bata.trace_d2s_patad_full_operator import (
 from tools.bata.continuous_roi_s2_v3_full200_compute import sha256_file
 from tools.bata.continuous_roi_s2_v3_full200_compute_train import (
     bind_pretrained_checkpoint,
+    formal_ddp_options,
 )
 from tools.bata.zoomtoken_full200_matrix_spec import (
     binding_from_config,
@@ -140,3 +141,21 @@ def test_all_formal_launchers_pass_the_absolute_pretrained_argument():
     ):
         text = (ROOT / "scripts" / name).read_text(encoding="utf-8")
         assert '--pretrained "${PRETRAINED}"' in text
+
+
+def test_formal_ddp_preserves_caller_managed_mixed_device_inputs():
+    assert formal_ddp_options() == {
+        "device_ids": None,
+        "find_unused_parameters": False,
+        "static_graph": True,
+    }
+
+
+def test_d2s_patad_precheck_uses_the_formal_two_rank_ddp_witness():
+    for name in (
+        "run_zoomtoken_d2s_tad_full200_compute_n16r4.sh",
+        "run_zoomtoken_patad_full200_compute_n16r4.sh",
+    ):
+        text = (ROOT / "scripts" / name).read_text(encoding="utf-8")
+        assert "torchrun --nproc_per_node=2" in text
+        assert "verify_d2s_patad_pre_run_witness.py" in text

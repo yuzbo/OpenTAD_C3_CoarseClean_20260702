@@ -90,7 +90,10 @@ if [[ "${PRECHECK_ONLY}" == "1" ]]; then
          tests/test_d2s_patad_full_operator.py -v
 
   printf '[PATAD_FULL200_COMPUTE][PRECHECK] Running checkpoint-load and feature-bundle witness...\n'
-  python tools/bata/verify_d2s_patad_pre_run_witness.py \
+  WITNESS_PORT=$((20000 + SLURM_JOB_ID % 20000))
+  torchrun --nproc_per_node=2 --master_addr="$(hostname)" \
+    --master_port="${WITNESS_PORT}" \
+    tools/bata/verify_d2s_patad_pre_run_witness.py \
     configs/adatad/thumos/continuous_roi_patad_v3_u128_seed4407.py \
     --pretrained "${PRETRAINED}" \
     --matrix-kind patad
