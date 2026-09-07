@@ -32,6 +32,7 @@ def _torch():
 def _model_and_optimizer(device, legacy=False):
     torch = _torch()
     from opentad.models.backbones.vit_adapter import VisionTransformerAdapter
+    from opentad.models.detectors.actionformer import ActionFormer
     from opentad.cores.optimizer import build_optimizer, prepare_optimizer_parameter_freezing
 
     vit = VisionTransformerAdapter(
@@ -40,7 +41,8 @@ def _model_and_optimizer(device, legacy=False):
         bounded_interval_adapter=dict(enabled=True),
         continuous_timestamp_conditioner=dict(enabled=True),
     )
-    model = torch.nn.Module()
+    model = ActionFormer.__new__(ActionFormer)
+    torch.nn.Module.__init__(model)
     model.backbone = torch.nn.Module()
     model.backbone.freeze_backbone = False
     model.backbone.model = torch.nn.Module()
