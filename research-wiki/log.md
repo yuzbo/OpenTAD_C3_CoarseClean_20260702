@@ -7377,3 +7377,9 @@ admissible replacement full-ASFormer gradient gate, bound to the full commit.
   returned AssocMaxSubmitJobLimit without a job ID. No formal job was submitted.
   The existing CUDA admission script now directly runs the focused suite and
   all four real-video prechecks; the final successor SHA still needs admission.
+
+- 2026-09-07: GPU admission 1276617 at 0aa72a60 failed in the single-process
+  CUDA witness's distributed logging reduction (48 other tests passed).
+  Only the test fixture is corrected; real CUDA AMP/replay assertions and
+  production training are unchanged. Old logs are retained and the successor
+  requires a new exact-SHA admission before formal jobs.

@@ -69,12 +69,15 @@ def test_train_entrypoint_passes_ctdp_replay_and_saves_recovery_state():
 
 
 @pytest.mark.skipif(os.name == "nt", reason="CUDA witness runs in the N16R4 Torch environment")
-def test_cuda_amp_replay_counts_real_optimizer_scheduler_and_ema(tmp_path):
+def test_cuda_amp_replay_counts_real_optimizer_scheduler_and_ema(tmp_path, monkeypatch):
     import torch
     if not torch.cuda.is_available():
         pytest.skip("CUDA allocation required")
-    from opentad.cores.train_engine import train_one_epoch
+    from opentad.cores import train_engine
     from opentad.utils.checkpoint import save_checkpoint
+
+    # This single-process witness tests AMP, not the distributed logging collective.
+    monkeypatch.setattr(train_engine, "reduce_loss", lambda losses: losses)
 
     class Toy(torch.nn.Module):
         def __init__(self):
@@ -110,7 +113,7 @@ def test_cuda_amp_replay_counts_real_optimizer_scheduler_and_ema(tmp_path):
     ema_calls = []
     ema = SimpleNamespace(update=lambda _: ema_calls.append(1), module=model)
     audit = {}
-    updates = train_one_epoch(
+    updates = train_engine.train_one_epoch(
         [{"x": torch.ones(4, device="cuda")} for _ in range(2)],
         model, optimizer, scheduler, 0, logging.getLogger(__name__),
         model_ema=ema, scaler=scaler, clip_grad_l2norm=1.0,
