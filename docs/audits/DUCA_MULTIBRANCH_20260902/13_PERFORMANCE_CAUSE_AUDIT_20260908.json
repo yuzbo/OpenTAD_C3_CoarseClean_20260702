@@ -1,0 +1,30 @@
+{
+  "checked_at_cst": "2026-09-08 00:37",
+  "scope": "Read-only causal evidence gathering; not a complete queue heartbeat or a repair completion",
+  "production_code_changed": false,
+  "jobs_submitted_or_cancelled": false,
+  "ctdp_coordinate_witness": {
+    "source_sha": "78cde1be1cb8b3acc7d750afc92ea740f2a03d06",
+    "source_root": "/data/run01/sczc063/yuzibo/projects/ctdp_successful_updates_78cde1be",
+    "tracked_tree_clean_before_and_after": true,
+    "execution": "CPU, real config/selector/head/prepare_targets, synthetic GT; not a performance experiment",
+    "dense_gt": [500.0, 600.0],
+    "G0": {"point_min": 0.0, "point_max": 383.0, "positive_points": 0},
+    "G1": {"point_min": 0.0, "point_max": 383.0, "positive_points": 0},
+    "G2": {"point_min": 3.0, "point_max": 766.5, "positive_points": 4},
+    "G3": {"point_min": 3.0, "point_max": 766.5, "positive_points": 4},
+    "verdict": "CONFIRMED_COORDINATE_CONTRACT_ERROR_G0_G1",
+    "repair_status": "NOT_IMPLEMENTED",
+    "map_causal_fraction": null
+  },
+  "route_findings": {
+    "H65_PRO": "F01-F06 all phase=False; existing results do not test four-phase selection; reference and F optimizer revisions differ",
+    "CT_DP": "G0/G1 coordinate mismatch persists after successful-update repair; all G0-G3 disable B-AMoD",
+    "ET_TRC": "Fixed-stride learned rank64 residual approximation, not exact anchor-dependent JVP or event policy; OFF-to-ON negative result is real, detailed cause unisolated",
+    "BAFDR": "G96 means 96x96 and all768 global frames; K16 is256 local raw frames and128 tubelets; old update violation cannot explain the full low-score gap by itself",
+    "EVIDENCE": "C0 historical-selection control and A2 no-time ablation are not the complete recovery method",
+    "DUCA_UNIFIED": "Taylor P0/P1 and H65 retention/transition still unimplemented"
+  },
+  "baseline_confounds": ["learning-rate schedule", "batch and sample exposure", "spatial augmentation versus letterbox", "time coordinates", "checkpoint selection"],
+  "report": "13_PERFORMANCE_CAUSE_AUDIT_20260908.md"
+}

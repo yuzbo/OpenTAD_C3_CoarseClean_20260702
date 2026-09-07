@@ -1,6 +1,6 @@
 {
   "schema_version": "DUCA-EXPERIMENT-CATALOG-v001",
-  "last_updated_utc": "2026-09-07T15:04:17+00:00",
+  "last_updated_utc": "2026-09-07T16:41:17+00:00",
   "scope": "所有当前 DUCA/ZoomToken 代码实验及其独立修正路线；旧远端作业另列为不纳入结果",
   "repository": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702",
   "entries": [
@@ -96,8 +96,9 @@
     },
     {
       "category": "correction_route",
-      "name": "H65-Pro 当前正式单种子矩阵：384 帧四相预算与物理时间定位",
+      "name": "H65-Pro 当前已完成六臂：旧分配策略下的归因、课程与骨干消融（四相未开启）",
       "internal_id": "H65_PRO_ACTIVE",
+      "scientific_audit": "2026-09-08原因核验：F01-F06全部phase=False，不能代表四相机制已验证。64.2265属于F02 Taylor因子；F09等phase-on配置不能因存在于磁盘而算完成。F臂f2068e18相对参考e553a5a4增加时间参数optimizer组，+0.34不是已经隔离混淆的因果收益。详见13_PERFORMANCE_CAUSE_AUDIT_20260908.md",
       "receipt_recheck": "2026-09-07 22:55心跳：六份F01-F06 metrics JSON可读，evaluation_sha256逐份复算一致；seed3407、f2068e18训练/67c8f39f评测、epoch59 EMA绑定不变，六个终态checkpoint仍存在。六份Avg-mAP不变，未重复推理或改写指标",
       "current_cycle": "2026-09-07 基线口径纠正：上游 AdaTAD VideoMAE-S/768/160 公开结果为 69.03%；项目登记的未修改共享复现为 68.73%（本轮未重新读取原始运行产物）。历史 uniform384 的 native stride-2 为 64.352%，physical-grid 版本为 65.696%，均与本轮协议不匹配。67.58%/63.89% 只保留为 strict6000 修改协议的实测参考，不能称为已复现的官方 AdaTAD 基线。已确认学习率余弦周期、world size、终态模型选择和 U384 后端有协议差异；差异对分数的因果贡献尚未隔离。F02 的 +0.34 仅是相对本轮 U384 的数值差，不能据此宣称超过约 65% 的历史均匀基线",
       "branch": "codex/h65-pro-admission-fix-20260902（参考臂） + codex/h65-pro-physical-time-optimizer-repair-20260904（F 臂）",
@@ -116,8 +117,9 @@
     },
     {
       "category": "correction_route",
-      "name": "CT-DP 当前正式四臂：基础嵌入、CT-Tubelet、B-AMoD 及二者组合",
+      "name": "CT-DP 当前几何四臂：均匀选择、动态选择、物理网格及 CT-Tubelet（均未启用 B-AMoD）",
       "internal_id": "CT_DP_BAMOD_ACTIVE",
+      "scientific_audit": "2026-09-08远端clean 78cde1be真实selector/head CPU复现确认：G0/G1只有0..383检测点，却接收原样dense GT[500,600]并设置native-axis，正样本0；G2/G3物理网格正样本4。这是当前未修复的坐标错误，不是少3-4更新。G0-G3全部B-AMoD关闭，旧四臂名称错误已纠正。修复计数和既有PRECHECK不证明坐标合同正确",
       "current_cycle": "2026-09-07 22:56 CST：1276669/1276670/1276671/1276672四臂全部RUNNING，G0/G1/G2/G3已完成epoch44/44/44/43，optimizer/scheduler/EMA各自同步为4500/4500/4500/4400，AMP skips为3/3/4/3且已重放补齐。当前stdout/stderr未发现新运行失败，尚无epoch59 checkpoint。独立终态评测11ced13a的GPU四臂单批PRECHECK1277767仍因AssocGrpGRES排队、未产生日志，不能称GPU评测通过；未重复提交或重复训练，无新官方mAP",
       "branch": "codex/duca-ctdp-successful-updates-20260907（训练） + codex/duca-ctdp-terminal-eval-20260907（独立评测）",
       "sha": "78cde1be1cb8b3acc7d750afc92ea740f2a03d06（更新合同修复训练） / 11ced13ac6b72091d26405c5d6f152f09914c22d（独立评测） / c0fae67a1236f2c47e6c2935d217659cd1f8fb9d（旧训练）",
@@ -165,9 +167,9 @@
         "G3": 4400
       },
       "deployment_status": "G0/G1/G2/G3 训练 1267229/1267230/1267231/1267232 均 COMPLETED(0:0)，四个 epoch_59.pth/EMA 均存在。但 2026-09-07 直接读取 checkpoint，实际 optimizer step 分别只有 5997/5996/5996/5997，scheduler 均为 6000。源码确认该路线未启用正式 AMP replay，跳过更新仍推进 scheduler",
-      "result_status": "旧四臂仍为PROTOCOL_ERROR；78cde1be已通过GPU/逐臂PRECHECK，四个修复版正式训练已提交，尚无新最终性能",
+      "result_status": "旧四臂仍为PROTOCOL_ERROR；78cde1be虽修复更新计数，G0/G1新确认坐标接线错误仍未修复，不能作为合法均匀/动态比较基线；G2/G3尚无新最终性能",
       "final_result": "仅保留旧训练 telemetry：Avg-mAP G0=14.71%、G1=14.84%、G2=56.15%、G3=57.84%；mAP@0.7=2.84/3.26/26.24/31.53%。旧 checkpoint 和日志不删除，不把 6000 scheduler steps 改称 6000 successful updates，也不据此裁决机制贡献",
-      "next_action": "监督1276669-1276672和评测PRECHECK1277767，不重跑已通过的训练admission或重复提交。1277767通过后用同一脚本PRECHECK_ONLY=0、array0-3逐臂afterok对应训练，CTDP_TRAIN_ROOT改为repair_run_root/formal，CTDP_EVAL_ROOT为ctdp_terminal_eval_11ced13a/formal。预期receipt为formal/g0至g3/gpu1_id0/official_eval/metrics.json；若训练已成功且afterok引用已被Slurm清理，须核验sacct和原日志后记录依赖已满足，不能制造旧依赖提交失败。不把训练telemetry改称最终性能",
+      "next_action": "优先在独立修复分支统一G0/G1的GT、proposal和后处理坐标；保持消融定义，不能只开启head混淆G1/G2。复现正样本分配与逆映射后按focused/exact-SHA CUDA/PRECHECK规则重提，旧产物保留。当前作业和既有独立评测不得包装成有效G0/G1基线或B-AMoD结果；本次原因核验未修改或取消作业。G2/G3独立评测沿用既有身份，不从训练telemetry推导正式性能",
       "local_head": "78cde1be1cb8b3acc7d750afc92ea740f2a03d06",
       "local_clean_tree": true
     },
@@ -175,6 +177,7 @@
       "category": "correction_route",
       "name": "DUCA-Unified 当前 41 单元正交消融控制台",
       "internal_id": "DUCA_UNIFIED_ACTIVE",
+      "scientific_audit": "2026-09-08核对生成器_IMPLEMENTATION_BLOCKERS：Taylor P0/P1真实接线、H65 retention/transition仍是实现欠账，无完整矩阵结果，不能将其归类为已训练的低性能路线",
       "current_cycle": "2026-09-07 22:55心跳再次读取Unified本地HEAD/clean状态，793c4f9c未改变。Taylor P0/P1运行时接线及H65 original retention/transition缺失本轮未修复，41单元未部署。该路线是明确的实现欠账，而不是资源排队；不因其他路线健康运行而解除BLOCKED_UNIMPLEMENTED",
       "branch": "codex/duca-unified-formal-gates-20260903",
       "sha": "793c4f9cdf7dac4f224bc73012aff8bc93949f87",
@@ -191,6 +194,7 @@
       "category": "correction_route",
       "name": "BAFDR 当前 seed 4407 正式流水线：D160 教师与五臂 K16 筛选",
       "internal_id": "BAFDR_ACTIVE",
+      "scientific_audit": "2026-09-08单位纠正：G96是96x96空间分辨率，全局仍48x16=768帧；K16局部是16x16=256原始帧、128 tubelets。不是96全局帧加128局部帧，也不与uniform384/160同输入几何。旧少3-6更新不能单独解释十余个百分点差距；新完整结果未齐前不承诺恢复65/69",
       "current_cycle": "2026-09-07 22:56 CST：新D160教师1276650与G96全局低清1276675仍已完成真实6000更新，本轮未重复加载已核验权重。U16均匀分块1276842与晚融合LATE1276843均完成epoch34/3500成功更新，optimizer attempts各3504，AMP skips各4且已重放，非有限loss及replay耗尽均0，未发现新运行失败。五份旧sealed JSON仍可读且自哈希一致，但实际5994-5997更新仍协议不合格；自哈希不能替代训练合同。当前账户满额，NOKD及FULL后续尚未提交",
       "branch": "codex/zoomtoken-bafdr-successful-updates-20260907（修复） + codex/zoomtoken-bafdr-eval-metadata-repair-20260904（旧评测）",
       "sha": "710ce8a6246c471742c83bf7c180d9ab87c36fac（更新合同修复） / 539287fa8a035765afd7e79863ce77278bef83f2（旧训练） / 29b5a7a2b291203ea7b697cfe416b64f0d365d02（旧评测）",
@@ -262,6 +266,7 @@
       "category": "correction_route",
       "name": "ET-TRC 当前双臂：完整 Transformer 与局部 Taylor/JVP 近似",
       "internal_id": "ET_TRC_ACTIVE",
+      "scientific_audit": "2026-09-08源码核验：固定stride anchors加共享rank64可学习线性残差，不是精确anchor-dependent Jacobian，也未实现事件门控；非恒等初始化和无显式dense残差监督是待验证机制风险。OFF/ON下降7.2672是当前版本负结果，不足以否定全部Taylor路线。OFF的letterbox/增强/训练协议本身也不同于原版AdaTAD",
       "receipt_recheck": "2026-09-07 22:55心跳：OFF/ON metrics JSON可读，自哈希复算一致；两份收据的optimizer/scheduler均6000、2GPU/global batch2和clean tree绑定不变，epoch59 EMA文件均存在。数值仍62.0768%/54.8096%，未重跑评测",
       "branch": "codex/zoomtoken-et-trc-formal-repair-20260903（训练） + codex/zoomtoken-ettrc-terminal-eval-20260907（独立评测）",
       "sha": "74473c2775caebf0da9d368ce8009d78e2942098（训练） / 67d7079d0d1c33e129d31cd3a45aaf93a67db252（评测）",
@@ -299,6 +304,7 @@
       "category": "correction_route",
       "name": "Evidence-Recovery 当前八臂：预选阶段轻量侦察器、不确定性与最大空洞补漏",
       "internal_id": "EVIDENCE_ACTIVE",
+      "scientific_audit": "2026-09-08配置核验：C0是历史H65选择控制，不是均匀384；A2是NO_TIME反事实，仍启用merge/recovery等。59.23/54.28不能充当完整F结果并据此判定路线失败",
       "branch": "codex/duca-evidence-storage-resume-20260907（续训修复） + codex/duca-evidence-fullgrid-repair-20260904（C0/A2） + codex/duca-evidence-optimizer-repair-20260907与codex/duca-evidence-remaining-arms-20260907（原训练）",
       "sha": "ce767b4df49a82b42f4fab4897ac4ea562e4b548（续训接线） / 246058f2c24edc78818ada60eec26249bbf7d5d2（C0/A2） / 1570a72507491899a50767700a35a04eee3f5fe9（A1/A6恢复源） / 73bdd34ae21c6c675a00d1927b8af7c12f9edc05（F/A3-A5恢复源）",
       "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/ce767b4df49a82b42f4fab4897ac4ea562e4b548",
@@ -403,8 +409,8 @@
   "remote_supervisor": {
     "status": "ACTIVE",
     "root": "/data/run01/sczc063/yuzibo/projects/duca_multibranch_supervisor_recovery_20260907",
-    "receipt_age_seconds": 41,
-    "checked_at": "2026-09-07T15:03:39+00:00",
+    "receipt_age_seconds": 27,
+    "checked_at": "2026-09-07T16:40:51+00:00",
     "dispatcher_status": "BLOCKED",
     "dispatcher_mode": "plan",
     "entries": []
@@ -430,6 +436,8 @@
   },
   "measurement_scope": "当前比较以官方 TAD mAP、固定输入/更新预算和机制消融为主；不把端到端延迟、吞吐量或显存作为强制验收指标",
   "baseline_reference_note": "12_BASELINE_IDENTITY_CORRECTION_20260907.md",
+  "performance_cause_audit": "13_PERFORMANCE_CAUSE_AUDIT_20260908.md",
+  "performance_cause_audit_scope": "2026-09-08本次追加的是原因核验，不是完整队列心跳；运行与资源信息仍按各行明确列出的采样时间解释。已确认CT-DP坐标错误未修复、H65四相和CT-DP B-AMoD实验覆盖误标；不改写原始mAP",
   "baseline_comparison_policy": "区分上游公开结果、历史共享复现和本次修改协议实测；官方 evaluator 与完整 receipt 不代表官方训练 recipe 已复现。比较提升前须对齐预训练、数据、batch/曝光、学习率、坐标、模型选择和后处理，不能用较低参考数值替代约69/65的既有锚点，也不能把约69/65规定为每次运行必须达到的分数",
   "result_policy": "没有 exact SHA、clean-tree、epoch-59 EMA、6000 successful updates、官方 evaluator 和结构化自哈希 receipt，不得报告为最终科学结果；不得用 scheduler steps 替代 optimizer successful updates。跨SHA续训必须同时记录原SHA/恢复点更新数与新SHA，不得包装成单一新SHA从零训练的结果",
   "excluded_remote_jobs": [
