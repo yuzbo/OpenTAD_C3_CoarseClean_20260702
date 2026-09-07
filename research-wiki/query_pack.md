@@ -1587,6 +1587,20 @@ max_chars: 8000
   by these failures. Current status and exact paths are in
   `research-wiki/experiment_tracking_ledger.md`.
 
+- **Storage recovered; fresh D2S/PA-TAD deployment (2026-09-07).** At the
+  next heartbeat, JuiceFS reported approximately 510 GiB available; both
+  submissions also checked at least 160 GiB free before dispatch. The same
+  clean runtime `21aa2945b934a0dba469a517c224efe9b30d3967` was reused without
+  model changes. Fresh prechecks D2S `1276607` and PA-TAD `1276608` completed
+  `0:0` at 17:48:31 (UTC+8), with 17 and 11 tests passing respectively, plus
+  the two-rank physical-skip witness and complete three-arm operator traces.
+  New full 3x3 formal jobs D2S `1276621` and PA-TAD `1276622` started at
+  17:50:33 on `g0067`, each allocated two GPUs and eight CPUs. Their fresh
+  roots are `d2s_tad_full200_compute_21aa2945_formal_r5` and
+  `patad_full200_compute_21aa2945_formal_r4`. All previous failed roots remain
+  untouched. These are accepted running experiments, not completed model
+  results; terminal completeness and evaluation receipts are still required.
+
 ## Pointers
 
 - GeoRoute implementation and gates:
