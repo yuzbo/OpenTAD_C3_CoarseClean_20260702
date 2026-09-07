@@ -34,6 +34,8 @@ def parse_args():
     )
     parser.add_argument("--seed", type=int, default=42, help="random seed")
     parser.add_argument("--id", type=int, default=0, help="repeat experiment id")
+    parser.add_argument("--ettrc-metrics-json", default=None,
+                        help="write the frozen ET-TRC pair's terminal official receipt")
     parser.add_argument(
         "--not_eval",
         action="store_true",
@@ -310,6 +312,12 @@ def main():
     args.local_rank = int(os.environ["LOCAL_RANK"])
     args.world_size = int(os.environ["WORLD_SIZE"])
     args.rank = int(os.environ["RANK"])
+    ettrc_identity = None
+    if args.ettrc_metrics_json:
+        from tools.bata.ettrc_terminal_receipt import source_identity, validate_request
+        validate_request(cfg, seed=args.seed, world_size=args.world_size,
+                         not_eval=args.not_eval, max_batches=args.max_batches)
+        ettrc_identity = source_identity(Path(path).resolve())
     if s1_binding is not None and args.world_size != 1:
         raise RuntimeError("formal S1 test is frozen to one Slurm GPU process")
     if georoute_official_development_binding is not None and args.world_size != int(
@@ -458,6 +466,9 @@ def main():
         device = f"cuda:{args.rank % torch.cuda.device_count()}"
         checkpoint = torch.load(checkpoint_path, map_location=device)
         logger.info("Checkpoint is epoch {}.".format(checkpoint["epoch"]))
+        if ettrc_identity is not None:
+            from tools.bata.ettrc_terminal_receipt import terminal_counts
+            terminal_counts(checkpoint)
         if s1_binding is not None:
             if checkpoint.get("experiment_metadata") != sidecar["experiment_metadata"]:
                 raise ValueError(
@@ -508,7 +519,7 @@ def main():
 
     # test the detector
     logger.info("Testing Starts...\n")
-    eval_one_epoch(
+    metrics = eval_one_epoch(
         test_loader,
         model,
         cfg,
@@ -521,6 +532,12 @@ def main():
         max_batches=args.max_batches,
         epoch=None if s1_binding is None else int(checkpoint["epoch"]),
     )
+    if ettrc_identity is not None and args.rank == 0:
+        from tools.bata.ettrc_terminal_receipt import write_receipt
+        write_receipt(args.ettrc_metrics_json, cfg=cfg, config_path=args.config,
+                      checkpoint_path=checkpoint_path, checkpoint=checkpoint,
+                      metrics=metrics, identity=ettrc_identity,
+                      seed=args.seed, world_size=args.world_size)
     logger.info("Testing Over...\n")
 
 
