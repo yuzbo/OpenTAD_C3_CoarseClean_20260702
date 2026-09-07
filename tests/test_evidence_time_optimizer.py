@@ -105,8 +105,10 @@ def test_cuda_time_overflow_skips_update_without_poisoning_scout():
     torch = _torch()
     if not torch.cuda.is_available():
         pytest.skip("requires CUDA AMP")
+    torch.manual_seed(8261)
     model, vit, optimizer = _model_and_optimizer("cuda")
-    scaler = torch.cuda.amp.GradScaler()
+    # Isolate the injected infinity from unrelated initial-scale overflows.
+    scaler = torch.cuda.amp.GradScaler(init_scale=16.0)
     before = {name: param.detach().clone() for name, param in model.named_parameters()}
     with torch.cuda.amp.autocast():
         loss = _forward(model, vit, "cuda")
