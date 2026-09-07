@@ -10,6 +10,7 @@ try:
 except Exception:
     SELECTORS = None
 from ..duca.acquisition import dual_phase_orthogonal_budget_positions, DualPhaseBudgetSelection
+from ..utils.truetime_geometry import TrueTimeMap
 
 
 class DualPhaseFrameSelector(nn.Module):
@@ -32,6 +33,7 @@ class DualPhaseFrameSelector(nn.Module):
         burst_budget: int = 256,
         burst_radius: int = 2,
         force_uniform: bool = False,
+        remap_gt_to_selected_axis: bool = False,
     ):
         super().__init__()
         self.total_budget = int(total_budget)
@@ -39,6 +41,7 @@ class DualPhaseFrameSelector(nn.Module):
         self.burst_budget = int(burst_budget)
         self.burst_radius = int(burst_radius)
         self.force_uniform = bool(force_uniform)
+        self.remap_gt_to_selected_axis = bool(remap_gt_to_selected_axis)
         assert self.total_budget % 2 == 0, "total_budget must be even for tubelet pairing"
 
     def _compute_priority(self, inputs_5d: torch.Tensor, masks: torch.Tensor) -> torch.Tensor:
@@ -261,7 +264,8 @@ class DualPhaseFrameSelector(nn.Module):
         boundary_prior = boundary_prior_frames
         boundary_prior_tubelet = boundary_prior_frames.reshape(B, tubelet_len, 2).amax(dim=-1)
 
-        # Update metas with complete physical-grid ActionFormer contract
+        # The ordinary head uses feature ranks; the physical head uses dense time.
+        time_maps = []
         for i in range(len(metas)):
             metas[i]["selected_positions"] = selected_positions[i].detach()
             metas[i]["raw_frame_index"] = selected_positions[i].detach()
@@ -272,7 +276,7 @@ class DualPhaseFrameSelector(nn.Module):
             metas[i]["selected_valid_len"] = int(selected_masks[i].sum().item())
             metas[i]["irregular_selected_valid_len"] = float(masks[i].sum().item())
             metas[i]["irregular_dense_valid_len"] = float(masks[i].sum().item())
-            metas[i]["irregular_native_axis"] = True
+            metas[i]["irregular_native_axis"] = not self.remap_gt_to_selected_axis
             metas[i]["tubelet_delta_t"] = tubelet_delta_t[i].detach()
             metas[i]["tubelet_midpoint_physical_time"] = tubelet_midpoints[i].detach()
             metas[i]["delta_t"] = detector_delta_t[i].detach()
@@ -283,6 +287,20 @@ class DualPhaseFrameSelector(nn.Module):
             metas[i]["boundary_prior_tubelet"] = boundary_prior_tubelet[i].detach()
             metas[i]["original_window_size"] = orig_window_size
             metas[i]["selected_window_size"] = self.total_budget
+            if self.remap_gt_to_selected_axis:
+                count = int(selected_masks[i].sum().item())
+                time_map = TrueTimeMap(
+                    synced_temporal_positions[i, :count].detach(),
+                    dense_len=orig_window_size,
+                    valid_len=int(masks[i].sum().item()),
+                )
+                time_maps.append(time_map)
+                metas[i]["selected_axis_to_true_time_dense_index"] = time_map.selected_positions
+                metas[i]["irregular_selected_count"] = count
+                metas[i]["irregular_selected_valid_len"] = count
+                metas[i]["truetime_dense_len"] = orig_window_size
+                metas[i]["detector_prediction_inverse_map_required"] = True
+                metas[i]["gt_coordinate_space"] = time_map.selected_axis_name
 
         outputs = {
             "inputs": selected_inputs,
@@ -301,7 +319,12 @@ class DualPhaseFrameSelector(nn.Module):
             "delta_t": detector_delta_t,
         }
         if gt_segments is not None:
-            outputs["gt_segments"] = gt_segments
+            if self.remap_gt_to_selected_axis:
+                mapped = [time_map.true_to_selected(gt).to(gt)
+                          for time_map, gt in zip(time_maps, gt_segments)]
+                outputs["gt_segments"] = torch.stack(mapped) if torch.is_tensor(gt_segments) else mapped
+            else:
+                outputs["gt_segments"] = gt_segments
         if gt_labels is not None:
             outputs["gt_labels"] = gt_labels
         return outputs

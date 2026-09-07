@@ -119,6 +119,10 @@ def _validate_selected_axis_meta(coords, meta, positions, valid_len):
 def selected_axis_to_dense_axis(coords, meta, strict=False):
     """Interpolate selected-axis coordinates onto the native dense axis."""
 
+    if meta is not None and _flag_is_true(meta.get("detector_prediction_inverse_map_required", False)):
+        from ..truetime_geometry import remap_selected_axis_segments_to_true_time
+        return remap_selected_axis_segments_to_true_time(coords, meta)
+
     if meta is None:
         if strict:
             raise ValueError(
@@ -187,6 +191,8 @@ def selected_axis_to_dense_axis(coords, meta, strict=False):
 def _selected_axis_segments_to_dense_axis(segments, meta):
     if _flag_is_true(meta.get("irregular_native_axis", True)):
         return segments
+    if _flag_is_true(meta.get("detector_prediction_inverse_map_required", False)):
+        return selected_axis_to_dense_axis(segments, meta, strict=True)
     selected_positions = _meta_float_tensor(
         meta,
         "irregular_selected_positions",
