@@ -1,6 +1,6 @@
 {
   "schema_version": "DUCA-EXPERIMENT-CATALOG-v001",
-  "last_updated_utc": "2026-09-07T03:09:01+00:00",
+  "last_updated_utc": "2026-09-07T04:15:35+00:00",
   "scope": "所有当前 DUCA/ZoomToken 代码实验及其独立修正路线；旧远端作业另列为不纳入结果",
   "repository": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702",
   "entries": [
@@ -120,10 +120,10 @@
       "sha": "c0fae67a1236f2c47e6c2935d217659cd1f8fb9d",
       "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/c0fae67a1236f2c47e6c2935d217659cd1f8fb9d",
       "local_directory": "E:/DeskTop/TAD/OpenTAD_CTDP_FormalRepair_20260903",
-      "deployment_status": "远端 admission 1267221 已通过；G0/G1/G2/G3 正式训练 1267229/1267230/1267231/1267232 均 COMPLETED(0:0)，四个 epoch_59.pth 均存在",
-      "result_status": "四臂 60 轮训练全部完成；只有训练内 terminal validation telemetry，尚无独立终态 evaluator receipt",
-      "final_result": "训练日志末次 Avg-mAP：G0=14.71%、G1=14.84%、G2=56.15%、G3=57.84%；mAP@0.7 分别为 2.84/3.26/26.24/31.53%。这些数值显示 G2/G3 明显优于 G0/G1，但在独立 evaluator 与身份回执生成前仍只作为暂定终轮 telemetry",
-      "next_action": "对四个 epoch 59 EMA checkpoint 独立运行 tools/test.py，保存 result_detection.json、evaluation_metrics.json 与身份回执后再裁决 CT-Tubelet 和 B-AMoD 的独立贡献",
+      "deployment_status": "G0/G1/G2/G3 训练 1267229/1267230/1267231/1267232 均 COMPLETED(0:0)，四个 epoch_59.pth/EMA 均存在。但 2026-09-07 直接读取 checkpoint，实际 optimizer step 分别只有 5997/5996/5996/5997，scheduler 均为 6000。源码确认该路线未启用正式 AMP replay，跳过更新仍推进 scheduler",
+      "result_status": "PROTOCOL_ERROR：不是单纯缺评测收据，四臂均未达到严格 6000 successful updates，不能作为本合同的最终性能",
+      "final_result": "仅保留旧训练 telemetry：Avg-mAP G0=14.71%、G1=14.84%、G2=56.15%、G3=57.84%；mAP@0.7=2.84/3.26/26.24/31.53%。旧 checkpoint 和日志不删除，不把 6000 scheduler steps 改称 6000 successful updates，也不据此裁决机制贡献",
+      "next_action": "独立修复分支接通 CT-DP 正式 AMP replay/失败即停与成功更新 checkpoint 记录；本地 focused tests、远端 exact-SHA admission 和逐臂 PRECHECK 后，用新命名空间重训 G0-G3。禁止给旧 checkpoint 补造 6000 更新 receipt",
       "local_head": "c0fae67a1236f2c47e6c2935d217659cd1f8fb9d",
       "local_clean_tree": true
     },
@@ -151,9 +151,14 @@
       "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/29b5a7a2b291203ea7b697cfe416b64f0d365d02",
       "local_directory": "E:/DeskTop/TAD/_duca_fix_worktrees/bafdr_admission",
       "deployment_status": "真实 CUDA/focused 门禁 1267855 已通过；D160 教师 1267884、G96 1268698、U16 1269124、LATE 1269129、NOKD 1269137、FULL 1269297 均 COMPLETED(0:0)，全部写出 6000-update epoch-59 receipt，screen_receipt_r2_1269297.json 为 PASS。评测器 29b5a7a2 已通过本地/远端 11 tests、21-cell validator 和双 GPU U16 PRECHECK 1269540。五臂评测 1269541 已生成 G96/U16/LATE/NOKD 四份 prediction receipt，FULL 因 DECORD EOF 失败；1269763 的首次定向重试又因 wrapper 未显式传入外部 D160 Teacher 路径而 fail-closed。读取两次日志后，1269771 显式绑定训练 checkout 的 Teacher config/checkpoint 及既有 SHA256、通过 PRECHECK，完成 FULL prediction 和五臂 metric opening，并于 10:16 CST COMPLETED(0:0)",
-      "result_status": "seed 4407 的 D160 Teacher、五个 screen 臂训练、screen gate、五臂 prediction 与 official metric receipts 全部完成；该单种子路线已有完整正式结果",
+      "result_status": "五臂真实官方评测已补齐独立自哈希封存。原 eval_receipt.json 缺少自哈希的问题由 84f1f035 修复；本地/远端各 38 tests、CUDA 环境检查、五臂 config/checkpoint/teacher 绑定 PRECHECK 全通过，封存作业 1274829 COMPLETED(0:0)。新 receipt 明确记录事后封存时间和提交，原评测身份与指标不变",
       "final_result": "G96 official Avg-mAP=50.93%，各阈值 64.67/59.83/53.47/44.68/32.00%；U16-UNIFORM-A0 为 48.17%，63.50/57.95/50.12/40.46/28.84%；LATE 为 53.11%，68.84/63.39/56.05/45.40/31.88%；NOKD 为 49.44%，64.86/58.81/51.60/41.85/30.09%；FULL 为 52.38%，67.63/62.71/54.60/45.14/31.83%。五份 eval receipt 均绑定 seed 4407、6000 successful updates、评测提交 29b5a7a2。FULL checkpoint SHA256=c0eb8677…，并绑定训练提交 539287fa 的 D160 Teacher SHA256=ced2ee78…。本种子排序为 LATE > FULL > G96 > NOKD > U16；这是单种子结果，不能直接外推为多种子显著性结论",
-      "next_action": "保留五份 sealed eval receipt 作为 seed 4407 正式结果；如论文需要总体结论，再按同一合同运行其余预注册种子并做配对统计，不重复运行已完成的 seed 4407",
+      "next_action": "保留原始收据及 /data/run01/sczc063/yuzibo/experiments/bafdr_receipt_seal_84f1f035/sealed 下五份新收据，不重复已完成的 seed 4407。若开展更多种子，仍需同协议训练及统计；历史 1267920/1267921 保持只读",
+      "receipt_sealing_branch": "codex/zoomtoken-bafdr-receipt-seal-20260907",
+      "receipt_sealing_github": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/codex/zoomtoken-bafdr-receipt-seal-20260907",
+      "supporting_local_directories": [
+        "E:/DeskTop/TAD/_duca_fix_worktrees/bafdr_receipt_seal"
+      ],
       "local_head": "29b5a7a2b291203ea7b697cfe416b64f0d365d02",
       "local_clean_tree": true
     },
@@ -165,10 +170,10 @@
       "sha": "74473c2775caebf0da9d368ce8009d78e2942098",
       "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/74473c2775caebf0da9d368ce8009d78e2942098",
       "local_directory": "E:/DeskTop/TAD/zoomtoken_ettrc_correction_20260902",
-      "deployment_status": "真实 VideoMAE 覆盖与 2-GPU/global-batch=2 admission 已通过；OFF 1267218 于 01:04、ON 1267219 于 01:10 均 COMPLETED(0:0)，两者均写出 epoch_59.pth",
+      "deployment_status": "真实 VideoMAE 覆盖与 2-GPU/global-batch=2 admission 已通过；OFF 1267218、ON 1267219 均 COMPLETED(0:0)。2026-09-07 直接读取两份 epoch_59.pth，EMA 存在、所有已记录 optimizer state step 均为 6000、scheduler 也为 6000；尚无独立官方 evaluator receipt",
       "result_status": "双臂 60 轮训练已完成；日志含终轮 validation 指标，但当前路线没有独立终态 evaluator/receipt，因此仍无可裁决最终性能",
       "final_result": "终轮日志 OFF Avg-mAP 62.08%、mAP@0.3/0.4/0.5/0.6/0.7=77.06/71.91/65.34/54.51/41.55%；ON 为 54.81%、70.38/64.89/57.49/46.65/34.63%。这些数值是完整 validation telemetry，不是具备独立终态 receipt 的最终 scientific result",
-      "next_action": "验证 epoch_59 EMA/6000 updates，并分别用 OFF/ON config 独立运行 tools/test.py；保存 evaluator 日志、result_detection.json 和 metrics artifact 后再裁决 Taylor/JVP 机制",
+      "next_action": "保留已核验的 epoch-59 EMA/6000 optimizer steps，补齐独立 OFF/ON official evaluator 和自哈希 receipt；不把训练内 telemetry 提前称为最终性能，不要求重训已确认达到更新预算的双臂",
       "local_head": "74473c2775caebf0da9d368ce8009d78e2942098",
       "local_clean_tree": true
     },
@@ -189,39 +194,74 @@
     },
     {
       "category": "correction_route",
-      "name": "Evidence-Recovery 当前 C0：轻量侦察器不确定性与最大空洞补漏",
+      "name": "Evidence-Recovery 当前八臂：预选阶段轻量侦察器、不确定性与最大空洞补漏",
       "internal_id": "EVIDENCE_ACTIVE",
-      "branch": "codex/duca-evidence-fullgrid-repair-20260904（C0/F/A1-A5） + codex/duca-evidence-a6-numerical-repair-20260904（A6）",
-      "sha": "246058f2c24edc78818ada60eec26249bbf7d5d2（C0/F/A1-A5） / 9739811e89acef380806a271bc224c61c66bce0f（A6 修复）",
-      "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/9739811e89acef380806a271bc224c61c66bce0f",
-      "local_directory": "E:/DeskTop/TAD/_duca_fix_worktrees/evidence_eval_repair",
+      "branch": "codex/duca-evidence-fullgrid-repair-20260904（C0/A2） + codex/duca-evidence-optimizer-repair-20260907（时间参数优化器与 DDP 修复）",
+      "sha": "246058f2c24edc78818ada60eec26249bbf7d5d2（C0/A2） / 1570a72507491899a50767700a35a04eee3f5fe9（修复）",
+      "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/1570a72507491899a50767700a35a04eee3f5fe9",
+      "local_directory": "E:/DeskTop/TAD/_duca_fix_worktrees/evidence_optimizer_repair",
       "supporting_local_directories": [
+        "E:/DeskTop/TAD/_duca_fix_worktrees/evidence_eval_repair",
         "E:/DeskTop/TAD/OpenTAD_Evidence_FormalRepair_20260903"
       ],
-      "deployment_status": "246058f2 使用 train/val 精确旧网格与 test full-grid，admission 1269357 COMPLETED(0:0)；C0 seed 8261 训练 1269374_0 与官方评测 1270672_0 均 COMPLETED(0:0)，metrics.json 已绑定 exact SHA、config/evaluator/annotation/class-map、epoch 59 EMA checkpoint/prediction SHA 与自哈希。数组 1270870 中 F、A2、A3、A4、A5 均完成 60 轮训练；A1 在 epoch 54 batch 11 的 AMP replay 后产生 768 个非有限 utility 值并 FAILED(1:0)，其 epoch-49 checkpoint 与完整日志保留，不能算作完成。A6 的 1270870_7 在 batch 2 连续 50 次确定性 replay 均产生 pre-AMP non-finite cost；独立修复 9739811e 将 bounded interval decomposition 与 dense recovery accumulation 固定为 FP32，同时保留全部 A6 机制。最终 exact-SHA admission 1271006 与真实数据 PRECHECK 1271146 均 COMPLETED(0:0)。正式 A6 seed 8261 已以新命名空间提交为 1274671_7，并已越过旧 batch-2 故障点继续运行",
-      "result_status": "C0 seed 8261 已有完整正式结果；F/A2-A5 已完成训练但尚无独立官方评测；A1 是已定位但尚未修复的数值失败；A6 修复版正式训练运行中，因此完整 Evidence 机制结论尚未形成",
-      "final_result": "C0 MATCHED_H65_60 official Avg-mAP=59.23%，mAP@0.3/0.4/0.5/0.6/0.7=75.22/70.01/61.54/50.90/38.48%。test 的 792 次暴露对应 791 个唯一物理窗口，重复项是 video_test_0001431|7680；246058f2 按唯一物理窗口严格覆盖。该结果是 matched-H65 基线，不是完整 recovery 机制；只有 F/A1-A6 完成后才能判断 recovery 增益",
-      "next_action": "监控 A6 作业 1274671_7 到 epoch 59/6000 successful updates；为 A1 从 epoch-49 checkpoint 建立独立 exact-RNG 恢复诊断和对应 PRECHECK，确认最小数值修复后以新 SHA/新命名空间重提。随后对 F/A1-A6 分别按 exact-SHA evaluator 合同生成 official receipt",
-      "local_head": "9739811e89acef380806a271bc224c61c66bce0f",
+      "deployment_status": "C0 训练 1269374_0 / 官方评测 1270672_0 完成；A2 训练 1270870_3 / 独立官方评测 1274711_3 也完成，均为原始 246058f2 训练及评测语义。A2 epoch59 EMA/6000 成功更新训练审计和 evaluation_sha256 自哈希复算通过。旧 A1 1270870_2 在 epoch54 batch11 非有限 utility 失败；A6 1270870_7 在 epoch0 batch2 非有限 cost 失败。FP32 修复 9739811e 的 A6 正式重试 1274671_7 又在 epoch1 batch2 非有限 cost 失败，旧日志/checkpoint 全保留。真实 ViT optimizer 回归定位：forward 重新启用时间参数，但 custom optimizer 只含 adapter，时间参数未被 optimizer/GradScaler 管理，可能经全局 clipping 扩散 NaN。1570a725 补齐 continuous_timestamp_conditioner/relative_physical_time_scale 分组，使用 dynamic DDP 和 non-reentrant checkpoint 支持随真实窗口变化的时间分支；不关闭 time/merge/recovery。远端 clean exact-SHA admission 1274755 全部 49 tests PASS；真实视频 A1/A6 两轮各 200 batch PRECHECK 1274759_2/7 均 COMPLETED(0:0)。正式 A1/A6 1274924_2/7 已 RUNNING；独立官方 evaluator 1274926_2 / 1274927_7 分别 afterok 依赖对应训练任务，尚未运行",
+      "result_status": "C0 和 A2 有效官方结果；旧 F/A3/A4/A5 虽完成训练，但启用时间参数的优化器缺项使机制训练不完整，列为待修复重训而非待评测即可。A1/A6 修复版正式训练运行中，已有逐臂 afterok 官方评测依赖；完整 Evidence 机制结论尚未形成",
+      "final_result": "C0 MATCHED_H65_60 Avg-mAP=59.23%，各 tIoU=75.22/70.01/61.54/50.90/38.48%。A2 NO_TIME official Avg-mAP=54.2756%，各 tIoU=72.2334/67.0169/57.6467/44.8214/29.6595%。C0 是 matched-H65 基线，A2 是关闭物理时间的消融，二者都不是完整 recovery 方法。test 792 次暴露对应 791 个唯一物理窗口（video_test_0001431|7680 重复），246058f2 按唯一物理窗口严格覆盖",
+      "next_action": "监督 1274924_2/7 到 epoch59 EMA/6000 successful updates，随后核验 1274926_2/1274927_7 的 official metrics receipt。为同样受遗漏时间参数影响的 F/A3-A5 安排对应 PRECHECK 和新 SHA 重训，不把旧终态 checkpoint 直接评测后宣称机制有效。预检 200 batches 不等于正式 6000 updates，也不是对旧 epoch54 RNG 序列的精确重放",
+      "remote_run_root": "/data/run01/sczc063/yuzibo/experiments/duca_evidence_optimizer_1570a725/formal",
+      "remote_log_root": "/data/run01/sczc063/yuzibo/experiments/duca_evidence_optimizer_1570a725/slurm_logs",
+      "remote_eval_root": "/data/run01/sczc063/yuzibo/experiments/duca_evidence_optimizer_1570a725/evaluation",
+      "local_head": "1570a72507491899a50767700a35a04eee3f5fe9",
       "local_clean_tree": true
     }
   ],
   "remote_supervisor": {
     "status": "ACTIVE",
-    "checked_at": "2026-09-07T03:08:36+00:00",
+    "checked_at": "2026-09-07T04:15:03+00:00",
     "dispatcher_status": "BLOCKED",
+    "dispatcher_mode": "plan",
     "entries": []
   },
   "cluster_observation": {
-    "checked_at_cst": "2026-09-07 11:07 CST",
-    "public_gpu_available": 28,
+    "checked_at_cst": "2026-09-07 12:13 CST",
+    "public_gpu_available": 22,
     "public_gpu_total": 240,
-    "user_jobs_in_queue": 5,
-    "account_constraint": "公共口径 28/240 可用；本用户 4 RUNNING、1 PENDING。Evidence A6 已获得 1 张 GPU 并正式运行，当前未见新增提交额度阻塞"
+    "user_jobs_in_queue": 8,
+    "account_constraint": "公共口径 22/240 可用；本用户 5 RUNNING、3 PENDING。Evidence A1/A6 正式训练已获得各 1 GPU，两项官方评测等待逐臂 afterok；历史 BAFDR 1267921 因 DependencyNeverSatisfied 等待，保持只读"
   },
   "measurement_scope": "当前比较以官方 TAD mAP、固定输入/更新预算和机制消融为主；不把端到端延迟、吞吐量或显存作为强制验收指标",
-  "result_policy": "没有 exact SHA、clean-tree、terminal EMA、官方 evaluator 和合法 aggregation receipt，不得报告为最终科学结果",
+  "result_policy": "没有 exact SHA、clean-tree、epoch-59 EMA、6000 successful updates、官方 evaluator 和结构化自哈希 receipt，不得报告为最终科学结果；不得用 scheduler steps 替代 optimizer successful updates",
   "excluded_remote_jobs": [
+    {
+      "job_ids": "1267229-1267232",
+      "remote_directory": "/data/run01/sczc063/yuzibo/experiments/duca_ctdp_c0fae67a_seed3407",
+      "source_head": "c0fae67a1236f2c47e6c2935d217659cd1f8fb9d",
+      "reason": "CT-DP 四臂虽 COMPLETED，但 checkpoint optimizer steps=5997/5996/5996/5997，scheduler=6000；AMP skip 未 replay 造成更新预算不合格，必须修复重训，旧数值仅为诊断 telemetry"
+    },
+    {
+      "job_ids": "1274671_7",
+      "remote_directory": "/data/run01/sczc063/yuzibo/experiments/duca_evidence_a6_repair_9739811e/slurm_logs",
+      "source_head": "9739811e89acef380806a271bc224c61c66bce0f",
+      "reason": "A6 FP32 修复后正式训练在 epoch1 batch2 再次 non-finite cost、50 replay 耗尽。a6_formal_1274671_7.out/.err 已读取；时间参数 optimizer coverage 回归复现共享缺陷，1570a725 补齐分组并处理动态 DDP，不删除旧日志或 checkpoint"
+    },
+    {
+      "job_ids": "1274694",
+      "remote_directory": "/data/run01/sczc063/yuzibo/experiments/duca_evidence_optimizer_e24dd5d9/slurm_logs",
+      "source_head": "e24dd5d9",
+      "reason": "修复 admission 的 3 个新测试使用了缺少 ActionFormer.get_optim_groups 的最小 fixture，测试构造失败；c68eb840 改为真实 ActionFormer fixture，1274704 的 48 tests 通过"
+    },
+    {
+      "job_ids": "1274708_2,1274708_7",
+      "remote_directory": "/data/run01/sczc063/yuzibo/experiments/duca_evidence_optimizer_c68eb840/slurm_logs",
+      "source_head": "c68eb840dfb3535437c6ec63b7693e2a084c6497",
+      "reason": "真实窗口改变时间参数使用分支，static_graph=True/reentrant checkpoint 触发 DDP training graph changed；日志已读。6d36a0d9 使用 dynamic DDP/non-reentrant checkpoint，并新增实际交替时间分支 DDP 回归"
+    },
+    {
+      "job_ids": "1274740",
+      "remote_directory": "/data/run01/sczc063/yuzibo/experiments/duca_evidence_optimizer_6d36a0d9/slurm_logs",
+      "source_head": "6d36a0d9f8392e1074b475356482cc05f693a8d4",
+      "reason": "49 tests 中 48 PASS，新 AMP 恢复测试在随机高初始 scale 下先发生正常 overflow，未能隔离故意注入的 Inf；1570a725 固定测试 seed 和低初始 scale，仅修正测试，不改生产 AMP。最终 admission 1274755 全部 49 tests PASS"
+    },
     {
       "job_ids": "1266325-1266330",
       "remote_directory": "/data/run01/sczc063/yuzibo/projects/bafdr_k16_fullmatrix_6ae16954",
