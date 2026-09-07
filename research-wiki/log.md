@@ -5,6 +5,11 @@ append_only: true
 
 # Research Wiki Log
 
+- 2026-09-07: Added the CT-DP independent terminal evaluator for the frozen
+  78cde1be G0-G3 training identity. It checks actual optimizer steps and preserves
+  model/data/NMS/evaluator source. See `experiments/ctdp-terminal-evaluation-20260907.md`;
+  no new terminal mAP is claimed before its GPU precheck and full evaluation.
+
 - 2026-09-01：DUCA/CT-DP-TAD 完备 2×2 正交消融矩阵部署上线（N16R4 集群）：
   1. 取消历史早期受阻作业（`1264291` ~ `1264294`），完全清除旧时间间隔混淆产物；
   2. 代码库基于最新 commit `9cd6f3c0`（含物理时间双链严格解耦、`align_corners=False` 对齐、零偏置初始化对齐与 20/20 项全绿单测）完成集群部署；
