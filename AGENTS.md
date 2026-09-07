@@ -42,3 +42,14 @@ python -m pytest tests/test_c3_coarse_classifier_model_matrix.py tests/test_c3_a
 ```
 
 远端训练前先跑对应 `PRECHECK_ONLY=1` 启动器或 validator。
+
+## OpenTAD 六路线：性能不达标时的 Pro 讨论授权
+
+2026-09-08 用户明确授权：后续本任务负责的 OpenTAD 实验性能不达标时，可以使用 ixBrowser 中的 ChatGPT Pro 讨论路线、实现和实验，分析结果并定位失败原因，无需为该用途重复请求许可。范围包括 H65-Pro、CT-DP、DUCA-Unified、BAFDR、ET-TRC、Evidence-Recovery，以及对应的基线、消融与修复实验；不缩减已有其他路线的授权。
+
+- 必须通过 Computer Use 操作 ixBrowser 中的 ChatGPT Pro，确认实际浏览器和所选 Pro 模型。此用途覆盖 RTK.md 的默认 Chrome 讨论入口；不得静默改用 API、直接 HTTP 请求、其他浏览器或其他模型。
+- 以已确认的科研目标、有效评测和协议匹配的基线判断是否不达标；不得擅自新增分数门槛，不把中期低分、排队或未完成评测当作最终性能失败。
+- 讨论应提供相关精确 SHA、代码与配置、官方基线身份、训练更新数、真实 stdout/stderr、评测指标及收据，明确哪些是已证实错误、未实现机制或待验证假设。仅发送必要材料，不上传 SSH 私钥、令牌、代理凭证或无关私密资料。
+- 记录讨论时间、页面或对话链接（可获得时）、关键结论、定位依据、采纳或拒绝建议的理由，以及后续修改和验证结果，关联回对应实验目录记录。
+- Pro 建议不等于验收。采纳前核对实际源码和原设计；修改继续遵守独立 codex/ 修复分支、本地 focused tests、远端 exact-SHA clean tests、必要 CUDA 与对应 PRECHECK、新命名空间重提及保留旧产物的规则。不得为追分偷换官方基线、数据划分或训练预算，也不得按测试集调参或挑 checkpoint。
+- 如果 Computer Use 无法操作 ixBrowser、账户未登录或 Pro 不可用，报告并记录具体阻塞，继续可独立推进的工作；不得声称已经咨询，也不得绕过指定入口。
