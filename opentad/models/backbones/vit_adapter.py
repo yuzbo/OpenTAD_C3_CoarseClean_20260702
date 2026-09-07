@@ -693,7 +693,7 @@ class Block(BaseModule):
             return x
 
         if self.with_cp and x.requires_grad:
-            x = cp.checkpoint(_inner_forward, x, use_reentrant=True)
+            x = cp.checkpoint(_inner_forward, x, use_reentrant=False)
         else:
             x = _inner_forward(x)
         return x

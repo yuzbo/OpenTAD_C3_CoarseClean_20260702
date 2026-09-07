@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import copy
 import logging
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -19,9 +20,13 @@ def test_evidence_config_registers_trainable_time_parameters():
     assert groups["continuous_timestamp_conditioner"].lr == 2e-4
     assert groups["relative_physical_time_scale"].lr == 2e-4
     assert groups["relative_physical_time_scale"].weight_decay == 0.0
+    assert cfg.solver.static_graph is False
+    assert cfg.solver.find_unused_parameters is True
 
 
 def _torch():
+    if os.name == "nt":
+        pytest.skip("Windows torch/c10.dll unavailable; run runtime tests on N16R4")
     try:
         import torch
     except OSError as exc:
@@ -37,12 +42,19 @@ def _model_and_optimizer(device, legacy=False):
 
     vit = VisionTransformerAdapter(
         img_size=8, patch_size=4, embed_dims=16, depth=1, num_heads=4,
-        num_frames=4, total_frames=4, adapter_index=[0], return_feat_map=True,
+        num_frames=4, total_frames=4, adapter_index=[0], return_feat_map=True, with_cp=True,
         bounded_interval_adapter=dict(enabled=True),
         continuous_timestamp_conditioner=dict(enabled=True),
     )
-    model = ActionFormer.__new__(ActionFormer)
-    torch.nn.Module.__init__(model)
+    class TinyDetector(ActionFormer):
+        def __init__(self):
+            torch.nn.Module.__init__(self)
+
+        def forward(self, frames, timestamps):
+            output = self.backbone.model.backbone(frames, tubelet_timestamps=timestamps)
+            return output.square().mean() + self.scout(output.mean((2, 3, 4))).square().mean()
+
+    model = TinyDetector()
     model.backbone = torch.nn.Module()
     model.backbone.freeze_backbone = False
     model.backbone.model = torch.nn.Module()
@@ -61,11 +73,10 @@ def _model_and_optimizer(device, legacy=False):
 
 def _forward(model, vit, device):
     torch = _torch()
-    output = vit(
-        torch.randn(1, 3, 4, 8, 8, device=device),
-        tubelet_timestamps=torch.tensor([[0.0, 3.0]], device=device),
+    return model(
+        torch.randn(1, 3, 4, 8, 8, device=device, requires_grad=True),
+        torch.tensor([[0.0, 3.0]], device=device),
     )
-    return output.square().mean() + model.scout(output.mean((2, 3, 4))).square().mean()
 
 
 def test_time_parameter_coverage_survives_real_backbone_forward():
@@ -115,3 +126,27 @@ def test_cuda_time_overflow_skips_update_without_poisoning_scout():
     assert torch.isfinite(loss)
     scaler.scale(loss).backward()
     assert all(param.grad is None or torch.isfinite(param.grad).all() for param in model.parameters())
+
+
+def test_ddp_checkpoint_supports_changing_time_parameter_usage(tmp_path):
+    torch = _torch()
+    import torch.distributed as dist
+    from torch.nn.parallel import DistributedDataParallel
+
+    model, vit, optimizer = _model_and_optimizer("cpu")
+    dist.init_process_group(
+        "gloo", init_method=f"file://{(tmp_path / 'ddp_store').as_posix()}",
+        rank=0, world_size=1,
+    )
+    try:
+        wrapped = DistributedDataParallel(model, static_graph=False, find_unused_parameters=True)
+        for enabled in (False, True, False):
+            optimizer.zero_grad()
+            timestamps = torch.tensor([[0.0, 0.8]]) if enabled else None
+            loss = wrapped(torch.randn(1, 3, 4, 8, 8, requires_grad=True), timestamps)
+            loss.backward()
+            assert (vit.blocks[0].relative_physical_time_scale.grad is not None) == enabled
+            assert torch.isfinite(loss)
+            optimizer.step()
+    finally:
+        dist.destroy_process_group()

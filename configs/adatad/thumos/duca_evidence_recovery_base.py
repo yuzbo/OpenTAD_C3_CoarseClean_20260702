@@ -204,6 +204,8 @@ optimizer = dict(
 solver = dict(
     amp=True,
     clip_grad_norm=1.0,
+    static_graph=False,
+    find_unused_parameters=True,
 )
 
 scheduler = dict(
