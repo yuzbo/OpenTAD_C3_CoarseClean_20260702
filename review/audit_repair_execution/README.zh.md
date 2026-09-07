@@ -2,15 +2,18 @@
 
 实际模型/训练源码 M 固定为 `b70ae056c495b43ca3f305fe438926b97b2723b5`。本审查分支在 M 上只添加这个执行审查目录；`geosparse_ext/`、`tests/`、`opentad/`、`configs/` 与 M 相同。不要把仅添加审查材料的提交误当作新的模型实验版本，或要求已正确启动的 M 训练重跑。
 
-先读 `docs/PRO_REVIEW_AUDIT_REPAIR_PROMPT.zh.md` 和 `docs/GEOSPARSE_AUDIT_REPAIR.zh.md`。这里三份脚本记录冻结模型仓库以外的执行行为：
+先读 `docs/PRO_REVIEW_AUDIT_REPAIR_PROMPT.zh.md` 和 `docs/GEOSPARSE_AUDIT_REPAIR.zh.md`。这里的脚本记录冻结模型仓库以外的执行行为：
 
 - `audit_queue.py`：主方法与补充控制的真实Slurm调度。只有资源、实现、正确性和自身产物依赖；主方法没有mAP门槛。补充控制的开始依赖随主方法续训产生的新Slurm ID更新。
 - `full_method_witness.py`：动态预算、预算头与acquisition梯度、dual/cost EMA更新的实际batch正确性检查，模型在检查后丢弃，不生成科学结果。
 - `activate_dependency_refresh.py`：只更新补充coordinator；按实际登录host、进程owner和命令核验并重启，不停止训练进程。
+- `reserve_primary_gpu1.py`：针对实际发生的N16主方法续训资源冲突，暂停补充队列对两个GPU1节点的使用。在1278034的第1轮全状态保存后缩短其本次allocation，之后恢复仍使用同一任务checkpoint；它不是改变60轮训练预算的工具。
 
 `audit_queue.py` 和 `full_method_witness.py` 放在操作员配置的 `control/` 目录，激活脚本在本地执行包目录运行并复用该包的SSH辅助函数。manifest和bindings由冻结M矩阵生成并绑定真实数据、初始化权重、环境和工作目录；本目录不携带凭据或数据。主方法配置 `primary_binding_paths=[]`，补充队列指向同服务器主队列bindings；`slurm_nice`分别0/10000。N16的 `control/gpu1_nodes.json` 包含已经实际验证能分配物理GPU1的节点，不凭CUDA逻辑索引猜测物理编号。
 
 2026-09-08现场发现：平台把主方法与补充作业的实际priority均截到1，Nice不能单独证明排序。主方法TIMEOUT后换了Slurm ID，旧`after`依赖已满足。因此补充coordinator升级为`backfill-1h-primary-resume-deps-v2`：仅对本队列尚未运行的作业同步当前主方法开始依赖，已运行任务和其他任务不改动；相同依赖不重复写入。两台服务器的补充coordinator已部署此版本。主coordinator仍用父审查提交`a23f58eee757d976ca3bc6fc339fb8d0dadf91eb`记录的v1；新增函数在空`primary_binding_paths`下不执行，主方法模型、训练器和配置均保持M不变。
+
+06:17现场又确认A-uniform先于动态A的续训取得g0056 GPU1。轮询依赖不是抢占保证，因此N16补充队列现将允许节点列表暂置空，保留g0056/g0087的验证证据；这两个GPU1先供两项A主方法。已核对1278034的实际owner、脚本与第1轮完整checkpoint，将其当前分配结束时间改为06:19:29，由原TIMEOUT恢复链处理。待主方法完成释放一个节点或发现另一处已核验的空闲GPU1，再恢复补充训练的节点允许列表；不以精度作为资源释放条件。A100队列没有实施此节点保留操作。
 
 审计后已经得到124项CPU测试和六个主方法的生产GPU预检通过。A/C指定内核下的源模型输出/相关梯度误差为0；实际检测头mask/loss/proposals/特征梯度也做了比较。B规则TIA内部长度384。此处不包含完整60轮结果，不宣称方法有效或加速。
 
