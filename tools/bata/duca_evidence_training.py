@@ -529,7 +529,8 @@ def restore_relocated_training_state(
     # Recreate the ORIGINAL runtime digest, changing only the output directory.
     # All model, data, ledger, optimizer, seed and schedule bindings stay strict.
     original_runtime = dict(runtime_config)
-    original_runtime["work_dir"] = str(old_work_dir)
+    # update_workdir stores a trailing separator in the original runtime config.
+    original_runtime["work_dir"] = os.path.join(str(old_work_dir), "")
     original_bindings = dict(bindings)
     original_bindings.update(
         git_commit=source_commit,

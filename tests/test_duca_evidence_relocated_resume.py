@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def resume_case(tmp_path):
     old_dir = tmp_path / "original" / "gpu1_id0"
-    config = {"work_dir": str(old_dir), "seed": 8261, "scheduler": {"max_epoch": 60}}
+    config = {"work_dir": os.path.join(str(old_dir), ""), "seed": 8261, "scheduler": {"max_epoch": 60}}
     counters = training.new_update_audit()
     counters.update(
         attempted_batches=4000,
@@ -47,7 +47,7 @@ def resume_case(tmp_path):
     )
     audit["audit_sha256"] = training.canonical_sha256(audit)
     checkpoint = dict(epoch=39, experiment_metadata=training.build_checkpoint_metadata(audit))
-    config["work_dir"] = str(tmp_path / "resumed" / "gpu1_id0")
+    config["work_dir"] = os.path.join(str(tmp_path / "resumed" / "gpu1_id0"), "")
     bindings = dict(old_bindings)
     bindings.update(
         git_commit="e" * 40,

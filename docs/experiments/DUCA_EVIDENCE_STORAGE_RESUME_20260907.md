@@ -43,3 +43,9 @@ The earlier storage probes used two epochs of 100 batches each (200 batches
 total), not 200 batches per epoch. They demonstrated new writes but did not
 test continuation from the original formal checkpoint or prove the storage
 quota cannot be exhausted again.
+
+The first real-checkpoint binding check on `83ceb5f4` rejected relocation before
+training: reconstruction omitted the trailing separator stored by the existing
+`update_workdir`. The corrective commit preserves that original spelling and
+updates the regression fixture. This was a diagnostic failure, not a new model
+failure; no original checkpoint or audit was changed.
