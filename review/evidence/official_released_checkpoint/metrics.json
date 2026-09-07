@@ -1,0 +1,18 @@
+{
+  "metrics": {
+    "average_mAP": 0.7113879489702108,
+    "mAP@0.3": 0.8596337197884967,
+    "mAP@0.4": 0.8185797683496124,
+    "mAP@0.5": 0.7500131299175179,
+    "mAP@0.6": 0.6329255169363297,
+    "mAP@0.7": 0.49578760985909814
+  },
+  "checkpoint_epoch": null,
+  "evaluated_videos": 211,
+  "inference_windows": 792,
+  "weights": "ema",
+  "seed": 0,
+  "is_mock": false,
+  "source_commit": "346d09d19e2091372cec48172dbe40f7b28bdee6",
+  "mode": "evaluate"
+}

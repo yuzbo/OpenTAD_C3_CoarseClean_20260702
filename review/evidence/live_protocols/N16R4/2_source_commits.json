@@ -1,0 +1,9 @@
+{
+  "remote_path": "<MACHINE_PATH>/source_commits.json",
+  "record": {
+    "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+    "resolved_config_sha256": "0b34bec83ac269011371531245684fe0ef438b258c4b5d66fc5777bccfbf8bdd",
+    "split_sha256": "88b5d7b12f6780cae70fb0eb27e7bedd580fd6326a725e3287738e3431ecaf95",
+    "weights_sha256": "860a3cd317c642183c6ba8eac8ce0c27674f528566536cd95e650a0b6c378f44"
+  }
+}

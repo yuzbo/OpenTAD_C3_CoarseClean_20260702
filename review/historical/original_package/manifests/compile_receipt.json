@@ -1,0 +1,86 @@
+{
+  "protocol_version": "geosparse-v1.0",
+  "counts": {
+    "train": 609,
+    "evaluate": 609,
+    "benchmark": 203,
+    "diagnostic": 117
+  },
+  "total_jobs": 1538,
+  "training_epochs_total": 36540,
+  "train_jobs_have_experiment_dependencies": false,
+  "matrix_sha256": "58032c8dfd61700e5a8f44e62ae90ac97d3ed3d67d004bfe7ba6d6a18c1b0291",
+  "families": {
+    "F00": {
+      "name": "稠密极限与架构性能税",
+      "unique_train_jobs": 30
+    },
+    "F01": {
+      "name": "三路线主结果及固定/动态预算曲线",
+      "unique_train_jobs": 138
+    },
+    "F02": {
+      "name": "选择策略与DUCA相关基线",
+      "unique_train_jobs": 84
+    },
+    "F03": {
+      "name": "静态深度和后缀条件执行",
+      "unique_train_jobs": 39
+    },
+    "F04": {
+      "name": "选择原子与编码粒度",
+      "unique_train_jobs": 33
+    },
+    "F05": {
+      "name": "时间几何、支持范围与receiver",
+      "unique_train_jobs": 36
+    },
+    "F06": {
+      "name": "局部配额、动态预算与成本目标",
+      "unique_train_jobs": 42
+    },
+    "F07": {
+      "name": "Scout可见性、分辨率和容量",
+      "unique_train_jobs": 54
+    },
+    "F08": {
+      "name": "训练估计器、探索和反事实成本",
+      "unique_train_jobs": 66
+    },
+    "F09": {
+      "name": "时间空间因子与原图ROI",
+      "unique_train_jobs": 39
+    },
+    "F10": {
+      "name": "混合尺度与表示交互",
+      "unique_train_jobs": 36
+    },
+    "F11": {
+      "name": "一次/两次获取及上下文范围",
+      "unique_train_jobs": 21
+    },
+    "F12": {
+      "name": "第三数据集/更大Backbone迁移",
+      "unique_train_jobs": 24
+    },
+    "F13": {
+      "name": "检测网格与检测头稳健性",
+      "unique_train_jobs": 24
+    }
+  },
+  "training_by_dataset": {
+    "thumos14": 489,
+    "activitynet13": 108,
+    "fineaction": 12
+  },
+  "training_by_route": {
+    "DENSE": 15,
+    "A": 195,
+    "B": 273,
+    "C": 63,
+    "COARSE": 6,
+    "DUCA": 18,
+    "DEPTH": 30,
+    "BCR": 9
+  }
+}

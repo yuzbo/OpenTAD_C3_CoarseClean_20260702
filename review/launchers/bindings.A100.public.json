@@ -1,0 +1,56 @@
+{
+  "repo_root": "<MACHINE_PATH>/902fa05b",
+  "work_root": "<MACHINE_PATH>/902fa05b",
+  "protocol_root": "<MACHINE_PATH>/protocol",
+  "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+  "datasets": {
+    "thumos14": "<MACHINE_PATH>/thumos14"
+  },
+  "annotations": "<MACHINE_PATH>/thumos_14_anno.json",
+  "class_map": "<MACHINE_PATH>/category_idx.txt",
+  "video_roots": {
+    "training": "<MACHINE_PATH>/validation",
+    "validation": "<MACHINE_PATH>/TH14_test_set_mp4"
+  },
+  "checkpoints": {
+    "videomae_b": "<MACHINE_PATH>/videomae_b.download",
+    "videomae_l": "<MACHINE_PATH>/videomae_l.download"
+  },
+  "capability_dir": "<MACHINE_PATH>/902fa05b",
+  "entrypoint": [
+    "<MACHINE_PATH>/python",
+    "-m",
+    "geosparse_ext.entry",
+    "--job",
+    "{job_file}",
+    "--output",
+    "{output_dir}",
+    "--bindings",
+    "{bindings_file}"
+  ],
+  "runtime": {
+    "effective_batch": 2,
+    "microbatch": 2,
+    "evaluation_batch": 1,
+    "num_workers": 2
+  },
+  "protocol_amendment": "official-full-data-20260908",
+  "execution_phase": "corrected-seed0-decision-cohort",
+  "cluster": "A100",
+  "active_seeds": [
+    0
+  ],
+  "max_concurrent_jobs": 4,
+  "assigned_training_ids": [
+    "tr-be89cd6cb2ca",
+    "tr-a45686a40afa",
+    "tr-c2d93c4c3979",
+    "tr-bacdbb058eca"
+  ],
+  "priority_training_ids": [
+    "tr-be89cd6cb2ca",
+    "tr-a45686a40afa",
+    "tr-c2d93c4c3979",
+    "tr-bacdbb058eca"
+  ]
+}

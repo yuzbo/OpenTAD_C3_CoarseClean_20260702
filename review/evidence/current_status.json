@@ -1,0 +1,453 @@
+{
+  "N16R4": {
+    "cluster": "N16R4",
+    "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+    "runs": {
+      "tr-c43d3e9cad58": {
+        "queue": {
+          "status": "SUBMITTED",
+          "attempts": [
+            {
+              "slurm_id": "1277994",
+              "submitted_at": 1788799683.344218,
+              "node": "g0015"
+            }
+          ],
+          "reason": [],
+          "slurm_id": "1277994",
+          "slurm_state": "RUNNING"
+        },
+        "progress": {
+          "job_id": "tr-c43d3e9cad58",
+          "status": "RUNNING",
+          "completed_epochs": 5,
+          "successful_optimizer_updates": 498,
+          "checkpoint_path": "<MACHINE_PATH>/last.pth"
+        },
+        "best": null,
+        "result": null,
+        "failure": null,
+        "precheck_submission": {
+          "slurm_id": "1277993",
+          "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+          "submitted_at": 1788799564.4671955
+        },
+        "precheck": {
+          "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+          "gpu": "NVIDIA GeForce RTX 4090",
+          "torch": "2.0.1",
+          "slurm_job_gpus": "1",
+          "cuda_visible_devices": "0",
+          "cuda": "11.8",
+          "completed_epochs": 0,
+          "is_mock": false,
+          "routes": {
+            "tr-c43d3e9cad58": {
+              "status": "PASS",
+              "job_id": "tr-c43d3e9cad58",
+              "input_shape": [
+                1,
+                1,
+                3,
+                768,
+                160,
+                160
+              ],
+              "finite_gradient_tensors": 373,
+              "detection_video_count": 1,
+              "peak_allocated_bytes": 5754589696,
+              "optimizer_updates": 1,
+              "ema_update": "PASS",
+              "source_limit": {
+                "status": "PASS",
+                "actual_source": "upstream VisionTransformerAdapter",
+                "frames": 768,
+                "parent_count": 48,
+                "native_tokens_per_parent": 800,
+                "reference_attention_kernel": "math_sdpa",
+                "deterministic_convolution": true,
+                "output_max_abs_error": 0.0,
+                "source_checkpoint_vs_direct_max_abs_error": 0.0,
+                "gradient_max_abs_error": 0.0
+              },
+              "evaluation_pipeline_check": {
+                "status": "PASS",
+                "observed_windows": 1,
+                "registered_full_test_windows": 792,
+                "scope": "correctness only; no partial-set scientific metric"
+              }
+            }
+          }
+        },
+        "last_update": {
+          "epoch": 4,
+          "step": 99,
+          "successful_update": true,
+          "gradient_status": "finite",
+          "seconds": 1.8912224806845188,
+          "lr": 9.9799599198396e-05
+        },
+        "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+        "work_root": "<MACHINE_PATH>/902fa05b"
+      }
+    },
+    "official": {},
+    "slurm": "1277994|tr-c43d3e9cad58|RUNNING|33:12|g0015|g0015\n",
+    "coordinator": {
+      "pid": 3431054,
+      "host": "ln01",
+      "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+      "started_at": 1788799561.4215143
+    },
+    "coordinators": [
+      {
+        "pid": 3431054,
+        "host": "ln01",
+        "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+        "started_at": 1788799561.4215143
+      }
+    ]
+  },
+  "A100": {
+    "cluster": "A100",
+    "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+    "runs": {
+      "tr-be89cd6cb2ca": {
+        "queue": {
+          "status": "SUBMITTED",
+          "attempts": [
+            {
+              "slurm_id": "244973",
+              "submitted_at": 1788800399.13854,
+              "node": "slurm-selected"
+            }
+          ],
+          "reason": [],
+          "slurm_id": "244973",
+          "slurm_state": "PENDING"
+        },
+        "progress": null,
+        "best": null,
+        "result": null,
+        "failure": null,
+        "precheck_submission": {
+          "slurm_id": "244965",
+          "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+          "submitted_at": 1788799560.1736572
+        },
+        "precheck": {
+          "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+          "gpu": "NVIDIA A100-SXM4-80GB",
+          "torch": "2.0.1",
+          "slurm_job_gpus": "4",
+          "cuda_visible_devices": "0",
+          "cuda": "11.8",
+          "completed_epochs": 0,
+          "is_mock": false,
+          "routes": {
+            "tr-be89cd6cb2ca": {
+              "status": "PASS",
+              "job_id": "tr-be89cd6cb2ca",
+              "input_shape": [
+                1,
+                1,
+                3,
+                768,
+                160,
+                160
+              ],
+              "finite_gradient_tensors": 308,
+              "detection_video_count": 1,
+              "peak_allocated_bytes": 4533105664,
+              "optimizer_updates": 1,
+              "ema_update": "PASS",
+              "source_limit": "not_applicable",
+              "evaluation_pipeline_check": {
+                "status": "PASS",
+                "observed_windows": 1,
+                "registered_full_test_windows": 792,
+                "scope": "correctness only; no partial-set scientific metric"
+              }
+            }
+          }
+        },
+        "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+        "work_root": "<MACHINE_PATH>/902fa05b"
+      },
+      "tr-a45686a40afa": {
+        "queue": {
+          "status": "SUBMITTED",
+          "attempts": [
+            {
+              "slurm_id": "244975",
+              "submitted_at": 1788800459.7204072,
+              "node": "slurm-selected"
+            }
+          ],
+          "reason": [],
+          "slurm_id": "244975",
+          "slurm_state": "PENDING"
+        },
+        "progress": null,
+        "best": null,
+        "result": null,
+        "failure": null,
+        "precheck_submission": {
+          "slurm_id": "244966",
+          "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+          "submitted_at": 1788799560.213412
+        },
+        "precheck": {
+          "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+          "gpu": "NVIDIA A100-SXM4-80GB",
+          "torch": "2.0.1",
+          "slurm_job_gpus": "6",
+          "cuda_visible_devices": "0",
+          "cuda": "11.8",
+          "completed_epochs": 0,
+          "is_mock": false,
+          "routes": {
+            "tr-a45686a40afa": {
+              "status": "PASS",
+              "job_id": "tr-a45686a40afa",
+              "input_shape": [
+                1,
+                1,
+                3,
+                768,
+                160,
+                160
+              ],
+              "finite_gradient_tensors": 385,
+              "detection_video_count": 1,
+              "peak_allocated_bytes": 6596814848,
+              "optimizer_updates": 1,
+              "ema_update": "PASS",
+              "source_limit": {
+                "status": "PASS",
+                "actual_source": "upstream VisionTransformerAdapter",
+                "frames": 768,
+                "parent_count": 48,
+                "native_tokens_per_parent": 800,
+                "reference_attention_kernel": "math_sdpa",
+                "deterministic_convolution": true,
+                "output_max_abs_error": 0.0,
+                "source_checkpoint_vs_direct_max_abs_error": 0.0,
+                "gradient_max_abs_error": 0.0
+              },
+              "evaluation_pipeline_check": {
+                "status": "PASS",
+                "observed_windows": 1,
+                "registered_full_test_windows": 792,
+                "scope": "correctness only; no partial-set scientific metric"
+              }
+            }
+          }
+        },
+        "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+        "work_root": "<MACHINE_PATH>/902fa05b"
+      },
+      "tr-c2d93c4c3979": {
+        "queue": {
+          "status": "SUBMITTED",
+          "attempts": [
+            {
+              "slurm_id": "244976",
+              "submitted_at": 1788800520.0413818,
+              "node": "slurm-selected"
+            }
+          ],
+          "reason": [],
+          "slurm_id": "244976",
+          "slurm_state": "PENDING"
+        },
+        "progress": null,
+        "best": null,
+        "result": null,
+        "failure": null,
+        "precheck_submission": {
+          "slurm_id": "244967",
+          "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+          "submitted_at": 1788799560.251334
+        },
+        "precheck": {
+          "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+          "gpu": "NVIDIA A100-SXM4-80GB",
+          "torch": "2.0.1",
+          "slurm_job_gpus": "6",
+          "cuda_visible_devices": "0",
+          "cuda": "11.8",
+          "completed_epochs": 0,
+          "is_mock": false,
+          "routes": {
+            "tr-c2d93c4c3979": {
+              "status": "PASS",
+              "job_id": "tr-c2d93c4c3979",
+              "input_shape": [
+                1,
+                1,
+                3,
+                768,
+                160,
+                160
+              ],
+              "finite_gradient_tensors": 304,
+              "detection_video_count": 1,
+              "peak_allocated_bytes": 3601742848,
+              "optimizer_updates": 1,
+              "ema_update": "PASS",
+              "source_limit": "not_applicable",
+              "evaluation_pipeline_check": {
+                "status": "PASS",
+                "observed_windows": 1,
+                "registered_full_test_windows": 792,
+                "scope": "correctness only; no partial-set scientific metric"
+              }
+            }
+          }
+        },
+        "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+        "work_root": "<MACHINE_PATH>/902fa05b"
+      },
+      "tr-bacdbb058eca": {
+        "queue": {
+          "status": "SUBMITTED",
+          "attempts": [
+            {
+              "slurm_id": "244977",
+              "submitted_at": 1788800580.405561,
+              "node": "slurm-selected"
+            }
+          ],
+          "reason": [],
+          "slurm_id": "244977",
+          "slurm_state": "PENDING"
+        },
+        "progress": null,
+        "best": null,
+        "result": null,
+        "failure": null,
+        "precheck_submission": {
+          "slurm_id": "244968",
+          "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+          "submitted_at": 1788799560.2874804
+        },
+        "precheck": {
+          "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+          "gpu": "NVIDIA A100-SXM4-80GB",
+          "torch": "2.0.1",
+          "slurm_job_gpus": "6",
+          "cuda_visible_devices": "0",
+          "cuda": "11.8",
+          "completed_epochs": 0,
+          "is_mock": false,
+          "routes": {
+            "tr-bacdbb058eca": {
+              "status": "PASS",
+              "job_id": "tr-bacdbb058eca",
+              "input_shape": [
+                1,
+                1,
+                3,
+                768,
+                160,
+                160
+              ],
+              "finite_gradient_tensors": 337,
+              "detection_video_count": 1,
+              "peak_allocated_bytes": 3995461120,
+              "optimizer_updates": 1,
+              "ema_update": "PASS",
+              "source_limit": "not_applicable",
+              "evaluation_pipeline_check": {
+                "status": "PASS",
+                "observed_windows": 1,
+                "registered_full_test_windows": 792,
+                "scope": "correctness only; no partial-set scientific metric"
+              }
+            }
+          }
+        },
+        "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+        "work_root": "<MACHINE_PATH>/902fa05b"
+      }
+    },
+    "official": {
+      "train": {
+        "submission": {
+          "slurm_id": "244947",
+          "mode": "train",
+          "submitted_at": 1788797902.8735087,
+          "gpus": 2,
+          "global_train_batch": 2,
+          "train_videos": 200,
+          "test_videos": 211,
+          "upstream_commit": "346d09d19e2091372cec48172dbe40f7b28bdee6"
+        },
+        "progress": null,
+        "best": null,
+        "result": null,
+        "metrics": null
+      },
+      "evaluate": {
+        "submission": {
+          "slurm_id": "244949",
+          "mode": "evaluate",
+          "submitted_at": 1788798165.0641422,
+          "previous_attempt": "244946",
+          "fix": "use resolved config file; DictAction removes spaces in data paths"
+        },
+        "progress": null,
+        "best": null,
+        "result": {
+          "status": "COMPLETED",
+          "exit_code": 0,
+          "source_commit": "346d09d19e2091372cec48172dbe40f7b28bdee6",
+          "is_mock": false,
+          "mode": "evaluate",
+          "completed_epochs": null,
+          "ended_at": 1788800379.4695315,
+          "seed": 0
+        },
+        "metrics": {
+          "metrics": {
+            "average_mAP": 0.7113879489702108,
+            "mAP@0.3": 0.8596337197884967,
+            "mAP@0.4": 0.8185797683496124,
+            "mAP@0.5": 0.7500131299175179,
+            "mAP@0.6": 0.6329255169363297,
+            "mAP@0.7": 0.49578760985909814
+          },
+          "checkpoint_epoch": null,
+          "evaluated_videos": 211,
+          "inference_windows": 792,
+          "weights": "ema",
+          "seed": 0,
+          "is_mock": false,
+          "source_commit": "346d09d19e2091372cec48172dbe40f7b28bdee6",
+          "mode": "evaluate"
+        },
+        "inference_progress": {
+          "completed_batches": 396,
+          "total_batches": 396
+        }
+      }
+    },
+    "slurm": "244947|adatad-official-train|PENDING|0:00||(Priority)\n244973|tr-be89cd6cb2ca|PENDING|0:00||(Priority)\n244975|tr-a45686a40afa|PENDING|0:00||(Priority)\n244976|tr-c2d93c4c3979|PENDING|0:00||(Priority)\n244977|tr-bacdbb058eca|PENDING|0:00||(Priority)\n",
+    "coordinator": {
+      "pid": 2538334,
+      "host": "ln311",
+      "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+      "started_at": 1788799557.1246357
+    },
+    "coordinators": [
+      {
+        "pid": 2538334,
+        "host": "ln311",
+        "source_commit": "902fa05b5c64452ff1c94b82cabce801943d3484",
+        "started_at": 1788799557.1246357
+      }
+    ]
+  },
+  "observed_at_utc": "2026-09-07T17:21:42.158503+00:00"
+}

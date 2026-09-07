@@ -1,0 +1,496 @@
+{
+  "remote_path": "<MACHINE_PATH>/resolved_config.json",
+  "record": {
+    "opentad": {
+      "annotation_path": "data/thumos-14/annotations/thumos_14_anno.json",
+      "class_map": "data/thumos-14/annotations/category_idx.txt",
+      "data_path": "data/thumos-14/raw_data/video",
+      "block_list": null,
+      "window_size": 768,
+      "dataset": {
+        "train": {
+          "type": "ThumosPaddingDataset",
+          "ann_file": "<MACHINE_PATH>/annotations.json",
+          "subset_name": "training",
+          "block_list": null,
+          "class_map": "<MACHINE_PATH>/category_idx.txt",
+          "data_path": "<MACHINE_PATH>/validation",
+          "filter_gt": false,
+          "feature_stride": 4,
+          "sample_stride": 1,
+          "pipeline": [
+            {
+              "type": "PrepareVideoInfo",
+              "format": "mp4"
+            },
+            {
+              "type": "mmaction.DecordInit",
+              "num_threads": 4
+            },
+            {
+              "type": "LoadFrames",
+              "num_clips": 1,
+              "method": "random_trunc",
+              "trunc_len": 768,
+              "trunc_thresh": 0.75,
+              "crop_ratio": [
+                0.9,
+                1.0
+              ],
+              "scale_factor": 1
+            },
+            {
+              "type": "CaptureGeoSparseSupport"
+            },
+            {
+              "type": "mmaction.DecordDecode"
+            },
+            {
+              "type": "mmaction.Resize",
+              "scale": [
+                -1,
+                182
+              ]
+            },
+            {
+              "type": "mmaction.RandomResizedCrop"
+            },
+            {
+              "type": "mmaction.Resize",
+              "scale": [
+                160,
+                160
+              ],
+              "keep_ratio": false
+            },
+            {
+              "type": "mmaction.Flip",
+              "flip_ratio": 0.5
+            },
+            {
+              "type": "mmaction.ImgAug",
+              "transforms": "default"
+            },
+            {
+              "type": "mmaction.ColorJitter"
+            },
+            {
+              "type": "mmaction.FormatShape",
+              "input_format": "NCTHW"
+            },
+            {
+              "type": "ConvertToTensor",
+              "keys": [
+                "imgs",
+                "gt_segments",
+                "gt_labels"
+              ]
+            },
+            {
+              "type": "GeoSparseCollect",
+              "inputs": "imgs",
+              "keys": [
+                "masks",
+                "gt_segments",
+                "gt_labels"
+              ]
+            }
+          ]
+        },
+        "val": {
+          "type": "ThumosSlidingDataset",
+          "ann_file": "<MACHINE_PATH>/annotations.json",
+          "subset_name": "validation",
+          "block_list": null,
+          "class_map": "<MACHINE_PATH>/category_idx.txt",
+          "data_path": "<MACHINE_PATH>/TH14_test_set_mp4",
+          "filter_gt": false,
+          "feature_stride": 4,
+          "sample_stride": 1,
+          "window_size": 768,
+          "window_overlap_ratio": 0.25,
+          "pipeline": [
+            {
+              "type": "PrepareVideoInfo",
+              "format": "mp4"
+            },
+            {
+              "type": "mmaction.DecordInit",
+              "num_threads": 4
+            },
+            {
+              "type": "LoadFrames",
+              "num_clips": 1,
+              "method": "sliding_window",
+              "scale_factor": 1
+            },
+            {
+              "type": "CaptureGeoSparseSupport"
+            },
+            {
+              "type": "mmaction.DecordDecode"
+            },
+            {
+              "type": "mmaction.Resize",
+              "scale": [
+                -1,
+                160
+              ]
+            },
+            {
+              "type": "mmaction.CenterCrop",
+              "crop_size": 160
+            },
+            {
+              "type": "mmaction.FormatShape",
+              "input_format": "NCTHW"
+            },
+            {
+              "type": "ConvertToTensor",
+              "keys": [
+                "imgs",
+                "gt_segments",
+                "gt_labels"
+              ]
+            },
+            {
+              "type": "GeoSparseCollect",
+              "inputs": "imgs",
+              "keys": [
+                "masks",
+                "gt_segments",
+                "gt_labels"
+              ]
+            }
+          ]
+        },
+        "test": {
+          "type": "ThumosSlidingDataset",
+          "ann_file": "<MACHINE_PATH>/annotations.json",
+          "subset_name": "validation",
+          "block_list": null,
+          "class_map": "<MACHINE_PATH>/category_idx.txt",
+          "data_path": "<MACHINE_PATH>/TH14_test_set_mp4",
+          "filter_gt": false,
+          "test_mode": true,
+          "feature_stride": 4,
+          "sample_stride": 1,
+          "window_size": 768,
+          "window_overlap_ratio": 0.5,
+          "pipeline": [
+            {
+              "type": "PrepareVideoInfo",
+              "format": "mp4"
+            },
+            {
+              "type": "mmaction.DecordInit",
+              "num_threads": 4
+            },
+            {
+              "type": "LoadFrames",
+              "num_clips": 1,
+              "method": "sliding_window",
+              "scale_factor": 1
+            },
+            {
+              "type": "CaptureGeoSparseSupport"
+            },
+            {
+              "type": "mmaction.DecordDecode"
+            },
+            {
+              "type": "mmaction.Resize",
+              "scale": [
+                -1,
+                160
+              ]
+            },
+            {
+              "type": "mmaction.CenterCrop",
+              "crop_size": 160
+            },
+            {
+              "type": "mmaction.FormatShape",
+              "input_format": "NCTHW"
+            },
+            {
+              "type": "ConvertToTensor",
+              "keys": [
+                "imgs"
+              ]
+            },
+            {
+              "type": "GeoSparseCollect",
+              "inputs": "imgs",
+              "keys": [
+                "masks"
+              ]
+            }
+          ]
+        }
+      },
+      "evaluation": {
+        "type": "mAP",
+        "subset": "validation",
+        "tiou_thresholds": [
+          0.3,
+          0.4,
+          0.5,
+          0.6,
+          0.7
+        ],
+        "ground_truth_filename": "<MACHINE_PATH>/thumos_14_anno.json"
+      },
+      "model": {
+        "type": "GeoSparseDetector",
+        "projection": {
+          "type": "Conv1DTransformerProj",
+          "in_channels": 768,
+          "out_channels": 512,
+          "arch": [
+            2,
+            2,
+            5
+          ],
+          "conv_cfg": {
+            "kernel_size": 3,
+            "proj_pdrop": 0.0
+          },
+          "norm_cfg": {
+            "type": "LN"
+          },
+          "attn_cfg": {
+            "n_head": 4,
+            "n_mha_win_size": -1
+          },
+          "path_pdrop": 0.1,
+          "use_abs_pe": false,
+          "max_seq_len": 768
+        },
+        "neck": {
+          "type": "FPNIdentity",
+          "in_channels": 512,
+          "out_channels": 512,
+          "num_levels": 6
+        },
+        "rpn_head": {
+          "type": "ActionFormerHead",
+          "num_classes": 20,
+          "in_channels": 512,
+          "feat_channels": 512,
+          "num_convs": 2,
+          "cls_prior_prob": 0.01,
+          "prior_generator": {
+            "type": "PointGenerator",
+            "strides": [
+              1,
+              2,
+              4,
+              8,
+              16,
+              32
+            ],
+            "regression_range": [
+              [
+                0,
+                4
+              ],
+              [
+                4,
+                8
+              ],
+              [
+                8,
+                16
+              ],
+              [
+                16,
+                32
+              ],
+              [
+                32,
+                64
+              ],
+              [
+                64,
+                10000
+              ]
+            ]
+          },
+          "loss_normalizer": 100,
+          "loss_normalizer_momentum": 0.9,
+          "center_sample": "radius",
+          "center_sample_radius": 1.5,
+          "label_smoothing": 0.0,
+          "loss": {
+            "cls_loss": {
+              "type": "FocalLoss"
+            },
+            "reg_loss": {
+              "type": "DIOULoss"
+            }
+          }
+        },
+        "geosparse": {
+          "actionness_aux": false,
+          "allow_global_zero": true,
+          "axis": "ST",
+          "backbone": "videomae_b",
+          "budget": 0.5,
+          "budget_mode": "fixed",
+          "coarse_variant": "mean_shared",
+          "cost_target": "traced_macs",
+          "detail_probe_fraction": 0.0,
+          "estimator": "pg_acquisition",
+          "evidence_slots": 4,
+          "exploration": "default",
+          "fusion_variant": "residual",
+          "geometry": "native_support",
+          "head": "actionformer",
+          "heavy_context": "parent16",
+          "probe_every": 32,
+          "query_length": 768,
+          "quota": "global_zero_allowed",
+          "receiver": "support_attention",
+          "receiver_layers": 2,
+          "roi_mode": "none",
+          "rounds": 1,
+          "route": "A",
+          "route_refresh": "once",
+          "scout_resolution": 112,
+          "scout_temporal_stride": 1,
+          "scout_width": 128,
+          "selector": "hybrid",
+          "source_resolution": 160,
+          "spatial_group": 2,
+          "temporal_atom_tubelets": 1,
+          "tia_scope": "source_native",
+          "warmup_epochs": 6
+        },
+        "recognition_checkpoint": "<MACHINE_PATH>/videomae_b.download"
+      },
+      "scale_factor": 1,
+      "chunk_num": 48,
+      "solver": {
+        "train": {
+          "batch_size": 2,
+          "num_workers": 2
+        },
+        "val": {
+          "batch_size": 2,
+          "num_workers": 2
+        },
+        "test": {
+          "batch_size": 2,
+          "num_workers": 2
+        },
+        "clip_grad_norm": 1,
+        "amp": true,
+        "fp16_compress": true,
+        "static_graph": true,
+        "ema": true
+      },
+      "optimizer": {
+        "type": "AdamW",
+        "lr": 0.0001,
+        "weight_decay": 0.05,
+        "paramwise": true,
+        "backbone": {
+          "lr": 0,
+          "weight_decay": 0,
+          "custom": [
+            {
+              "name": "adapter",
+              "lr": 0.0001,
+              "weight_decay": 0.05
+            }
+          ],
+          "exclude": [
+            "backbone"
+          ]
+        }
+      },
+      "scheduler": {
+        "type": "LinearWarmupCosineAnnealingLR",
+        "warmup_epoch": 5,
+        "max_epoch": 100
+      },
+      "inference": {
+        "load_from_raw_predictions": false,
+        "save_raw_prediction": false
+      },
+      "post_processing": {
+        "nms": {
+          "use_soft_nms": true,
+          "sigma": 0.7,
+          "max_seg_num": 2000,
+          "multiclass": true,
+          "voting_thresh": 0.7
+        },
+        "save_dict": false
+      },
+      "workflow": {
+        "logging_interval": 50,
+        "checkpoint_interval": 2,
+        "val_loss_interval": -1,
+        "val_eval_interval": 5,
+        "val_start_epoch": 4,
+        "end_epoch": 60
+      },
+      "work_dir": "exps/thumos/adatad/e2e_actionformer_videomae_b_768x1_160_adapter"
+    },
+    "model": {
+      "actionness_aux": false,
+      "allow_global_zero": true,
+      "axis": "ST",
+      "backbone": "videomae_b",
+      "budget": 0.5,
+      "budget_mode": "fixed",
+      "coarse_variant": "mean_shared",
+      "cost_target": "traced_macs",
+      "detail_probe_fraction": 0.0,
+      "estimator": "pg_acquisition",
+      "evidence_slots": 4,
+      "exploration": "default",
+      "fusion_variant": "residual",
+      "geometry": "native_support",
+      "head": "actionformer",
+      "heavy_context": "parent16",
+      "probe_every": 32,
+      "query_length": 768,
+      "quota": "global_zero_allowed",
+      "receiver": "support_attention",
+      "receiver_layers": 2,
+      "roi_mode": "none",
+      "rounds": 1,
+      "route": "A",
+      "route_refresh": "once",
+      "scout_resolution": 112,
+      "scout_temporal_stride": 1,
+      "scout_width": 128,
+      "selector": "hybrid",
+      "source_resolution": 160,
+      "spatial_group": 2,
+      "temporal_atom_tubelets": 1,
+      "tia_scope": "source_native",
+      "warmup_epochs": 6
+    },
+    "dataset": "thumos14",
+    "seed": 0,
+    "epochs": 60,
+    "runtime": {
+      "effective_batch": 2,
+      "microbatch": 2,
+      "evaluation_batch": 1,
+      "num_workers": 2
+    },
+    "protocol": "geosparse-official-full-data-20260908",
+    "checkpoint_selection": {
+      "subset": "validation",
+      "interval_epochs": 5,
+      "weights": "ema",
+      "metric": "average_mAP@0.3:0.1:0.7",
+      "ties": "earlier_checkpoint"
+    }
+  }
+}

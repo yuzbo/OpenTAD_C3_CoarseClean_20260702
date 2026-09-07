@@ -1,0 +1,23 @@
+{
+  "command": [
+    "<MACHINE_PATH>/python",
+    "-m",
+    "torch.distributed.run",
+    "--standalone",
+    "--nproc_per_node=1",
+    "<MACHINE_PATH>/test.py",
+    "<MACHINE_PATH>/resolved_config.py",
+    "--seed",
+    "0",
+    "--id",
+    "0",
+    "--checkpoint",
+    "<MACHINE_PATH>/official_b_checkpoint.pth"
+  ],
+  "source_commit": "346d09d19e2091372cec48172dbe40f7b28bdee6",
+  "mode": "evaluate",
+  "seed": 0,
+  "slurm_id": "244949",
+  "started_at": 1788798190.4891806,
+  "checkpoint_origin": "official released TAD EMA"
+}

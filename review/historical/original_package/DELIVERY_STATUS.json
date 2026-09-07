@@ -1,0 +1,33 @@
+{
+  "package": "GeoSparse-TAD v1.0",
+  "scope": "paper framework + implementation specification + parallel agent commands + experiment DAG + local dispatcher + reference primitives",
+  "created_for_date": "2026-09-06",
+  "generated_matrix_counts": {
+    "train": 609,
+    "evaluate": 609,
+    "benchmark": 203,
+    "diagnostic": 117
+  },
+  "registered_total_jobs": 1538,
+  "registered_training_has_experiment_dependencies": false,
+  "executed": {
+    "tool_unit_tests_passed": 20,
+    "tool_unit_tests_failed": 0,
+    "matrix_compiled": true,
+    "plan_only_checked": true,
+    "gpu_training_jobs_launched": 0
+  },
+  "not_executed": [
+    "user repository integration",
+    "full VideoMAE/TIA model correctness tests",
+    "TAD training",
+    "dataset evaluation",
+    "GPU hardware benchmarks"
+  ],
+  "limitations": [
+    "geosparse_ext.entry is an implementation contract, not an included complete model trainer",
+    "bindings.example.json contains placeholders",
+    "dispatcher is local and does not spawn agents or remote cluster jobs"
+  ],
+  "matrix_sha256": "58032c8dfd61700e5a8f44e62ae90ac97d3ed3d67d004bfe7ba6d6a18c1b0291"
+}

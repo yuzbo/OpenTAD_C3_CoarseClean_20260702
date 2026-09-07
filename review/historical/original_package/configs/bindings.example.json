@@ -1,0 +1,23 @@
+{
+  "description": "Copy to bindings.local.json. Paths are placeholders, not discovered assets.",
+  "repo_root": "/ABS/PATH/TO/YOUR/REPOSITORY",
+  "work_root": "/ABS/PATH/TO/EXPERIMENT/OUTPUTS",
+  "datasets": {
+    "thumos14": "/ABS/PATH/TO/THUMOS14",
+    "activitynet13": "/ABS/PATH/TO/ACTIVITYNET13",
+    "fineaction": "/ABS/PATH/TO/FINEACTION"
+  },
+  "checkpoints": {
+    "videomae_b": "/ABS/PATH/TO/VIDEOMAE_B_RECOGNITION_PRETRAIN.pth",
+    "videomae_l": "/ABS/PATH/TO/VIDEOMAE_L_RECOGNITION_PRETRAIN.pth"
+  },
+  "legacy_duca_manifest": "/ABS/PATH/TO/DUCA_CONFIG_AND_COMMIT.json",
+  "capability_dir": "/ABS/PATH/TO/READY_CAPABILITIES",
+  "entrypoint": ["python", "-m", "geosparse_ext.entry", "--job", "{job_file}", "--output", "{output_dir}", "--bindings", "{bindings_file}"],
+  "slots": [
+    {"id": "gpu0", "class": "gpu", "cuda_visible_devices": "0", "host": "local"},
+    {"id": "gpu1", "class": "gpu", "cuda_visible_devices": "1", "host": "local"},
+    {"id": "gpu2", "class": "gpu", "cuda_visible_devices": "2", "host": "local"},
+    {"id": "gpu3", "class": "gpu", "cuda_visible_devices": "3", "host": "local"}
+  ]
+}

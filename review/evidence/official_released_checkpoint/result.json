@@ -1,0 +1,10 @@
+{
+  "status": "COMPLETED",
+  "exit_code": 0,
+  "source_commit": "346d09d19e2091372cec48172dbe40f7b28bdee6",
+  "is_mock": false,
+  "mode": "evaluate",
+  "completed_epochs": null,
+  "ended_at": 1788800379.4695315,
+  "seed": 0
+}

@@ -1,0 +1,71 @@
+{
+  "remote_path": "<MACHINE_PATH>/resolved_protocol.json",
+  "record": {
+    "route": "A",
+    "input_shape": [
+      2,
+      1,
+      3,
+      768,
+      160,
+      160
+    ],
+    "input_positions": 768,
+    "query_length": 768,
+    "native_tubelet": 2,
+    "parent_input_positions": 16,
+    "parent_count": 48,
+    "native_spatial_patch": 16,
+    "heavy_input_resolution": 160,
+    "heavy_spatial_grid": [
+      10,
+      10
+    ],
+    "quota": "global_zero_allowed",
+    "source_class": "VisionTransformerAdapter",
+    "source_width": 768,
+    "source_layers": 12,
+    "active_source_layers": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ],
+    "dense_prefix_layers": 0,
+    "source_tia_temporal_sizes": [
+      384,
+      384,
+      384,
+      384,
+      384,
+      384,
+      384,
+      384,
+      384,
+      384,
+      384,
+      384
+    ],
+    "source_block_order": [
+      "LN1",
+      "MHSA",
+      "residual",
+      "LN2",
+      "MLP",
+      "residual",
+      "TIA"
+    ],
+    "pe": "source native sinusoid; selected indices retain original PE",
+    "gt_to_query_scale": 1.0,
+    "heavy_cost_scope": "QKV, attention and MLP only; 1 MAC = 2 FLOPs",
+    "trainable_parameters": 31388046
+  }
+}

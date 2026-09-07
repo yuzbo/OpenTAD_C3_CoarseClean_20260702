@@ -1,3 +1,11 @@
+# GeoSparse-TAD 源码审查快照（2026-09-08）
+
+当前模型源码固定为 `902fa05b5c64452ff1c94b82cabce801943d3484`；本分支另外整理了审查材料。
+从 [审查入口](GEOSPARSE_REVIEW.zh.md) 开始，或直接复制 [Pro 严格审查 prompt](review/PRO_REVIEW_PROMPT.zh.md)。
+当前只推进 seed 0，未完成的实验不作结果声明。`review/historical/` 是撤销代码或旧方案，不是当前实现。
+
+以下保留官方 OpenTAD README；其中的发布状态和结果属于上游项目。
+
 # OpenTAD: An Open-Source Temporal Action Detection Toolbox.
 
 <p align="left">
