@@ -23,6 +23,8 @@ PYTHON="${PYTHON:-${BASE}/conda_envs/opentad/bin/python}"
 PRETRAIN="${CT_PRETRAIN:-${BASE}/pretrained/vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth}"
 [[ -f "${PRETRAIN}" ]] || { echo "missing CT pretrain: ${PRETRAIN}" >&2; exit 1; }
 "${PYTHON}" -m pytest tests/test_ctdp_successful_updates.py \
+  tests/test_ctdp_coordinate_contract.py tests/test_truetime_geometry.py \
+  tests/test_bata_post_processing_selected_axis.py tests/test_c3_physical_grid_round_trip.py \
   tests/test_train_engine_max_train_iters.py tests/test_duca_ctdp_corrected_geometry.py \
   tests/test_duca_ctdp_coordinate_contract.py tests/test_duca_ct_tubelet_parity.py \
   tests/test_duca_ctdp_launcher_contract.py tests/test_c3_coarse_classifier_model_matrix.py \
