@@ -85,6 +85,9 @@ def main():
                 rows.append([host['cluster'],labels[jid],jid,'OBSERVATION_UNAVAILABLE',detail,score,str(sid or '')])
                 continue
             state=q.get('status','PENDING');detail=f"{p.get('completed_epochs',0)}/60 epochs"
+            if state=='HELD_SUBMITTED':
+                state='PENDING_HELD'
+                detail+='；正式训练已提交；'+str(q.get('held_reason') or '等待预检或许可资源')
             if sid and state in {'SUBMITTED','SUBMITTING'}:
                 state=live[str(sid)][2] if str(sid) in live else accounting.get(str(sid),['',state])[1]
                 if str(sid) not in live and accounting.get(str(sid),['','',''])[2]=='78:0':

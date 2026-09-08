@@ -153,6 +153,8 @@ def main():
     sys.path.insert(0, bindings['repo_root'])
     from geosparse_ext import slurm_queue as queue
     import fcntl
+    if bindings['primary_binding_paths']:
+        from held_controls import submit_controls, release_controls
     root = Path(bindings['work_root'])
     root.mkdir(parents=True, exist_ok=True)
     control = root.parent.parent / 'control'
@@ -176,6 +178,8 @@ def main():
             raise RuntimeError('primary submission changed; keep supplementary work queued')
         return scheduled_script(original_worker(job_file, output, bindings_file, current), primary_ids, current['slurm_nice'], resumable=load(job_file)['kind']=='train')
     def readiness(job, by_id, current, directory, states):
+        if states[job['job_id']]['status'] == 'HELD_SUBMITTED':
+            return 'HELD_SUBMITTED', [states[job['job_id']].get('held_reason', 'formal Slurm job awaiting readiness')]
         status, reasons = original_readiness(job, by_id, current, directory, states)
         if status == 'QUEUED_RESOURCE':
             _, waiting = primary_state(current)
@@ -188,10 +192,16 @@ def main():
         dependency_updates = refresh_primary_start_dependencies(bindings)
         queue.worker_script = original_worker
         status = precheck(args, bindings, queue)
+        if bindings['primary_binding_paths']:
+            primary_ids, _ = primary_state(bindings)
+            submit_controls(args, bindings, queue, lambda script: scheduled_script(
+                script, primary_ids, bindings['slurm_nice'], resumable=True))
         queue.worker_script = worker
         queue.readiness = readiness
         sys.argv = [sys.argv[0], '--manifest', str(args.manifest), '--bindings', str(args.bindings), '--execute']
         queue.main()
+        if bindings['primary_binding_paths']:
+            release_controls(args, bindings, queue, original_readiness, primary_state)
         state = load(root / 'slurm_state.json')
         save(control / 'audit_progress.json', dict(updated_at=time.time(), pid=os.getpid(), host=socket.gethostname(), precheck_status=status, primary_dependency_updates=dependency_updates, states={jid:state['jobs'][jid]['status'] for jid in bindings['assigned_training_ids']}))
         time.sleep(60)
