@@ -1,0 +1,21 @@
+{
+  "source_commit": "b70ae056c495b43ca3f305fe438926b97b2723b5",
+  "observed_at_utc": "2026-09-08T09:33:48.114005+00:00",
+  "configurations": 204,
+  "jobs": 1545,
+  "static_configurations": {
+    "ACCEPTED_NOT_COMPLETION": 123,
+    "BLOCKED": 81
+  },
+  "job_execution_states": {
+    "RUNNING": 6,
+    "DEFERRED_SEED": 492,
+    "BLOCKED_IMPLEMENTATION": 684,
+    "DEFERRED_PRIORITY": 336,
+    "QUEUED_RESOURCE": 1,
+    "DONE": 1,
+    "PENDING": 3,
+    "WAITING_OWN_COMPLETED_TRAIN_AND_SELECTION": 22
+  },
+  "scope": "registry and implementation refusal plus observed seed0 execution; not an independent semantic audit or evidence of final performance"
+}

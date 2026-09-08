@@ -1,0 +1,104 @@
+[
+  {
+    "job_id": "tr-1d7d835dcbe2",
+    "epoch_completed": 20,
+    "successful_updates": 1994,
+    "controller": {
+      "state_dict": {
+        "geosparse.dual": 0.0034907283261418343,
+        "geosparse.cost_ema": 0.3911087214946747
+      },
+      "state_dict_ema": {
+        "geosparse.dual": 0.02662475034594536,
+        "geosparse.cost_ema": 0.45851579308509827
+      }
+    },
+    "state_dict_scout_norms": {
+      "geosparse.scout.gain.2.weight": {
+        "norm": 0.6145339012145996,
+        "mean": -0.0026570549234747887
+      },
+      "geosparse.scout.gain.2.bias": {
+        "norm": 0.03647531196475029,
+        "mean": -0.03647531196475029
+      },
+      "geosparse.scout.budget.weight": {
+        "norm": 1.285451889038086,
+        "mean": 0.0027063514571636915
+      },
+      "geosparse.scout.budget.bias": {
+        "norm": 0.09707219898700714,
+        "mean": -0.0072730234824121
+      }
+    },
+    "state_dict_ema_scout_norms": {
+      "geosparse.scout.gain.2.bias": {
+        "norm": 0.044392600655555725,
+        "mean": -0.044392600655555725
+      },
+      "geosparse.scout.gain.2.weight": {
+        "norm": 0.5804698467254639,
+        "mean": -0.0019427924416959286
+      },
+      "geosparse.scout.budget.bias": {
+        "norm": 0.09726860374212265,
+        "mean": -0.007061765529215336
+      },
+      "geosparse.scout.budget.weight": {
+        "norm": 1.2777016162872314,
+        "mean": 0.0027928228955715895
+      }
+    }
+  },
+  {
+    "job_id": "tr-5789d4417b4b",
+    "epoch_completed": 20,
+    "successful_updates": 1997,
+    "controller": {
+      "state_dict": {
+        "geosparse.dual": 0.11360527575016022,
+        "geosparse.cost_ema": 0.4181852340698242
+      },
+      "state_dict_ema": {
+        "geosparse.cost_ema": 0.500933051109314,
+        "geosparse.dual": 0.11268074810504913
+      }
+    },
+    "state_dict_scout_norms": {
+      "geosparse.scout.gain.2.weight": {
+        "norm": 0.6043566465377808,
+        "mean": -0.009549718350172043
+      },
+      "geosparse.scout.gain.2.bias": {
+        "norm": 0.016828371211886406,
+        "mean": -0.016828371211886406
+      },
+      "geosparse.scout.budget.weight": {
+        "norm": 1.260960578918457,
+        "mean": 0.0016156205674633384
+      },
+      "geosparse.scout.budget.bias": {
+        "norm": 0.08741790801286697,
+        "mean": -0.004483703523874283
+      }
+    },
+    "state_dict_ema_scout_norms": {
+      "geosparse.scout.budget.bias": {
+        "norm": 0.0890573263168335,
+        "mean": -0.004563807509839535
+      },
+      "geosparse.scout.budget.weight": {
+        "norm": 1.2651946544647217,
+        "mean": 0.0016257282113656402
+      },
+      "geosparse.scout.gain.2.weight": {
+        "norm": 0.6140334010124207,
+        "mean": -0.009715525433421135
+      },
+      "geosparse.scout.gain.2.bias": {
+        "norm": 0.02198624797165394,
+        "mean": -0.02198624797165394
+      }
+    }
+  }
+]

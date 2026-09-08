@@ -1,0 +1,4 @@
+{"source_commit": "7ea094f40064dfd32259beb068548610514d1654", "repository": "/data/run01/sczc063/yuzibo/geosparse_official_20260908/sci3_evidence_7ea094f4/repo", "tests": ["tests/test_sci3_fixed_budget_diagnostic.py"], "cpu_only": true, "synthetic_inputs": true, "started_at": 1788857949.2253063, "elapsed_s": 65.03683948516846, "returncode": 0, "training_submitted": false}
+......                                                                   [100%]
+6 passed in 60.83s (0:01:00)
+

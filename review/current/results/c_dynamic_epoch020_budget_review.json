@@ -1,0 +1,15 @@
+{
+  "observed_at_utc": "2026-09-08T09:52:13.096369+00:00",
+  "submission": {
+    "slurm_id": "245503",
+    "submitted_at": 1788860703.465983,
+    "case": "tr-5789d4417b4b:20",
+    "model_source": "b70ae056c495b43ca3f305fe438926b97b2723b5"
+  },
+  "slurm": "245503|PENDING|(Priority)|0:00|",
+  "slurm_error": "",
+  "files": [],
+  "last_out": null,
+  "last_err": null,
+  "scope": "New E20 frozen EMA Scout-only full211/792 replay; no Heavy or training; no E20 budget result until coverage is complete."
+}

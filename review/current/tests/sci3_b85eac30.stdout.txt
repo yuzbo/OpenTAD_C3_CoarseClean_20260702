@@ -1,0 +1,4 @@
+{"source_commit": "b85eac309bd9adb7f44f06fc7732750517e4a613", "repository": "/data/run01/sczc063/yuzibo/geosparse_official_20260908/sci3_evidence_b85eac30/repo", "cpu_only": true, "synthetic_inputs": true, "started_at": 1788842967.4083354, "elapsed_s": 69.16277837753296, "returncode": 0, "training_submitted": false}
+.................                                                        [100%]
+17 passed in 64.45s (0:01:04)
+

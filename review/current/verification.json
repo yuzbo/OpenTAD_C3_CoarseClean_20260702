@@ -1,0 +1,37 @@
+{
+  "created_at_utc": "2026-09-08T09:48:44.523860+00:00",
+  "model_source": "b70ae056c495b43ca3f305fe438926b97b2723b5",
+  "official_source": "346d09d19e2091372cec48172dbe40f7b28bdee6",
+  "research_input": "290e51b4c35238f93b1274edb6b512f03ded1d66",
+  "operator_input": "c33c7b1662340f8066e84f0b77b1940a265a4aef",
+  "production_subtree_equals_M": true,
+  "official_core_equals_O": true,
+  "manifest_counts": {
+    "train": 612,
+    "evaluate": 612,
+    "benchmark": 204,
+    "diagnostic": 117
+  },
+  "unique_job_ids": 1545,
+  "all_dependencies_resolve": true,
+  "focus_difference_count": 0,
+  "tests": [
+    {
+      "evidence": "sci3_verification_b85eac30",
+      "receipt": {
+        "source_commit": "b85eac309bd9adb7f44f06fc7732750517e4a613",
+        "ssh_returncode": 0,
+        "completed_at_utc": "2026-09-08T04:50:36.746648+00:00"
+      }
+    },
+    {
+      "evidence": "sci3_verification_7ea094f4",
+      "receipt": {
+        "source_commit": "7ea094f40064dfd32259beb068548610514d1654",
+        "ssh_returncode": 0,
+        "completed_at_utc": "2026-09-08T09:00:13.951342+00:00"
+      }
+    }
+  ],
+  "scope": "Packaging checks and previously recorded tests; not a new independent scientific/code audit."
+}

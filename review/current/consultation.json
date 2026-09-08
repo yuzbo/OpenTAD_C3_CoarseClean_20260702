@@ -1,0 +1,10 @@
+{
+  "status": "NOT_SENT_TOOL_BLOCKED",
+  "browser_required": "ixBrowser",
+  "model_required": "ChatGPT Pro",
+  "route_required": "Computer Use",
+  "observed_at_utc": "2026-09-08T09:48:44.524988+00:00",
+  "error": "failed to write kernel assets: system cannot find the path (os error 3)",
+  "evidence": "node_repl fails before JavaScript execution; previous reset did not fix; no Pro response exists",
+  "substitution": "No API or other-browser fallback used"
+}

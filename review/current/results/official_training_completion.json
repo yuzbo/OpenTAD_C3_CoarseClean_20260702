@@ -1,0 +1,31 @@
+{
+  "observed_at_utc": "2026-09-08T09:33:48.114005+00:00",
+  "result": {
+    "status": "COMPLETED",
+    "exit_code": 0,
+    "source_commit": "346d09d19e2091372cec48172dbe40f7b28bdee6",
+    "is_mock": false,
+    "mode": "train",
+    "completed_epochs": 60,
+    "ended_at": 1788859943.5300772,
+    "seed": 0
+  },
+  "best": {
+    "metrics": {
+      "average_mAP": 0.7018058201276353,
+      "mAP@0.3": 0.8554024426465053,
+      "mAP@0.4": 0.8133401295843505,
+      "mAP@0.5": 0.7380859021917316,
+      "mAP@0.6": 0.625009589986181,
+      "mAP@0.7": 0.47719103622940795
+    },
+    "checkpoint_epoch": 51,
+    "evaluated_videos": 211,
+    "inference_windows": 792,
+    "weights": "ema",
+    "seed": 0,
+    "is_mock": false,
+    "source_commit": "346d09d19e2091372cec48172dbe40f7b28bdee6",
+    "mode": "train"
+  }
+}

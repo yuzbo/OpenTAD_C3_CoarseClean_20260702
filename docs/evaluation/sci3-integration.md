@@ -16,7 +16,7 @@
 | --- | --- |
 | 340a3541、224px、14×14、7×7组 | 当前 M 使用768×160、10×10 native patches、5×5个2×2组、native384 TIA、48个Heavy parents；旧版本只保留为历史。 |
 | 用户消息中的负 attention 成本项 | 以附件研究规格的正号为准：每层每parent为 `12*k*d*d + 2*k*k*d`。不能按总token数替代二次项。 |
-| 三种子、Discovery fit/probe/select、主结果第60轮 | 与此前明确的seed0优先、全200训练、211视频全量EMA best不同；已提出协议澄清。答复前沿用现行运行协议，不建立新holdout，不提交seed1/2。已训练视频的诊断标IN_SAMPLE，不称held-out。保留固定60轮及共同50/60节点的补充比较。 |
+| 三种子、Discovery fit/probe/select、主结果第60轮 | 2026-09-08用户已明确选择best并允许按测试集做超参数开发，见test-development amendment；保留seed0优先、全200训练、211视频全量EMA best，不建立新holdout，不提交seed1/2。新增调参结果标test-tuned development，已训练视频的诊断标IN_SAMPLE，不称held-out。保留固定60轮及共同50/60节点的补充比较。 |
 | 核心805请求、37方法、旧609训练索引 | 当前只收到v3 Markdown，本机两份ZIP均为旧1538包；无法核验805个原始ID。当前正式旧矩阵实际为1545项/612训练。缺失的机器清单登记MISSING_SOURCE_PACKAGE，不猜造ID。 |
 | 0.30/0.40/0.60 Heavy目标 | 是新增成本工作点，与旧fixed-q=.5、dynamic软目标=.5分开。新增分配器应报告实际MAC及可行性；不能沿用无约束argmax的高分当等成本结果。 |
 | OpenTAD_Strict_Audit_20260907 | 是另外六路线的VideoMAE-S、REF/H65/CT-DP等固定版本审计。69.03/68.73/67.58不能替换当前GeoSparse VideoMAE-B的官方身份或结果。当前未核验其历史产物，不操作该项目作业。 |

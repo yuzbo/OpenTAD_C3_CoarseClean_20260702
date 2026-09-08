@@ -1,0 +1,1312 @@
+[
+  {
+    "source_file": "observed_metrics/tr-0afe8e4fc09b/epoch_005.receipt.json",
+    "observed_at_utc": "2026-09-07T19:53:11.351495+00:00",
+    "validation": {
+      "status": "completed_validation",
+      "is_mock": false,
+      "is_final_result": false,
+      "source_train_id": "tr-0afe8e4fc09b",
+      "seed": 0,
+      "completed_epochs": 5,
+      "subset": "validation",
+      "weights": "ema",
+      "provenance": {
+        "source_commit": "b70ae056c495b43ca3f305fe438926b97b2723b5",
+        "resolved_config_sha256": "54a65283e6d37c69bc5e43150acc0067c638f368db421f4f95ae7575f9329a62",
+        "split_sha256": "88b5d7b12f6780cae70fb0eb27e7bedd580fd6326a725e3287738e3431ecaf95",
+        "weights_sha256": "860a3cd317c642183c6ba8eac8ce0c27674f528566536cd95e650a0b6c378f44"
+      },
+      "metrics": {
+        "average_mAP": 0.05162266117501878,
+        "mAP@0.3": 0.1259961547345356,
+        "mAP@0.4": 0.07790852361725695,
+        "mAP@0.5": 0.03658837380647312,
+        "mAP@0.6": 0.013194472541936661,
+        "mAP@0.7": 0.0044257811748915745
+      },
+      "windows": 792
+    },
+    "evaluated_video_count": 211
+  },
+  {
+    "source_file": "observed_metrics/tr-0afe8e4fc09b/epoch_010.receipt.json",
+    "observed_at_utc": "2026-09-07T20:49:20.139967+00:00",
+    "validation": {
+      "status": "completed_validation",
+      "is_mock": false,
+      "is_final_result": false,
+      "source_train_id": "tr-0afe8e4fc09b",
+      "seed": 0,
+      "completed_epochs": 10,
+      "subset": "validation",
+      "weights": "ema",
+      "provenance": {
+        "source_commit": "b70ae056c495b43ca3f305fe438926b97b2723b5",
+        "resolved_config_sha256": "54a65283e6d37c69bc5e43150acc0067c638f368db421f4f95ae7575f9329a62",
+        "split_sha256": "88b5d7b12f6780cae70fb0eb27e7bedd580fd6326a725e3287738e3431ecaf95",
+        "weights_sha256": "860a3cd317c642183c6ba8eac8ce0c27674f528566536cd95e650a0b6c378f44"
+      },
+      "metrics": {
+        "average_mAP": 0.325425591412989,
+        "mAP@0.3": 0.5638548245753399,
+        "mAP@0.4": 0.4625411757223762,
+        "mAP@0.5": 0.3358418979259584,
+        "mAP@0.6": 0.18284853448188498,
+        "mAP@0.7": 0.0820415243593858
+      },
+      "windows": 792
+    },
+    "evaluated_video_count": 211
+  },
+  {
+    "source_file": "observed_metrics/tr-0afe8e4fc09b/epoch_015.receipt.json",
+    "observed_at_utc": "2026-09-07T22:17:58.611116+00:00",
+    "validation": {
+      "status": "completed_validation",
+      "is_mock": false,
+      "is_final_result": false,
+      "source_train_id": "tr-0afe8e4fc09b",
+      "seed": 0,
+      "completed_epochs": 15,
+      "subset": "validation",
+      "weights": "ema",
+      "provenance": {
+        "source_commit": "b70ae056c495b43ca3f305fe438926b97b2723b5",
+        "resolved_config_sha256": "54a65283e6d37c69bc5e43150acc0067c638f368db421f4f95ae7575f9329a62",
+        "split_sha256": "88b5d7b12f6780cae70fb0eb27e7bedd580fd6326a725e3287738e3431ecaf95",
+        "weights_sha256": "860a3cd317c642183c6ba8eac8ce0c27674f528566536cd95e650a0b6c378f44"
+      },
+      "metrics": {
+        "average_mAP": 0.4073750690516883,
+        "mAP@0.3": 0.6601398693557006,
+        "mAP@0.4": 0.5505607710498877,
+        "mAP@0.5": 0.42153632230929106,
+        "mAP@0.6": 0.269632556101572,
+        "mAP@0.7": 0.13500582644199022
+      },
+      "windows": 792
+    },
+    "evaluated_video_count": 211
+  },
+  {
+    "source_file": "observed_metrics/tr-0afe8e4fc09b/epoch_020.receipt.json",
+    "observed_at_utc": "2026-09-07T22:40:11.797084+00:00",
+    "validation": {
+      "status": "completed_validation",
+      "is_mock": false,
+      "is_final_result": false,
+      "source_train_id": "tr-0afe8e4fc09b",
+      "seed": 0,
+      "completed_epochs": 20,
+      "subset": "validation",
+      "weights": "ema",
+      "provenance": {
+        "source_commit": "b70ae056c495b43ca3f305fe438926b97b2723b5",
+        "resolved_config_sha256": "54a65283e6d37c69bc5e43150acc0067c638f368db421f4f95ae7575f9329a62",
+        "split_sha256": "88b5d7b12f6780cae70fb0eb27e7bedd580fd6326a725e3287738e3431ecaf95",
+        "weights_sha256": "860a3cd317c642183c6ba8eac8ce0c27674f528566536cd95e650a0b6c378f44"
+      },
+      "metrics": {
+        "average_mAP": 0.5206911792986451,
+        "mAP@0.3": 0.7437545520693536,
+        "mAP@0.4": 0.6569713603388792,
+        "mAP@0.5": 0.547693478497455,
+        "mAP@0.6": 0.40610731510809794,
+        "mAP@0.7": 0.2489291904794399
+      },
+      "windows": 792
+    },
+    "evaluated_video_count": 211
+  },
+  {
+    "source_file": "observed_metrics/tr-0afe8e4fc09b/epoch_025.receipt.json",
+    "observed_at_utc": "2026-09-07T23:48:54.258243+00:00",
+    "validation": {
+      "status": "completed_validation",
+      "is_mock": false,
+      "is_final_result": false,
+      "source_train_id": "tr-0afe8e4fc09b",
+      "seed": 0,
+      "completed_epochs": 25,
+      "subset": "validation",
+      "weights": "ema",
+      "provenance": {
+        "source_commit": "b70ae056c495b43ca3f305fe438926b97b2723b5",
+        "resolved_config_sha256": "54a65283e6d37c69bc5e43150acc0067c638f368db421f4f95ae7575f9329a62",
+        "split_sha256": "88b5d7b12f6780cae70fb0eb27e7bedd580fd6326a725e3287738e3431ecaf95",
+        "weights_sha256": "860a3cd317c642183c6ba8eac8ce0c27674f528566536cd95e650a0b6c378f44"
+      },
+      "metrics": {
+        "average_mAP": 0.6084602296174216,
+        "mAP@0.3": 0.7990916738268791,
+        "mAP@0.4": 0.7301525826303343,
+        "mAP@0.5": 0.6379991770370019,
+        "mAP@0.6": 0.5115278295318343,
+        "mAP@0.7": 0.3635298850610581
+      },
+      "windows": 792
+    },
+    "evaluated_video_count": 211
+  },
+  {
+    "source_file": "observed_metrics/tr-0afe8e4fc09b/epoch_030.receipt.json",
+    "observed_at_utc": "2026-09-08T00:57:36.638529+00:00",
+    "validation": {
+      "status": "completed_validation",
+      "is_mock": false,
+      "is_final_result": false,
+      "source_train_id": "tr-0afe8e4fc09b",
+      "seed": 0,
+      "completed_epochs": 30,
+      "subset": "validation",
+      "weights": "ema",
+      "provenance": {
+        "source_commit": "b70ae056c495b43ca3f305fe438926b97b2723b5",
+        "resolved_config_sha256": "54a65283e6d37c69bc5e43150acc0067c638f368db421f4f95ae7575f9329a62",
+        "split_sha256": "88b5d7b12f6780cae70fb0eb27e7bedd580fd6326a725e3287738e3431ecaf95",
+        "weights_sha256": "860a3cd317c642183c6ba8eac8ce0c27674f528566536cd95e650a0b6c378f44"
+      },
+      "metrics": {
+        "average_mAP": 0.6519225943541108,
+        "mAP@0.3": 0.8253405854666719,
+        "mAP@0.4": 0.7653588137331685,
+        "mAP@0.5": 0.6853642353388621,
+        "mAP@0.6": 0.5721849374295416,
+        "mAP@0.7": 0.4113643998023099
+      },
+      "windows": 792
+    },
+    "evaluated_video_count": 211
+  },
+  {
+    "source_file": "observed_metrics/tr-0afe8e4fc09b/epoch_035.receipt.json",
+    "observed_at_utc": "2026-09-08T01:51:57.110928+00:00",
+    "validation": {
+      "status": "completed_validation",
+      "is_mock": false,
+      "is_final_result": false,
+      "source_train_id": "tr-0afe8e4fc09b",
+      "seed": 0,
+      "completed_epochs": 35,
+      "subset": "validation",
+      "weights": "ema",
+      "provenance": {
+        "source_commit": "b70ae056c495b43ca3f305fe438926b97b2723b5",
+        "resolved_config_sha256": "54a65283e6d37c69bc5e43150acc0067c638f368db421f4f95ae7575f9329a62",
+        "split_sha256": "88b5d7b12f6780cae70fb0eb27e7bedd580fd6326a725e3287738e3431ecaf95",
+        "weights_sha256": "860a3cd317c642183c6ba8eac8ce0c27674f528566536cd95e650a0b6c378f44"
+      },
+      "metrics": {
+        "average_mAP": 0.6713260436250896,
+        "mAP@0.3": 0.8354826601331222,
+        "mAP@0.4": 0.7828378462621748,
+        "mAP@0.5": 0.7022457703571113,
+        "mAP@0.6": 0.5933427309859687,
+        "mAP@0.7": 0.44272121038707074
+      },
+      "windows": 792
+    },
+    "evaluated_video_count": 211
+  },
+  {
+    "source_file": "observed_metrics/tr-0afe8e4fc09b/epoch_040.receipt.json",
+    "observed_at_utc": "2026-09-08T03:09:21.308642+00:00",
+    "validation": {
+      "status": "completed_validation",
+      "is_mock": false,
+      "is_final_result": false,
+      "source_train_id": "tr-0afe8e4fc09b",
+      "seed": 0,
+      "completed_epochs": 40,
+      "subset": "validation",
+      "weights": "ema",
+      "provenance": {
+        "source_commit": "b70ae056c495b43ca3f305fe438926b97b2723b5",
+        "resolved_config_sha256": "54a65283e6d37c69bc5e43150acc0067c638f368db421f4f95ae7575f9329a62",
+        "split_sha256": "88b5d7b12f6780cae70fb0eb27e7bedd580fd6326a725e3287738e3431ecaf95",
+        "weights_sha256": "860a3cd317c642183c6ba8eac8ce0c27674f528566536cd95e650a0b6c378f44"
+      },
+      "metrics": {
+        "average_mAP": 0.6801960141011378,
+        "mAP@0.3": 0.8379519353023518,
+        "mAP@0.4": 0.7885697869860827,
+        "mAP@0.5": 0.7099371928765463,
+        "mAP@0.6": 0.6050616620785038,
+        "mAP@0.7": 0.4594594932622046
+      },
+      "windows": 792
+    },
+    "evaluated_video_count": 211
+  },
+  {
+    "source_file": "observed_metrics/tr-0afe8e4fc09b/epoch_045.receipt.json",
+    "observed_at_utc": "2026-09-08T05:11:31.948501+00:00",
+    "validation": {
+      "status": "completed_validation",
+      "is_mock": false,
+      "is_final_result": false,
+      "source_train_id": "tr-0afe8e4fc09b",
+      "seed": 0,
+      "completed_epochs": 45,
+      "subset": "validation",
+      "weights": "ema",
+      "provenance": {
+        "source_commit": "b70ae056c495b43ca3f305fe438926b97b2723b5",
+        "resolved_config_sha256": "54a65283e6d37c69bc5e43150acc0067c638f368db421f4f95ae7575f9329a62",
+        "split_sha256": "88b5d7b12f6780cae70fb0eb27e7bedd580fd6326a725e3287738e3431ecaf95",
+        "weights_sha256": "860a3cd317c642183c6ba8eac8ce0c27674f528566536cd95e650a0b6c378f44"
+      },
+      "metrics": {
+        "average_mAP": 0.6520567947550137,
+        "mAP@0.3": 0.8119089220867824,
+        "mAP@0.4": 0.7607550809710426,
+        "mAP@0.5": 0.6875396680278597,
+        "mAP@0.6": 0.5707504483546695,
+        "mAP@0.7": 0.4293298543347139
+      },
+      "windows": 792
+    },
+    "evaluated_video_count": 211
+  },
+  {
+    "source_file": "observed_metrics/tr-0afe8e4fc09b/epoch_050.receipt.json",
+    "observed_at_utc": "2026-09-08T05:11:31.950088+00:00",
+    "validation": {
+      "status": "completed_validation",
+      "is_mock": false,
+      "is_final_result": false,
+      "source_train_id": "tr-0afe8e4fc09b",
+      "seed": 0,
+      "completed_epochs": 50,
+      "subset": "validation",
+      "weights": "ema",
+      "provenance": {
+        "source_commit": "b70ae056c495b43ca3f305fe438926b97b2723b5",
+        "resolved_config_sha256": "54a65283e6d37c69bc5e43150acc0067c638f368db421f4f95ae7575f9329a62",
+        "split_sha256": "88b5d7b12f6780cae70fb0eb27e7bedd580fd6326a725e3287738e3431ecaf95",
+        "weights_sha256": "860a3cd317c642183c6ba8eac8ce0c27674f528566536cd95e650a0b6c378f44"
+      },
+      "metrics": {
+        "average_mAP": 0.6382644199946979,
+        "mAP@0.3": 0.7956536219267004,
+        "mAP@0.4": 0.7500367254130171,
+        "mAP@0.5": 0.6727392553241438,
+        "mAP@0.6": 0.5583081498567808,
+        "mAP@0.7": 0.41458434745284733
+      },
+      "windows": 792
+    },
+    "evaluated_video_count": 211
+  },
+  {
+    "source_file": "observed_metrics/tr-0afe8e4fc09b/epoch_055.receipt.json",
+    "observed_at_utc": "2026-09-08T05:57:17.303084+00:00",
+    "validation": {
+      "status": "completed_validation",
+      "is_mock": false,
+      "is_final_result": false,
+      "source_train_id": "tr-0afe8e4fc09b",
+      "seed": 0,
+      "completed_epochs": 55,
+      "subset": "validation",
+      "weights": "ema",
+      "provenance": {
+        "source_commit": "b70ae056c495b43ca3f305fe438926b97b2723b5",
+        "resolved_config_sha256": "54a65283e6d37c69bc5e43150acc0067c638f368db421f4f95ae7575f9329a62",
+        "split_sha256": "88b5d7b12f6780cae70fb0eb27e7bedd580fd6326a725e3287738e3431ecaf95",
+        "weights_sha256": "860a3cd317c642183c6ba8eac8ce0c27674f528566536cd95e650a0b6c378f44"
+      },
+      "metrics": {
+        "average_mAP": 0.6338240109729621,
+        "mAP@0.3": 0.7919635879014415,
+        "mAP@0.4": 0.7420355913869893,
+        "mAP@0.5": 0.6639837098153809,
+        "mAP@0.6": 0.551020653205718,
+        "mAP@0.7": 0.4201165125552809
+      },
+      "windows": 792
+    },
+    "evaluated_video_count": 211
+  },
+  {
+    "source_file": "observed_metrics/tr-0afe8e4fc09b/epoch_060.receipt.json",
+    "observed_at_utc": "2026-09-08T06:46:29.605110+00:00",
+    "validation": {
+      "status": "completed_validation",
+      "is_mock": false,
+      "is_final_result": false,
+      "source_train_id": "tr-0afe8e4fc09b",
+      "seed": 0,
+      "completed_epochs": 60,
+      "subset": "validation",
+      "weights": "ema",
+      "provenance": {
+        "source_commit": "b70ae056c495b43ca3f305fe438926b97b2723b5",
+        "resolved_config_sha256": "54a65283e6d37c69bc5e43150acc0067c638f368db421f4f95ae7575f9329a62",
+        "split_sha256": "88b5d7b12f6780cae70fb0eb27e7bedd580fd6326a725e3287738e3431ecaf95",
+        "weights_sha256": "860a3cd317c642183c6ba8eac8ce0c27674f528566536cd95e650a0b6c378f44"
+      },
+      "metrics": {
+        "average_mAP": 0.637005816940407,
+        "mAP@0.3": 0.7908506953208174,
+        "mAP@0.4": 0.7408097112138885,
+        "mAP@0.5": 0.665748888277592,
+        "mAP@0.6": 0.5628138584013028,
+        "mAP@0.7": 0.4248059314884345
+      },
+      "windows": 792
+    },
+    "evaluated_video_count": 211
+  },
+  {
+    "source_file": "observed_metrics/tr-1d7d835dcbe2/epoch_005.receipt.json",
+    "observed_at_utc": "2026-09-07T22:40:12.006529+00:00",
+    "validation": {
+      "status": "completed_validation",
+      "is_mock": false,
+      "is_final_result": false,
+      "source_train_id": "tr-1d7d835dcbe2",
+      "seed": 0,
+      "completed_epochs": 5,
+      "subset": "validation",
+      "weights": "ema",
+      "provenance": {
+        "source_commit": "b70ae056c495b43ca3f305fe438926b97b2723b5",
+        "resolved_config_sha256": "ad26f9ba691d04b96952847caacd8d9ebc9ab71854f302d085509a06c7fb0794",
+        "split_sha256": "88b5d7b12f6780cae70fb0eb27e7bedd580fd6326a725e3287738e3431ecaf95",
+        "weights_sha256": "860a3cd317c642183c6ba8eac8ce0c27674f528566536cd95e650a0b6c378f44"
+      },
+      "metrics": {
+        "average_mAP": 0.007920704964777895,
+        "mAP@0.3": 0.021514022213962543,
+        "mAP@0.4": 0.011376544446758327,
+        "mAP@0.5": 0.004534826047467506,
+        "mAP@0.6": 0.0017038090038889887,
+        "mAP@0.7": 0.00047432311181211194
+      },
+      "windows": 792
+    },
+    "evaluated_video_count": 211
+  },
+  {
+    "source_file": "observed_metrics/tr-1d7d835dcbe2/epoch_010.receipt.json",
+    "observed_at_utc": "2026-09-08T00:07:47.247960+00:00",
+    "validation": {
+      "status": "completed_validation",
+      "is_mock": false,
+      "is_final_result": false,
+      "source_train_id": "tr-1d7d835dcbe2",
+      "seed": 0,
+      "completed_epochs": 10,
+      "subset": "validation",
+      "weights": "ema",
+      "provenance": {
+        "source_commit": "b70ae056c495b43ca3f305fe438926b97b2723b5",
+        "resolved_config_sha256": "ad26f9ba691d04b96952847caacd8d9ebc9ab71854f302d085509a06c7fb0794",
+        "split_sha256": "88b5d7b12f6780cae70fb0eb27e7bedd580fd6326a725e3287738e3431ecaf95",
+        "weights_sha256": "860a3cd317c642183c6ba8eac8ce0c27674f528566536cd95e650a0b6c378f44"
+      },
+      "metrics": {
+        "average_mAP": 0.15207401372060078,
+        "mAP@0.3": 0.2992663181742961,
+        "mAP@0.4": 0.22373632835687127,
+        "mAP@0.5": 0.1461265844373834,
+        "mAP@0.6": 0.06726686245736405,
+        "mAP@0.7": 0.023973975177089046
+      },
+      "windows": 792
+    },
+    "evaluated_video_count": 211
+  },
+  {
+    "source_file": "observed_metrics/tr-1d7d835dcbe2/epoch_015.receipt.json",
+    "observed_at_utc": "2026-09-08T05:11:32.152202+00:00",
+    "validation": {
+      "status": "completed_validation",
+      "is_mock": false,
+      "is_final_result": false,
+      "source_train_id": "tr-1d7d835dcbe2",
+      "seed": 0,
+      "completed_epochs": 15,
+      "subset": "validation",
+      "weights": "ema",
+      "provenance": {
+        "source_commit": "b70ae056c495b43ca3f305fe438926b97b2723b5",
+        "resolved_config_sha256": "ad26f9ba691d04b96952847caacd8d9ebc9ab71854f302d085509a06c7fb0794",
+        "split_sha256": "88b5d7b12f6780cae70fb0eb27e7bedd580fd6326a725e3287738e3431ecaf95",
+        "weights_sha256": "860a3cd317c642183c6ba8eac8ce0c27674f528566536cd95e650a0b6c378f44"
+      },
+      "metrics": {
+        "average_mAP": 0.2538745289023433,
+        "mAP@0.3": 0.4787742430216236,
+        "mAP@0.4": 0.3569564572001845,
+        "mAP@0.5": 0.24149795128271223,
+        "mAP@0.6": 0.13456339439375897,
+        "mAP@0.7": 0.05758059861343693
+      },
+      "windows": 792
+    },
+    "evaluated_video_count": 211
+  },
+  {
+    "source_file": "observed_metrics/tr-1d7d835dcbe2/epoch_020.receipt.json",
+    "observed_at_utc": "2026-09-08T07:21:50.299511+00:00",
+    "validation": {
+      "status": "completed_validation",
+      "is_mock": false,
+      "is_final_result": false,
+      "source_train_id": "tr-1d7d835dcbe2",
+      "seed": 0,
+      "completed_epochs": 20,
+      "subset": "validation",
+      "weights": "ema",
+      "provenance": {
+        "source_commit": "b70ae056c495b43ca3f305fe438926b97b2723b5",
+        "resolved_config_sha256": "ad26f9ba691d04b96952847caacd8d9ebc9ab71854f302d085509a06c7fb0794",
+        "split_sha256": "88b5d7b12f6780cae70fb0eb27e7bedd580fd6326a725e3287738e3431ecaf95",
+        "weights_sha256": "860a3cd317c642183c6ba8eac8ce0c27674f528566536cd95e650a0b6c378f44"
+      },
+      "metrics": {
+        "average_mAP": 0.30276836333929547,
+        "mAP@0.3": 0.5457614748344108,
+        "mAP@0.4": 0.42470031886090914,
+        "mAP@0.5": 0.287752516521281,
+        "mAP@0.6": 0.174423523066224,
+        "mAP@0.7": 0.08120398341365212
+      },
+      "windows": 792
+    },
+    "evaluated_video_count": 211
+  },
+  {
+    "source_file": "observed_metrics/tr-5789d4417b4b/epoch_005.receipt.json",
+    "observed_at_utc": "2026-09-07T22:57:40.906767+00:00",
+    "validation": {
+      "status": "completed_validation",
+      "is_mock": false,
+      "is_final_result": false,
+      "source_train_id": "tr-5789d4417b4b",
+      "seed": 0,
+      "completed_epochs": 5,
+      "subset": "validation",
+      "weights": "ema",
+      "provenance": {
+        "source_commit": "b70ae056c495b43ca3f305fe438926b97b2723b5",
+        "resolved_config_sha256": "5ed71ada5f63002867b24b53e215d4dd8eda08901339b29cffa2317266ff1adf",
+        "split_sha256": "88b5d7b12f6780cae70fb0eb27e7bedd580fd6326a725e3287738e3431ecaf95",
+        "weights_sha256": "860a3cd317c642183c6ba8eac8ce0c27674f528566536cd95e650a0b6c378f44"
+      },
+      "metrics": {
+        "average_mAP": 0.06422497555516074,
+        "mAP@0.3": 0.14970673937390633,
+        "mAP@0.4": 0.09669392531763255,
+        "mAP@0.5": 0.0494377533935139,
+        "mAP@0.6": 0.018874353881018463,
+        "mAP@0.7": 0.006412105809732377
+      },
+      "windows": 792
+    },
+    "evaluated_video_count": 211
+  },
+  {
+    "source_file": "observed_metrics/tr-5789d4417b4b/epoch_010.receipt.json",
+    "observed_at_utc": "2026-09-08T00:39:38.943464+00:00",
+    "validation": {
+      "status": "completed_validation",
+      "is_mock": false,
+      "is_final_result": false,
+      "source_train_id": "tr-5789d4417b4b",
+      "seed": 0,
+      "completed_epochs": 10,
+      "subset": "validation",
+      "weights": "ema",
+      "provenance": {
+        "source_commit": "b70ae056c495b43ca3f305fe438926b97b2723b5",
+        "resolved_config_sha256": "5ed71ada5f63002867b24b53e215d4dd8eda08901339b29cffa2317266ff1adf",
+        "split_sha256": "88b5d7b12f6780cae70fb0eb27e7bedd580fd6326a725e3287738e3431ecaf95",
+        "weights_sha256": "860a3cd317c642183c6ba8eac8ce0c27674f528566536cd95e650a0b6c378f44"
+      },
+      "metrics": {
+        "average_mAP": 0.31508163572311587,
+        "mAP@0.3": 0.5626269960129755,
+        "mAP@0.4": 0.4514931701871062,
+        "mAP@0.5": 0.3143069541008643,
+        "mAP@0.6": 0.17546729021682567,
+        "mAP@0.7": 0.0715137680978076
+      },
+      "windows": 792
+    },
+    "evaluated_video_count": 211
+  },
+  {
+    "source_file": "observed_metrics/tr-5789d4417b4b/epoch_015.receipt.json",
+    "observed_at_utc": "2026-09-08T05:11:32.152737+00:00",
+    "validation": {
+      "status": "completed_validation",
+      "is_mock": false,
+      "is_final_result": false,
+      "source_train_id": "tr-5789d4417b4b",
+      "seed": 0,
+      "completed_epochs": 15,
+      "subset": "validation",
+      "weights": "ema",
+      "provenance": {
+        "source_commit": "b70ae056c495b43ca3f305fe438926b97b2723b5",
+        "resolved_config_sha256": "5ed71ada5f63002867b24b53e215d4dd8eda08901339b29cffa2317266ff1adf",
+        "split_sha256": "88b5d7b12f6780cae70fb0eb27e7bedd580fd6326a725e3287738e3431ecaf95",
+        "weights_sha256": "860a3cd317c642183c6ba8eac8ce0c27674f528566536cd95e650a0b6c378f44"
+      },
+      "metrics": {
+        "average_mAP": 0.4197378111422547,
+        "mAP@0.3": 0.6709834516485872,
+        "mAP@0.4": 0.5634890862237951,
+        "mAP@0.5": 0.43012899305495367,
+        "mAP@0.6": 0.2845327645641612,
+        "mAP@0.7": 0.14955476021977637
+      },
+      "windows": 792
+    },
+    "evaluated_video_count": 211
+  },
+  {
+    "source_file": "observed_metrics/tr-5789d4417b4b/epoch_020.receipt.json",
+    "observed_at_utc": "2026-09-08T09:33:02.151566+00:00",
+    "validation": {
+      "status": "completed_validation",
+      "is_mock": false,
+      "is_final_result": false,
+      "source_train_id": "tr-5789d4417b4b",
+      "seed": 0,
+      "completed_epochs": 20,
+      "subset": "validation",
+      "weights": "ema",
+      "provenance": {
+        "source_commit": "b70ae056c495b43ca3f305fe438926b97b2723b5",
+        "resolved_config_sha256": "5ed71ada5f63002867b24b53e215d4dd8eda08901339b29cffa2317266ff1adf",
+        "split_sha256": "88b5d7b12f6780cae70fb0eb27e7bedd580fd6326a725e3287738e3431ecaf95",
+        "weights_sha256": "860a3cd317c642183c6ba8eac8ce0c27674f528566536cd95e650a0b6c378f44"
+      },
+      "metrics": {
+        "average_mAP": 0.5344517386373865,
+        "mAP@0.3": 0.7296123769736917,
+        "mAP@0.4": 0.6471646529546972,
+        "mAP@0.5": 0.5579895329428728,
+        "mAP@0.6": 0.44264590507068285,
+        "mAP@0.7": 0.29484622524498805
+      },
+      "windows": 792
+    },
+    "evaluated_video_count": 211
+  },
+  {
+    "source_file": "observed_metrics/tr-624db235c913/epoch_005.receipt.json",
+    "observed_at_utc": "2026-09-07T22:17:58.609995+00:00",
+    "validation": {
+      "status": "completed_validation",
+      "is_mock": false,
+      "is_final_result": false,
+      "source_train_id": "tr-624db235c913",
+      "seed": 0,
+      "completed_epochs": 5,
+      "subset": "validation",
+      "weights": "ema",
+      "provenance": {
+        "source_commit": "b70ae056c495b43ca3f305fe438926b97b2723b5",
+        "resolved_config_sha256": "5e13a0df59aeccc71e8bab88e103c739e031dcc5aa26bcb56dae200a5e2e3120",
+        "split_sha256": "88b5d7b12f6780cae70fb0eb27e7bedd580fd6326a725e3287738e3431ecaf95",
+        "weights_sha256": "860a3cd317c642183c6ba8eac8ce0c27674f528566536cd95e650a0b6c378f44"
+      },
+      "metrics": {
+        "average_mAP": 0.04095425247086192,
+        "mAP@0.3": 0.09821285879471756,
+        "mAP@0.4": 0.06254091676095908,
+        "mAP@0.5": 0.030683319410242316,
+        "mAP@0.6": 0.009947170371294927,
+        "mAP@0.7": 0.0033869970170957455
+      },
+      "windows": 792
+    },
+    "evaluated_video_count": 211
+  },
+  {
+    "source_file": "observed_metrics/tr-624db235c913/epoch_010.receipt.json",
+    "observed_at_utc": "2026-09-07T22:57:40.477786+00:00",
+    "validation": {
+      "status": "completed_validation",
+      "is_mock": false,
+      "is_final_result": false,
+      "source_train_id": "tr-624db235c913",
+      "seed": 0,
+      "completed_epochs": 10,
+      "subset": "validation",
+      "weights": "ema",
+      "provenance": {
+        "source_commit": "b70ae056c495b43ca3f305fe438926b97b2723b5",
+        "resolved_config_sha256": "5e13a0df59aeccc71e8bab88e103c739e031dcc5aa26bcb56dae200a5e2e3120",
+        "split_sha256": "88b5d7b12f6780cae70fb0eb27e7bedd580fd6326a725e3287738e3431ecaf95",
+        "weights_sha256": "860a3cd317c642183c6ba8eac8ce0c27674f528566536cd95e650a0b6c378f44"
+      },
+      "metrics": {
+        "average_mAP": 0.3055742552008568,
+        "mAP@0.3": 0.5298675084026692,
+        "mAP@0.4": 0.42147656694582397,
+        "mAP@0.5": 0.3135788761376711,
+        "mAP@0.6": 0.18232053714888305,
+        "mAP@0.7": 0.08062778736923662
+      },
+      "windows": 792
+    },
+    "evaluated_video_count": 211
+  },
+  {
+    "source_file": "observed_metrics/tr-624db235c913/epoch_015.receipt.json",
+    "observed_at_utc": "2026-09-07T23:48:54.259857+00:00",
+    "validation": {
+      "status": "completed_validation",
+      "is_mock": false,
+      "is_final_result": false,
+      "source_train_id": "tr-624db235c913",
+      "seed": 0,
+      "completed_epochs": 15,
+      "subset": "validation",
+      "weights": "ema",
+      "provenance": {
+        "source_commit": "b70ae056c495b43ca3f305fe438926b97b2723b5",
+        "resolved_config_sha256": "5e13a0df59aeccc71e8bab88e103c739e031dcc5aa26bcb56dae200a5e2e3120",
+        "split_sha256": "88b5d7b12f6780cae70fb0eb27e7bedd580fd6326a725e3287738e3431ecaf95",
+        "weights_sha256": "860a3cd317c642183c6ba8eac8ce0c27674f528566536cd95e650a0b6c378f44"
+      },
+      "metrics": {
+        "average_mAP": 0.3809476991506788,
+        "mAP@0.3": 0.6227034001579728,
+        "mAP@0.4": 0.5141616484757148,
+        "mAP@0.5": 0.3889557384835577,
+        "mAP@0.6": 0.2543501542489107,
+        "mAP@0.7": 0.12456755438723817
+      },
+      "windows": 792
+    },
+    "evaluated_video_count": 211
+  },
+  {
+    "source_file": "observed_metrics/tr-624db235c913/epoch_020.receipt.json",
+    "observed_at_utc": "2026-09-08T00:57:36.639590+00:00",
+    "validation": {
+      "status": "completed_validation",
+      "is_mock": false,
+      "is_final_result": false,
+      "source_train_id": "tr-624db235c913",
+      "seed": 0,
+      "completed_epochs": 20,
+      "subset": "validation",
+      "weights": "ema",
+      "provenance": {
+        "source_commit": "b70ae056c495b43ca3f305fe438926b97b2723b5",
+        "resolved_config_sha256": "5e13a0df59aeccc71e8bab88e103c739e031dcc5aa26bcb56dae200a5e2e3120",
+        "split_sha256": "88b5d7b12f6780cae70fb0eb27e7bedd580fd6326a725e3287738e3431ecaf95",
+        "weights_sha256": "860a3cd317c642183c6ba8eac8ce0c27674f528566536cd95e650a0b6c378f44"
+      },
+      "metrics": {
+        "average_mAP": 0.4959088848128923,
+        "mAP@0.3": 0.7085379765809157,
+        "mAP@0.4": 0.6148241939194723,
+        "mAP@0.5": 0.5112176827541627,
+        "mAP@0.6": 0.3905669549686669,
+        "mAP@0.7": 0.25439761584124365
+      },
+      "windows": 792
+    },
+    "evaluated_video_count": 211
+  },
+  {
+    "source_file": "observed_metrics/tr-624db235c913/epoch_025.receipt.json",
+    "observed_at_utc": "2026-09-08T03:09:21.310201+00:00",
+    "validation": {
+      "status": "completed_validation",
+      "is_mock": false,
+      "is_final_result": false,
+      "source_train_id": "tr-624db235c913",
+      "seed": 0,
+      "completed_epochs": 25,
+      "subset": "validation",
+      "weights": "ema",
+      "provenance": {
+        "source_commit": "b70ae056c495b43ca3f305fe438926b97b2723b5",
+        "resolved_config_sha256": "5e13a0df59aeccc71e8bab88e103c739e031dcc5aa26bcb56dae200a5e2e3120",
+        "split_sha256": "88b5d7b12f6780cae70fb0eb27e7bedd580fd6326a725e3287738e3431ecaf95",
+        "weights_sha256": "860a3cd317c642183c6ba8eac8ce0c27674f528566536cd95e650a0b6c378f44"
+      },
+      "metrics": {
+        "average_mAP": 0.5621134906575391,
+        "mAP@0.3": 0.7384362199216514,
+        "mAP@0.4": 0.6709821285551397,
+        "mAP@0.5": 0.5855187047322106,
+        "mAP@0.6": 0.4777183096499387,
+        "mAP@0.7": 0.33791209042875525
+      },
+      "windows": 792
+    },
+    "evaluated_video_count": 211
+  },
+  {
+    "source_file": "observed_metrics/tr-624db235c913/epoch_030.receipt.json",
+    "observed_at_utc": "2026-09-08T03:09:21.311266+00:00",
+    "validation": {
+      "status": "completed_validation",
+      "is_mock": false,
+      "is_final_result": false,
+      "source_train_id": "tr-624db235c913",
+      "seed": 0,
+      "completed_epochs": 30,
+      "subset": "validation",
+      "weights": "ema",
+      "provenance": {
+        "source_commit": "b70ae056c495b43ca3f305fe438926b97b2723b5",
+        "resolved_config_sha256": "5e13a0df59aeccc71e8bab88e103c739e031dcc5aa26bcb56dae200a5e2e3120",
+        "split_sha256": "88b5d7b12f6780cae70fb0eb27e7bedd580fd6326a725e3287738e3431ecaf95",
+        "weights_sha256": "860a3cd317c642183c6ba8eac8ce0c27674f528566536cd95e650a0b6c378f44"
+      },
+      "metrics": {
+        "average_mAP": 0.5835417835350768,
+        "mAP@0.3": 0.7568888048902049,
+        "mAP@0.4": 0.685622079155955,
+        "mAP@0.5": 0.6061811036574881,
+        "mAP@0.6": 0.49867674719919003,
+        "mAP@0.7": 0.37034018277254543
+      },
+      "windows": 792
+    },
+    "evaluated_video_count": 211
+  },
+  {
+    "source_file": "observed_metrics/tr-624db235c913/epoch_035.receipt.json",
+    "observed_at_utc": "2026-09-08T05:11:31.960714+00:00",
+    "validation": {
+      "status": "completed_validation",
+      "is_mock": false,
+      "is_final_result": false,
+      "source_train_id": "tr-624db235c913",
+      "seed": 0,
+      "completed_epochs": 35,
+      "subset": "validation",
+      "weights": "ema",
+      "provenance": {
+        "source_commit": "b70ae056c495b43ca3f305fe438926b97b2723b5",
+        "resolved_config_sha256": "5e13a0df59aeccc71e8bab88e103c739e031dcc5aa26bcb56dae200a5e2e3120",
+        "split_sha256": "88b5d7b12f6780cae70fb0eb27e7bedd580fd6326a725e3287738e3431ecaf95",
+        "weights_sha256": "860a3cd317c642183c6ba8eac8ce0c27674f528566536cd95e650a0b6c378f44"
+      },
+      "metrics": {
+        "average_mAP": 0.597810436885452,
+        "mAP@0.3": 0.7625619167079214,
+        "mAP@0.4": 0.6990707447793177,
+        "mAP@0.5": 0.621286589712694,
+        "mAP@0.6": 0.5196153373593456,
+        "mAP@0.7": 0.38651759586798135
+      },
+      "windows": 792
+    },
+    "evaluated_video_count": 211
+  },
+  {
+    "source_file": "observed_metrics/tr-624db235c913/epoch_040.receipt.json",
+    "observed_at_utc": "2026-09-08T05:11:31.961831+00:00",
+    "validation": {
+      "status": "completed_validation",
+      "is_mock": false,
+      "is_final_result": false,
+      "source_train_id": "tr-624db235c913",
+      "seed": 0,
+      "completed_epochs": 40,
+      "subset": "validation",
+      "weights": "ema",
+      "provenance": {
+        "source_commit": "b70ae056c495b43ca3f305fe438926b97b2723b5",
+        "resolved_config_sha256": "5e13a0df59aeccc71e8bab88e103c739e031dcc5aa26bcb56dae200a5e2e3120",
+        "split_sha256": "88b5d7b12f6780cae70fb0eb27e7bedd580fd6326a725e3287738e3431ecaf95",
+        "weights_sha256": "860a3cd317c642183c6ba8eac8ce0c27674f528566536cd95e650a0b6c378f44"
+      },
+      "metrics": {
+        "average_mAP": 0.5997234436054926,
+        "mAP@0.3": 0.7618776392715665,
+        "mAP@0.4": 0.7020412069344752,
+        "mAP@0.5": 0.6198298116269602,
+        "mAP@0.6": 0.524472783945943,
+        "mAP@0.7": 0.3903957762485178
+      },
+      "windows": 792
+    },
+    "evaluated_video_count": 211
+  },
+  {
+    "source_file": "observed_metrics/tr-624db235c913/epoch_045.receipt.json",
+    "observed_at_utc": "2026-09-08T06:46:29.606767+00:00",
+    "validation": {
+      "status": "completed_validation",
+      "is_mock": false,
+      "is_final_result": false,
+      "source_train_id": "tr-624db235c913",
+      "seed": 0,
+      "completed_epochs": 45,
+      "subset": "validation",
+      "weights": "ema",
+      "provenance": {
+        "source_commit": "b70ae056c495b43ca3f305fe438926b97b2723b5",
+        "resolved_config_sha256": "5e13a0df59aeccc71e8bab88e103c739e031dcc5aa26bcb56dae200a5e2e3120",
+        "split_sha256": "88b5d7b12f6780cae70fb0eb27e7bedd580fd6326a725e3287738e3431ecaf95",
+        "weights_sha256": "860a3cd317c642183c6ba8eac8ce0c27674f528566536cd95e650a0b6c378f44"
+      },
+      "metrics": {
+        "average_mAP": 0.6059072947816778,
+        "mAP@0.3": 0.7640531848948269,
+        "mAP@0.4": 0.7081818529799944,
+        "mAP@0.5": 0.631294023796819,
+        "mAP@0.6": 0.5358637422018184,
+        "mAP@0.7": 0.3901436700349308
+      },
+      "windows": 792
+    },
+    "evaluated_video_count": 211
+  },
+  {
+    "source_file": "observed_metrics/tr-624db235c913/epoch_050.receipt.json",
+    "observed_at_utc": "2026-09-08T07:59:37.161592+00:00",
+    "validation": {
+      "status": "completed_validation",
+      "is_mock": false,
+      "is_final_result": false,
+      "source_train_id": "tr-624db235c913",
+      "seed": 0,
+      "completed_epochs": 50,
+      "subset": "validation",
+      "weights": "ema",
+      "provenance": {
+        "source_commit": "b70ae056c495b43ca3f305fe438926b97b2723b5",
+        "resolved_config_sha256": "5e13a0df59aeccc71e8bab88e103c739e031dcc5aa26bcb56dae200a5e2e3120",
+        "split_sha256": "88b5d7b12f6780cae70fb0eb27e7bedd580fd6326a725e3287738e3431ecaf95",
+        "weights_sha256": "860a3cd317c642183c6ba8eac8ce0c27674f528566536cd95e650a0b6c378f44"
+      },
+      "metrics": {
+        "average_mAP": 0.6128059955681214,
+        "mAP@0.3": 0.7672183097742058,
+        "mAP@0.4": 0.7181375621759409,
+        "mAP@0.5": 0.6393696532079209,
+        "mAP@0.6": 0.5403553015577873,
+        "mAP@0.7": 0.3989491511247516
+      },
+      "windows": 792
+    },
+    "evaluated_video_count": 211
+  },
+  {
+    "source_file": "observed_metrics/tr-712c0b6470f4/epoch_005.receipt.json",
+    "observed_at_utc": "2026-09-07T22:57:40.907827+00:00",
+    "validation": {
+      "status": "completed_validation",
+      "is_mock": false,
+      "is_final_result": false,
+      "source_train_id": "tr-712c0b6470f4",
+      "seed": 0,
+      "completed_epochs": 5,
+      "subset": "validation",
+      "weights": "ema",
+      "provenance": {
+        "source_commit": "b70ae056c495b43ca3f305fe438926b97b2723b5",
+        "resolved_config_sha256": "e15b94010849803390b8dfdf9dadbf032c22c4a6d1bbfbc90f2dc551dac4a20b",
+        "split_sha256": "88b5d7b12f6780cae70fb0eb27e7bedd580fd6326a725e3287738e3431ecaf95",
+        "weights_sha256": "860a3cd317c642183c6ba8eac8ce0c27674f528566536cd95e650a0b6c378f44"
+      },
+      "metrics": {
+        "average_mAP": 0.01766125575592325,
+        "mAP@0.3": 0.04849297728044152,
+        "mAP@0.4": 0.025821076549065115,
+        "mAP@0.5": 0.009441265576300813,
+        "mAP@0.6": 0.00339910155542428,
+        "mAP@0.7": 0.0011518578183845045
+      },
+      "windows": 792
+    },
+    "evaluated_video_count": 211
+  },
+  {
+    "source_file": "observed_metrics/tr-712c0b6470f4/epoch_010.receipt.json",
+    "observed_at_utc": "2026-09-08T02:07:32.375935+00:00",
+    "validation": {
+      "status": "completed_validation",
+      "is_mock": false,
+      "is_final_result": false,
+      "source_train_id": "tr-712c0b6470f4",
+      "seed": 0,
+      "completed_epochs": 10,
+      "subset": "validation",
+      "weights": "ema",
+      "provenance": {
+        "source_commit": "b70ae056c495b43ca3f305fe438926b97b2723b5",
+        "resolved_config_sha256": "e15b94010849803390b8dfdf9dadbf032c22c4a6d1bbfbc90f2dc551dac4a20b",
+        "split_sha256": "88b5d7b12f6780cae70fb0eb27e7bedd580fd6326a725e3287738e3431ecaf95",
+        "weights_sha256": "860a3cd317c642183c6ba8eac8ce0c27674f528566536cd95e650a0b6c378f44"
+      },
+      "metrics": {
+        "average_mAP": 0.20233930157290353,
+        "mAP@0.3": 0.376590715140732,
+        "mAP@0.4": 0.2916268747684548,
+        "mAP@0.5": 0.19861834336996767,
+        "mAP@0.6": 0.10456391908553346,
+        "mAP@0.7": 0.040296655499829914
+      },
+      "windows": 792
+    },
+    "evaluated_video_count": 211
+  },
+  {
+    "source_file": "observed_metrics/tr-712c0b6470f4/epoch_015.receipt.json",
+    "observed_at_utc": "2026-09-08T08:20:25.504595+00:00",
+    "validation": {
+      "status": "completed_validation",
+      "is_mock": false,
+      "is_final_result": false,
+      "source_train_id": "tr-712c0b6470f4",
+      "seed": 0,
+      "completed_epochs": 15,
+      "subset": "validation",
+      "weights": "ema",
+      "provenance": {
+        "source_commit": "b70ae056c495b43ca3f305fe438926b97b2723b5",
+        "resolved_config_sha256": "e15b94010849803390b8dfdf9dadbf032c22c4a6d1bbfbc90f2dc551dac4a20b",
+        "split_sha256": "88b5d7b12f6780cae70fb0eb27e7bedd580fd6326a725e3287738e3431ecaf95",
+        "weights_sha256": "860a3cd317c642183c6ba8eac8ce0c27674f528566536cd95e650a0b6c378f44"
+      },
+      "metrics": {
+        "average_mAP": 0.2423223669416807,
+        "mAP@0.3": 0.4492951755426288,
+        "mAP@0.4": 0.3415470807666479,
+        "mAP@0.5": 0.23198254978066452,
+        "mAP@0.6": 0.1309642666509323,
+        "mAP@0.7": 0.05782276196753008
+      },
+      "windows": 792
+    },
+    "evaluated_video_count": 211
+  },
+  {
+    "source_file": "observed_metrics/tr-7e78e2a74eee/epoch_005.receipt.json",
+    "observed_at_utc": "2026-09-07T23:48:54.968584+00:00",
+    "validation": {
+      "status": "completed_validation",
+      "is_mock": false,
+      "is_final_result": false,
+      "source_train_id": "tr-7e78e2a74eee",
+      "seed": 0,
+      "completed_epochs": 5,
+      "subset": "validation",
+      "weights": "ema",
+      "provenance": {
+        "source_commit": "b70ae056c495b43ca3f305fe438926b97b2723b5",
+        "resolved_config_sha256": "6e11a1c954c53a995ca763847aa568f87942902739edc94b839bbcec7437196d",
+        "split_sha256": "88b5d7b12f6780cae70fb0eb27e7bedd580fd6326a725e3287738e3431ecaf95",
+        "weights_sha256": "860a3cd317c642183c6ba8eac8ce0c27674f528566536cd95e650a0b6c378f44"
+      },
+      "metrics": {
+        "average_mAP": 0.04913321417936463,
+        "mAP@0.3": 0.11878504401537915,
+        "mAP@0.4": 0.07201932044640692,
+        "mAP@0.5": 0.03702241264680107,
+        "mAP@0.6": 0.013549227150507872,
+        "mAP@0.7": 0.004290066637728139
+      },
+      "windows": 792
+    },
+    "evaluated_video_count": 211
+  },
+  {
+    "source_file": "observed_metrics/tr-7e78e2a74eee/epoch_010.receipt.json",
+    "observed_at_utc": "2026-09-08T05:11:32.152737+00:00",
+    "validation": {
+      "status": "completed_validation",
+      "is_mock": false,
+      "is_final_result": false,
+      "source_train_id": "tr-7e78e2a74eee",
+      "seed": 0,
+      "completed_epochs": 10,
+      "subset": "validation",
+      "weights": "ema",
+      "provenance": {
+        "source_commit": "b70ae056c495b43ca3f305fe438926b97b2723b5",
+        "resolved_config_sha256": "6e11a1c954c53a995ca763847aa568f87942902739edc94b839bbcec7437196d",
+        "split_sha256": "88b5d7b12f6780cae70fb0eb27e7bedd580fd6326a725e3287738e3431ecaf95",
+        "weights_sha256": "860a3cd317c642183c6ba8eac8ce0c27674f528566536cd95e650a0b6c378f44"
+      },
+      "metrics": {
+        "average_mAP": 0.3077983744231574,
+        "mAP@0.3": 0.5302243874058329,
+        "mAP@0.4": 0.41782207280502615,
+        "mAP@0.5": 0.31278872864392276,
+        "mAP@0.6": 0.1883979543664463,
+        "mAP@0.7": 0.08975872889455891
+      },
+      "windows": 792
+    },
+    "evaluated_video_count": 211
+  },
+  {
+    "source_file": "observed_metrics/tr-7e78e2a74eee/epoch_015.receipt.json",
+    "observed_at_utc": "2026-09-08T09:04:37.856858+00:00",
+    "validation": {
+      "status": "completed_validation",
+      "is_mock": false,
+      "is_final_result": false,
+      "source_train_id": "tr-7e78e2a74eee",
+      "seed": 0,
+      "completed_epochs": 15,
+      "subset": "validation",
+      "weights": "ema",
+      "provenance": {
+        "source_commit": "b70ae056c495b43ca3f305fe438926b97b2723b5",
+        "resolved_config_sha256": "6e11a1c954c53a995ca763847aa568f87942902739edc94b839bbcec7437196d",
+        "split_sha256": "88b5d7b12f6780cae70fb0eb27e7bedd580fd6326a725e3287738e3431ecaf95",
+        "weights_sha256": "860a3cd317c642183c6ba8eac8ce0c27674f528566536cd95e650a0b6c378f44"
+      },
+      "metrics": {
+        "average_mAP": 0.4034985971934887,
+        "mAP@0.3": 0.6488463005622858,
+        "mAP@0.4": 0.5383995157068613,
+        "mAP@0.5": 0.41174370350417205,
+        "mAP@0.6": 0.27338660883665716,
+        "mAP@0.7": 0.14511685735746715
+      },
+      "windows": 792
+    },
+    "evaluated_video_count": 211
+  },
+  {
+    "source_file": "official_train_observed/epoch_042.receipt.json",
+    "status": "completed_validation",
+    "completed_epochs": 42,
+    "validation": {
+      "metrics": {
+        "average_mAP": 0.698764502808962,
+        "mAP@0.3": 0.854237669968577,
+        "mAP@0.4": 0.8089264518499363,
+        "mAP@0.5": 0.7341648259684993,
+        "mAP@0.6": 0.6217682254786239,
+        "mAP@0.7": 0.4747253407791735
+      },
+      "checkpoint_epoch": 41,
+      "evaluated_videos": 211,
+      "inference_windows": 792,
+      "weights": "ema",
+      "seed": 0,
+      "is_mock": false,
+      "source_commit": "346d09d19e2091372cec48172dbe40f7b28bdee6",
+      "mode": "train"
+    }
+  },
+  {
+    "source_file": "official_train_observed/epoch_044.receipt.json",
+    "status": "completed_validation",
+    "completed_epochs": 44,
+    "validation": {
+      "metrics": {
+        "average_mAP": 0.7009930137655538,
+        "mAP@0.3": 0.8542976322840069,
+        "mAP@0.4": 0.8102647299960829,
+        "mAP@0.5": 0.7372904969569825,
+        "mAP@0.6": 0.6263573923526273,
+        "mAP@0.7": 0.47675481723806934
+      },
+      "checkpoint_epoch": 43,
+      "evaluated_videos": 211,
+      "inference_windows": 792,
+      "weights": "ema",
+      "seed": 0,
+      "is_mock": false,
+      "source_commit": "346d09d19e2091372cec48172dbe40f7b28bdee6",
+      "mode": "train"
+    }
+  },
+  {
+    "source_file": "official_train_observed/epoch_046.receipt.json",
+    "status": "completed_validation",
+    "completed_epochs": 46,
+    "validation": {
+      "metrics": {
+        "average_mAP": 0.7009611912308673,
+        "mAP@0.3": 0.8554760288084544,
+        "mAP@0.4": 0.8094507201839731,
+        "mAP@0.5": 0.73688916385123,
+        "mAP@0.6": 0.6270514287091185,
+        "mAP@0.7": 0.4759386146015599
+      },
+      "checkpoint_epoch": 45,
+      "evaluated_videos": 211,
+      "inference_windows": 792,
+      "weights": "ema",
+      "seed": 0,
+      "is_mock": false,
+      "source_commit": "346d09d19e2091372cec48172dbe40f7b28bdee6",
+      "mode": "train"
+    }
+  },
+  {
+    "source_file": "official_train_observed/epoch_048.receipt.json",
+    "status": "completed_validation",
+    "completed_epochs": 48,
+    "validation": {
+      "metrics": {
+        "average_mAP": 0.701566140628343,
+        "mAP@0.3": 0.8553061851820264,
+        "mAP@0.4": 0.8097917497862659,
+        "mAP@0.5": 0.7380427093294138,
+        "mAP@0.6": 0.6291549408226194,
+        "mAP@0.7": 0.47553511802138904
+      },
+      "checkpoint_epoch": 47,
+      "evaluated_videos": 211,
+      "inference_windows": 792,
+      "weights": "ema",
+      "seed": 0,
+      "is_mock": false,
+      "source_commit": "346d09d19e2091372cec48172dbe40f7b28bdee6",
+      "mode": "train"
+    }
+  },
+  {
+    "source_file": "official_train_observed/epoch_050.receipt.json",
+    "status": "completed_validation",
+    "completed_epochs": 50,
+    "validation": {
+      "metrics": {
+        "average_mAP": 0.7014832551805807,
+        "mAP@0.3": 0.8568155203981489,
+        "mAP@0.4": 0.8127867644083582,
+        "mAP@0.5": 0.7369677633738931,
+        "mAP@0.6": 0.6243354529892373,
+        "mAP@0.7": 0.47651077473326564
+      },
+      "checkpoint_epoch": 49,
+      "evaluated_videos": 211,
+      "inference_windows": 792,
+      "weights": "ema",
+      "seed": 0,
+      "is_mock": false,
+      "source_commit": "346d09d19e2091372cec48172dbe40f7b28bdee6",
+      "mode": "train"
+    }
+  },
+  {
+    "source_file": "official_train_observed/epoch_052.receipt.json",
+    "status": "completed_validation",
+    "completed_epochs": 52,
+    "validation": {
+      "metrics": {
+        "average_mAP": 0.7018058201276353,
+        "mAP@0.3": 0.8554024426465053,
+        "mAP@0.4": 0.8133401295843505,
+        "mAP@0.5": 0.7380859021917316,
+        "mAP@0.6": 0.625009589986181,
+        "mAP@0.7": 0.47719103622940795
+      },
+      "checkpoint_epoch": 51,
+      "evaluated_videos": 211,
+      "inference_windows": 792,
+      "weights": "ema",
+      "seed": 0,
+      "is_mock": false,
+      "source_commit": "346d09d19e2091372cec48172dbe40f7b28bdee6",
+      "mode": "train"
+    }
+  },
+  {
+    "source_file": "official_train_observed/epoch_054.receipt.json",
+    "status": "completed_validation",
+    "completed_epochs": 54,
+    "validation": {
+      "metrics": {
+        "average_mAP": 0.7013815684350282,
+        "mAP@0.3": 0.8547743477358003,
+        "mAP@0.4": 0.8098805718304778,
+        "mAP@0.5": 0.738215401409706,
+        "mAP@0.6": 0.6260959240217011,
+        "mAP@0.7": 0.47794159717745555
+      },
+      "checkpoint_epoch": 53,
+      "evaluated_videos": 211,
+      "inference_windows": 792,
+      "weights": "ema",
+      "seed": 0,
+      "is_mock": false,
+      "source_commit": "346d09d19e2091372cec48172dbe40f7b28bdee6",
+      "mode": "train"
+    }
+  },
+  {
+    "source_file": "official_train_observed/epoch_056.receipt.json",
+    "status": "completed_validation",
+    "completed_epochs": 56,
+    "validation": {
+      "metrics": {
+        "average_mAP": 0.6998282151361049,
+        "mAP@0.3": 0.8523362236392125,
+        "mAP@0.4": 0.8091154129212346,
+        "mAP@0.5": 0.7357943975390264,
+        "mAP@0.6": 0.622904122053995,
+        "mAP@0.7": 0.4789909195270562
+      },
+      "checkpoint_epoch": 55,
+      "evaluated_videos": 211,
+      "inference_windows": 792,
+      "weights": "ema",
+      "seed": 0,
+      "is_mock": false,
+      "source_commit": "346d09d19e2091372cec48172dbe40f7b28bdee6",
+      "mode": "train"
+    }
+  },
+  {
+    "source_file": "official_train_observed/epoch_058.receipt.json",
+    "status": "completed_validation",
+    "completed_epochs": 58,
+    "validation": {
+      "metrics": {
+        "average_mAP": 0.6990693315766763,
+        "mAP@0.3": 0.8501911299786318,
+        "mAP@0.4": 0.8080106321934064,
+        "mAP@0.5": 0.7329184682290557,
+        "mAP@0.6": 0.6247107421071599,
+        "mAP@0.7": 0.4795156853751279
+      },
+      "checkpoint_epoch": 57,
+      "evaluated_videos": 211,
+      "inference_windows": 792,
+      "weights": "ema",
+      "seed": 0,
+      "is_mock": false,
+      "source_commit": "346d09d19e2091372cec48172dbe40f7b28bdee6",
+      "mode": "train"
+    }
+  },
+  {
+    "source_file": "official_train_observed/epoch_060.receipt.json",
+    "status": "completed_validation",
+    "completed_epochs": 60,
+    "validation": {
+      "metrics": {
+        "average_mAP": 0.6988794076569949,
+        "mAP@0.3": 0.8488095833459772,
+        "mAP@0.4": 0.8079899628039342,
+        "mAP@0.5": 0.7328672773235778,
+        "mAP@0.6": 0.6264725834473027,
+        "mAP@0.7": 0.47825763136418226
+      },
+      "checkpoint_epoch": 59,
+      "evaluated_videos": 211,
+      "inference_windows": 792,
+      "weights": "ema",
+      "seed": 0,
+      "is_mock": false,
+      "source_commit": "346d09d19e2091372cec48172dbe40f7b28bdee6",
+      "mode": "train"
+    }
+  }
+]
