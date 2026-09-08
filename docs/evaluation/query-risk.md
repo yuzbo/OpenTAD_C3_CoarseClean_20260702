@@ -27,3 +27,8 @@ smoothing、回归权重和eval正样本数分母。背景仍有分类风险，p
 返回CPU张量适合保存为原始.pt产物；正式诊断由调用者绑定视频、checkpoint、源码与计划身份。
 新增检查：`python -m pytest tests/test_sci3_query_risk.py -q`。合成输入上的源算子正确性不能
 代替实际视频、独立checkpoint诊断或论文结果。GPU入口与完整A03数据仍待实现/执行。
+
+2026-09-09验证：实现b6e0ce411135c6323a0e37fcee59aa69bd624209在N16独立干净checkout
+通过13项CPU检查（47.78秒）。A/B/C实际小型算子分别覆盖有GT/空GT、奇数有效尾部、
+原标量风险不变、交换收益反向取负；另测多标签GT、smoothing、回归权重、全无效query及
+正常/异常退出状态恢复。全部为合成输入，未提交生产GPU或产生新的精度结果。
