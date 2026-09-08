@@ -1,0 +1,196 @@
+{
+  "automation_id": "opentad-c3-duca",
+  "heartbeat_trigger_utc": "2026-09-08T08:31:36.597Z",
+  "heartbeat_trigger_cst": "2026-09-08 16:31:36.597",
+  "remote_sampling_window_cst": "2026-09-08 16:32:59 to16:33:06",
+  "scope": "Six-route status/log/audit/receipt/resource monitoring; unchanged terminal certification reused. No new mechanism audit or Pro-entry retry.",
+  "completed_registered_jobs": [
+    "1276842",
+    "1276843",
+    "1277406_2",
+    "1277407_7",
+    "1277768_1",
+    "1277953_2",
+    "1277954",
+    "1277955",
+    "1278011",
+    "1278012",
+    "1279211_0",
+    "1279211_1"
+  ],
+  "registered_job_states": "All listed jobs remain COMPLETED(0:0); FULL1277955 is PRECHECK only. Existing other-account tasks are not adopted into this registry.",
+  "current_cycle": {
+    "H65_PRO_ACTIVE": "2026-09-08 16:33 CST：六份F臂小收据mtime/指标未变，最高64.2265%；复用既有终态与自哈希认证，不重跑大checkpoint或推理。F01-F06仍phase-off，TIA/匹配控制未修。原始官方1245842的68.73%仍仅保留原日志身份，待来源补证和独立复评",
+    "CT_DP_BAMOD_ACTIVE": "2026-09-08 16:33 CST：1278011/1278012及1279211_0/1保持COMPLETED(0:0)，epoch59 audit仍optimizer/scheduler/EMA各6000，checkpoint stat和receipt数值未变；G0/G1 Avg-mAP64.2720%/61.6740%，mAP@0.7为42.6802%/39.9154%。复用14:29真实337个Adam状态和15:10 receipt认证，不重训、不重复准入或评测。上一轮Computer Use运行环境阻塞仍保留，本轮未重复重置/探测、未咨询Pro",
+    "DUCA_UNIFIED_ACTIVE": "2026-09-08 16:31心跳：本地身份由生成器实时刷新；真实Taylor P0/P1训练接线、合法one-swap及H65 retention/transition仍缺失，保持BLOCKED_UNIMPLEMENTED。无新实现或正式结果，不将实现欠账解释为资源不足，也不重复全源码审查",
+    "BAFDR_ACTIVE": "2026-09-08 16:33 CST：U16/LATE/NOKD及FULL PRECHECK仍COMPLETED(0:0)，前三终轮stdout仍保存epoch59/update6000，stderr未见新fatal；复用04:28真实权重验证。710ce8a6新metrics仍0份，FULL无正式训练。padding/screen仍未修复，不扩已知缺陷旧SHA矩阵；历史1267920/1267921未操作",
+    "ET_TRC_ACTIVE": "2026-09-08 16:33 CST：OFF/ON收据mtime和指标未变，仍62.0768%/54.8096%；复用既有终态/自哈希认证，不重跑推理。anchor correction及实际精度核对未完成，保持该fixed-stride低秩代理版本负结果，不能称真实event gate或exact JVP",
+    "EVIDENCE_ACTIVE": "2026-09-08 16:33 CST：A1/A6/F训练及A1评测仍COMPLETED(0:0)，日志终段无新增fatal；ce767b4d仍仅有A1一份metrics，metrics.average_mAP=0.5159681679375281且mtime未变，A6/F独立评测仍缺失。复用04:30终态/恢复认证，utility/robust/cycle未接通，不以初始化局部修复或旧权重充当完整机制"
+  },
+  "ct": {
+    "training_sha": "fe1c53db1b2a7e467a6af2eccfe8b7636f667a81",
+    "evaluator_sha": "073832744dd171dee4119dc29d1bb12a057e84f4",
+    "remote_checkouts_clean": true,
+    "G0": {
+      "epoch": 59,
+      "optimizer_updates": 6000,
+      "scheduler_updates": 6000,
+      "ema_updates": 6000,
+      "amp_skips_replayed": 3,
+      "checkpoint_size_bytes": 623822543,
+      "checkpoint_mtime_epoch": 1788848397.0543523,
+      "metrics": {
+        "average_mAP": 0.6427200272571093,
+        "mAP@0.3": 0.8007885484368389,
+        "mAP@0.4": 0.7460867056195133,
+        "mAP@0.5": 0.6741285579333751,
+        "mAP@0.6": 0.5657943413687253,
+        "mAP@0.7": 0.42680198292709387
+      },
+      "receipt_sha256": "140e78dd2f0f23a977c5f55051e4c1510d04f576966ffcc9951edbc64be2d962",
+      "receipt_mtime_cst": "2026-09-08T14:49:20.392380+08:00"
+    },
+    "G1": {
+      "epoch": 59,
+      "optimizer_updates": 6000,
+      "scheduler_updates": 6000,
+      "ema_updates": 6000,
+      "amp_skips_replayed": 3,
+      "checkpoint_size_bytes": 623822543,
+      "checkpoint_mtime_epoch": 1788847133.0771325,
+      "metrics": {
+        "average_mAP": 0.6167397028285398,
+        "mAP@0.3": 0.7861633235376628,
+        "mAP@0.4": 0.7285757322889715,
+        "mAP@0.5": 0.6347676761532852,
+        "mAP@0.6": 0.5350382081934079,
+        "mAP@0.7": 0.39915357396937123
+      },
+      "receipt_sha256": "15782f03c350358f32f20639952b6676892047d2213388a43a2d00535783b7bc",
+      "receipt_mtime_cst": "2026-09-08T14:51:54.634430+08:00"
+    },
+    "verification_reuse": "Actual337 Adam states6000 validated14:29; receipt self hashes and211-video identity validated15:10. Current receipts/stat/audit unchanged; no large checkpoint reload or repeated hash certification.",
+    "prior_certificate_record": "26_HEARTBEAT_EVIDENCE_20260908_1508.json"
+  },
+  "unchanged_receipts": {
+    "H65_F01_to_F06": [
+      0.6338540623028592,
+      0.6422653640360945,
+      0.6036478160171815,
+      0.6070129227677766,
+      0.640886229714488,
+      0.6381814163848895
+    ],
+    "ET_OFF": 0.6207677503328417,
+    "ET_ON": 0.5480958031537403,
+    "Evidence_A1": 0.5159681679375281,
+    "Evidence_A1_field": "metrics.average_mAP",
+    "verification": "All listed small receipt values/mtimes checked live16:33 and unchanged; prior terminal/self-hash certification reused. No repeated large checkpoint loads."
+  },
+  "missing_results": {
+    "Evidence_A6": "No independent metrics.json",
+    "Evidence_F": "No independent metrics.json",
+    "BAFDR_new_metrics_json_count": 0,
+    "BAFDR_FULL": "PRECHECK only",
+    "Unified": "BLOCKED_UNIMPLEMENTED"
+  },
+  "local_identity": {
+    "scope": "Six active local HEAD/clean states refreshed by the catalog generator and checked against unchanged identities before publication.",
+    "H65": {
+      "head": "aac9df0fd896edf9bf440a123e0424bb641df012",
+      "clean_tree": true
+    },
+    "Evidence": {
+      "head": "e0c88c9a9e2582878c88bb2c728891ea5413bc77",
+      "clean_tree": true
+    },
+    "BAFDR": {
+      "head": "710ce8a6246c471742c83bf7c180d9ab87c36fac",
+      "clean_tree": true
+    },
+    "ET": {
+      "head": "67d7079d0d1c33e129d31cd3a45aaf93a67db252",
+      "clean_tree": true
+    },
+    "Unified": {
+      "head": "793c4f9cdf7dac4f224bc73012aff8bc93949f87",
+      "clean_tree": true
+    },
+    "CT": {
+      "head": "fe1c53db1b2a7e467a6af2eccfe8b7636f667a81",
+      "clean_tree": true
+    },
+    "checked_at_cst": "This heartbeat publication"
+  },
+  "logs": {
+    "checked_at_cst": "2026-09-08 16:33",
+    "routes": [
+      "CT independent evaluation",
+      "Evidence A1/A6/F training andA1 evaluation",
+      "BAFDR U16/LATE/NOKD training andFULL PRECHECK"
+    ],
+    "new_fatal_in_recent_stdout_stderr": false,
+    "terminal_markers": "Testing Over, Training Over, saved epoch59 at update6000, FULL PRECHECK success as appropriate",
+    "scope": "Read latest bounded16KB per registered log; no new failure requiring complete-log diagnosis."
+  },
+  "resources": {
+    "checked_at_cst": "2026-09-08 16:33",
+    "eligible_nodes": 25,
+    "configured_gpus": 200,
+    "allocated_gpus": 197,
+    "unallocated_gpus": 3,
+    "user_running_jobs": 9,
+    "user_pending_jobs": 2,
+    "user_queue_job_ids": [
+      "1279871",
+      "1278774",
+      "1279881",
+      "1279882",
+      "1279879",
+      "1279880",
+      "1279578",
+      "1279571",
+      "1276621",
+      "1276622",
+      "1274508"
+    ],
+    "pending_reasons": {
+      "1278774": "JobHeldUser",
+      "1279871": "Priority"
+    },
+    "disk_available": "175G",
+    "disk_use": "97%",
+    "qualification": "Visible eligible-node free GPUs and public free storage are not personal quota; no other jobs modified."
+  },
+  "minute_supervisor": {
+    "checked_at_utc": "2026-09-08T08:32:10+00:00",
+    "age_seconds": 56,
+    "status": "ACTIVE",
+    "dispatcher_mode": "plan",
+    "dispatcher_status": "BLOCKED",
+    "qualification": "Read-only polling works, not automatic submission of current repairs."
+  },
+  "pro_entry_status": {
+    "status": "BLOCKED_COMPUTER_USE_RUNTIME",
+    "last_attempt_evidence": "27_HEARTBEAT_EVIDENCE_20260908_1551.json",
+    "last_error": "failed to write kernel assets: 系统找不到指定的路径。 (os error 3)",
+    "retried_this_cycle": false,
+    "consultation_completed": false,
+    "materials_sent": false,
+    "scope": "Previous confirmed initialization error retained. No claim of a fresh browser/login/model check."
+  },
+  "baseline_note": "Original official recipe68.73 log remains separately qualified pending provenance/independent reevaluation; no modified REF or CT result substitution.",
+  "actions": {
+    "new_slurm_jobs": [],
+    "new_official_results": 0,
+    "new_model_commits": [],
+    "cancelled_jobs": [],
+    "remote_hot_edits": 0,
+    "large_checkpoint_loads": 0,
+    "repeated_prechecks": 0,
+    "repeated_admissions": 0,
+    "pro_consultations": 0,
+    "computer_use_retries": 0,
+    "historical_bafdr_jobs_touched": []
+  }
+}
