@@ -234,3 +234,17 @@ job1245842 的 Slurm 记录为 COMPLETED(0:0)。原 source 为 `/data/run01/sczc
 12:27公共可调度25节点CfgTRES200、AllocTRES173，未分配27/200 GPU；账户展开队列7 RUNNING/1 PENDING，本任务CT占2项。其他未登记任务1278774仍JobHeldUser，未操作。磁盘209G可用、97%已用，公共余量不保证个人配额。分钟回执距生成31秒，dispatcher仍plan/BLOCKED、entries为空，只读轮询正常而非自动提交正常。
 
 本轮无新增模型运行失败、正式性能、模型修改、Slurm提交或取消；仅完成监控和目录刷新，没有Pro咨询。历史BAFDR1267920/1267921保持未操作，所有未完成事项继续保留。证据：[22_HEARTBEAT_EVIDENCE_20260908_1225.json](22_HEARTBEAT_EVIDENCE_20260908_1225.json)。
+
+## 13:04 心跳补充
+
+本轮触发为2026-09-08 13:04:03.484 CST，实时远端采样13:05:55至13:06:01。其他未执行或部分完成的触发不补记；本轮没有新增最终性能或运行失败。
+
+- CT新G0/G1仍RUNNING，运行时长10:11:56/10:11:26。落盘audit为epoch55/56，optimizer/scheduler/EMA各5600/5700，完成93.3%/95.0%；AMP skip均3、max retry均1，未增加。G0到epoch56 batch50、loss0.3547；G1结束epoch57 batch99、loss0.4175，训练内评测到214批。均无epoch59，不能据中期日志提前认证终态。
+- 训练fe1c53db及独立评测07383274远端HEAD仍exact/clean，复用既有1278007/1278042准入。近两轮周期仍约39-40分钟；训练完成估计维持G1 13:50-14:20、G0 14:10-14:45，独立评测另需30-60分钟与排队。先收取真实epoch59/6000再按臂提交正式评测，不重复训练或预检。
+- H65六份与ET两份小收据mtime/数值不变，分别最高64.2265%与关闭/开启62.0768%/54.8096%。H65仍phase-off、TIA/匹配控制待修；ET anchor correction及实际精度核对未完成。旧CT G2/G3仍保留原身份结果，不用新坐标源码重命名旧成绩。
+- Evidence A1/A6/F及A1评测均COMPLETED(0:0)，已读真实stdout/stderr终段；A1直接读取metrics.average_mAP仍0.5159681679375281，A6/F缺独立metrics。BAFDR U16/LATE/NOKD及FULL PRECHECK均完成，前三终轮日志6000，新根仍无metrics。既有大checkpoint认证复用，不重复加载；FULL正式训练及有缺陷旧矩阵不扩展。
+- 六个active本地身份由生成器刷新；Unified仍BLOCKED_UNIMPLEMENTED。Evidence utility/真实robust-cycle、BAFDR padding/screen及其他已登记缺陷未修复。原版AdaTAD的68.73%仍为已核查历史日志、待来源补证及独立复评；修改版REF不能替代官方锚点。
+
+13:06公共可调度25节点CfgTRES200、AllocTRES169，未分配31/200 GPU；账户展开队列8 RUNNING/1 PENDING，本任务CT占2项。其他任务1278774仍JobHeldUser，未操作。实验盘201G可用、97%已用，公共余量不保证个人配额。分钟回执年龄34秒，dispatcher仍plan/BLOCKED且entries为空，只读轮询正常不等于自动提交正常。
+
+本轮仅完成监控与目录刷新，没有新模型修改、训练/评测提交、取消、重复准入或Pro咨询。历史BAFDR1267920/1267921未操作；全部未完成事项继续保留。证据：[23_HEARTBEAT_EVIDENCE_20260908_1304.json](23_HEARTBEAT_EVIDENCE_20260908_1304.json)。
