@@ -18,7 +18,7 @@ def spatial_slots(features, selected, layout, slots=4, spatial_transform=None):
                & (xx[None] >= x0[:, None, None]) & (xx[None] < x1[:, None, None])).flatten(1).to(features.dtype)
     dtype = features.dtype
     with torch.autocast(device_type=features.device.type, enabled=False):
-        mask = selected.reshape(b * t, h * w).float()
+        mask = (selected & layout.valid).reshape(b * t, h * w).float()
         counts = mask @ members.float().T
         encoded = features.permute(0, 2, 1, 3, 4).reshape(b * t, d, h * w).float()
         values = (encoded * mask[:, None]) @ members.float().T

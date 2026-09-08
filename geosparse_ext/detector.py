@@ -98,15 +98,18 @@ class GeoSparseDetector(ActionFormer):
         if probe:
             flat_valid = batch.valid_frames.reshape(batch.frames_hi.shape[0], -1, 2).any(-1)
             spatial = plan.selected_native.shape[-1] // 8
-            valid_atoms = flat_valid.repeat_interleave(spatial, 1)[:, plan.atom_to_native].any(-1)
+            native_valid = flat_valid.repeat_interleave(spatial, 1)
+            valid_atoms = native_valid[:, plan.atom_to_native].any(-1)
             available = torch.nonzero(valid_atoms & ~plan.selected_atoms, as_tuple=False)
             if len(available):
                 row, atom = available[torch.randint(len(available), ())].tolist()
                 selected_atoms = plan.selected_atoms.clone()
                 selected_native = plan.selected_native.clone()
                 selected_atoms[row, atom] = True
-                selected_native[row].flatten()[plan.atom_to_native[atom]] = True
-                added = replace(plan, selected_atoms=selected_atoms, selected_native=selected_native)
+                members = plan.atom_to_native[atom]
+                selected_native[row].flatten()[members] = native_valid[row, members]
+                added = replace(plan, selected_atoms=selected_atoms, selected_native=selected_native,
+                                execution_order=[torch.where(mask.flatten())[0] for mask in selected_native])
                 buffers_after = {n: v.detach().clone() for n, v in self.named_buffers()}
                 normalizer_after = self.rpn_head.loss_normalizer
                 rng_after_cpu = torch.get_rng_state()

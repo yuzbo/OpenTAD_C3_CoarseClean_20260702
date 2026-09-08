@@ -1,5 +1,7 @@
 # GeoSparse on official AdaTAD
 
+Fixed R4541c641 review follow-up: read docs/evaluation/fixed-review-followup-20260908.md. This independent repair branch changes N02 acquisition/evidence validity and N03/N04 plots, and names N05 research pairs equal-Heavy-cost. It is not frozen production M. Keep existing six runs and checkpoints under M; no hot edits or automatic restarts. Existing C20 replay245503 and A fixed-q diagnostic1280030 must not be duplicated. New measurement tools must load the intended frozen model explicitly. A/B uniform-T cannot alone isolate selector effects against ST primaries.
+
 The base is official sming256/OpenTAD commit 346d09d19e2091372cec48172dbe40f7b28bdee6. Keep `opentad/`, the inherited model/dataset configs, and original train/test entry points unchanged. Implement research routes in `geosparse_ext/` and focused tests.
 
 User-mandated protocol: all 200 THUMOS training videos; all 211 official test videos / 792 test windows at every formal validation; no internal training holdout. Official defaults are 768 input frames, 160px, 768 detector grid, global batch 2, warm-up 5, cosine horizon 100, training end epoch 60. Run seed 0 first. Checkpoint selection uses full-test EMA mAP every 5 epochs and must retain full predictions and provenance.

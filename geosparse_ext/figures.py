@@ -98,7 +98,10 @@ def plot_training(report, runs):
     for path, job, receipt in runs.values():
         if job["kind"] != "train":
             continue
-        rows = [r for r in jsonl(path / "train.log") if "losses" in r]
+        attempts = [r for r in jsonl(path / "train.log") if "losses" in r]
+        # Restarting an unfinished epoch appends the replay to the same log.
+        latest = {(r["epoch"], r["step"]): r for r in attempts}
+        rows = [latest[key] for key in sorted(latest)]
         if not rows:
             continue
         found = True
@@ -110,7 +113,7 @@ def plot_training(report, runs):
             axes[0].plot(values, y, lw=.6, alpha=.3, color=color)
             window = min(11, len(y))
             axes[0].plot(values[window - 1:], np.convolve(y, np.ones(window) / window, mode="valid"), label=label, lw=1.5, color=color)
-        axes[0].set(xlabel="Training update attempt", ylabel="Training loss")
+        axes[0].set(xlabel="Retained training update attempt", ylabel="Training loss")
         axes[0].legend(frameon=False)
         validations = [read(p) for p in sorted((path / "intermediate_eval").glob("epoch_*/metrics.json"))]
         validations = [r for r in validations if r.get("status") == "completed_validation" and r.get("subset") == "validation" and r.get("is_mock") is False]
@@ -130,12 +133,12 @@ def plot_training(report, runs):
         ecdf(axes[2], seconds)
         axes[2].set(xlabel="Training update wall time (s)", ylabel="Empirical cumulative probability", ylim=(0, 1.02))
         for i, r in enumerate(rows):
-            csv_rows.append(dict(record="training", update_attempt=i + 1, epoch=r["epoch"] + 1,
+            csv_rows.append(dict(record="training", update_attempt=i + 1, epoch=r["epoch"] + 1, step=r["step"],
                 cls_loss=r["losses"]["cls_loss"], reg_loss=r["losses"]["reg_loss"], seconds=r["seconds"], successful_update=r["successful_update"]))
         csv_rows.extend(dict(record="full_validation", epoch=r["completed_epochs"], average_mAP=r["metrics"]["average_mAP"], videos=len(r["videos"])) for r in validations)
         status = "60-epoch run completed" if eligible_train(receipt) else "INTERIM TRAINING PREVIEW"
         report.save(f'training_{job["job_id"]}', fig,
-            f'{status}; {job["route"]}, seed {job["seed"]}; {len(rows)} recorded updates. Thin lines are raw losses; bold lines are up to 11-update trailing means. Validation uses all official evaluation videos every five epochs. Best is within this seed. Training step times are NOT inference latency.', csv_rows)
+            f'{status}; {job["route"]}, seed {job["seed"]}; {len(rows)} retained update attempts; {len(attempts) - len(rows)} superseded epoch/step rows excluded. The latest occurrence of each epoch/step is retained; overflow attempts remain flagged. Thin lines are raw losses; bold lines are up to 11-update trailing means. Validation uses all official evaluation videos every five epochs. Best is within this seed. Training step times are NOT inference latency.', csv_rows)
     if not found:
         report.wait("training", "需要真实 train.log；mAP 曲线需要逐轮全量验证 metrics.json。")
 
@@ -317,6 +320,7 @@ def plot_risks(report, evaluations, exports):
                 continue
             if receipt["selected_checkpoint_epoch"] != metrics["selected_checkpoint_epoch"] or receipt["model_source_commit"] != training["source_commit"]:
                 raise ValueError("cost export and evaluation used different checkpoints or model source")
+            require_same_checkpoint(receipt.get("checkpoint_identity"), metrics.get("checkpoint_identity"))
             grouped = defaultdict(list)
             for row in windows:
                 grouped[row["video_id"]].append(row)
@@ -437,17 +441,24 @@ def plot_pareto(report, runs, evaluations, exports, single_seed=False):
         return
     for dataset in sorted({p["dataset"] for p in points}):
         rows = [p for p in points if p["dataset"] == dataset]
+        model_frontier_available = all(p["complete_mac_count"] for p in rows)
+        for p in rows:
+            p["model_frontier_eligible"] = model_frontier_available
         fig, axes = plt.subplots(1, 2, figsize=(9, 3.5))
         for ax, key, label in zip(axes, ("heavy_GMACs", "model_GMACs"), ("Heavy GMACs / window (seed 0)", "Counted model GMACs / window (seed 0)")):
             for p in rows:
-                ax.errorbar(p[key], p["mean_mAP"], yerr=p["sd_mAP"], fmt="o", capsize=3, label=p["label"])
-            frontier = sorted((p for p in rows if not any(q[key] <= p[key] and q["mean_mAP"] >= p["mean_mAP"] and (q[key] < p[key] or q["mean_mAP"] > p["mean_mAP"]) for q in rows)), key=lambda p: p[key])
-            ax.plot([p[key] for p in frontier], [p["mean_mAP"] for p in frontier], "--", color=".6", lw=.8)
+                lower_bound = key == "model_GMACs" and not p["complete_mac_count"]
+                ax.errorbar(p[key], p["mean_mAP"], yerr=p["sd_mAP"], fmt=">" if lower_bound else "o", capsize=3, label=p["label"])
+            if key == "heavy_GMACs" or model_frontier_available:
+                frontier = sorted((p for p in rows if not any(q[key] <= p[key] and q["mean_mAP"] >= p["mean_mAP"] and (q[key] < p[key] or q["mean_mAP"] > p["mean_mAP"]) for q in rows)), key=lambda p: p[key])
+                ax.plot([p[key] for p in frontier], [p["mean_mAP"] for p in frontier], "--", color=".6", lw=.8)
+            else:
+                ax.text(.02, .98, "> marks a cost lower bound\nModel frontier withheld", va="top", transform=ax.transAxes, fontsize=8)
             ax.set(xlabel=label, ylabel=score_label)
         axes[0].legend(frameon=False, fontsize=7)
         report.save(f'{prefix}_pareto_{dataset}', fig,
             ('Single-seed route feasibility: seed0 best full-validation accuracy, without across-seed SD or stability claims. ' if single_seed else 'Accuracy uses each of three seeds’ own best full-validation checkpoint, then mean ± sample SD. ')
-            + 'Cost uses seed0’s same selected checkpoint and all evaluation windows. Dashed line is an observed Pareto frontier, not a significance claim. Checkpoint selection uses the official evaluation split; these scores are not from an untouched test set. Incomplete operator counts are explicit lower bounds in CSV.', rows)
+            + 'Cost uses seed0’s same selected checkpoint and all evaluation windows. Dashed line is an observed Pareto frontier, not a significance claim. Incomplete model counts remain lower-bound scatter points marked >; if any count is incomplete, the entire model-cost frontier is withheld. Heavy-formula and measured-latency comparisons remain separate. Checkpoint selection uses the official evaluation split; these scores are not from an untouched test set.', rows)
         timed = [p for p in rows if any(key.endswith("_p50_ms") for key in p)]
         if timed:
             for gpu in sorted({p["gpu_model"] for p in timed}):

@@ -1,6 +1,6 @@
 # SCI3 v3：研究规格接入与当前执行边界
 
-2026-09-08。来源是用户提供的 `GeoSparse_TAD_Research_and_Agent_Commands_v3.md`，不是当前模型已经实现的声明。运行中的模型 M 仍为 b70ae056c495b43ca3f305fe438926b97b2723b5。本分支保留 `geosparse_ext/`、官方 `opentad/`、训练配置及入口原样，新增 `geosparse_research/` 作为研究数据生产器。
+2026-09-08。来源是用户提供的 `GeoSparse_TAD_Research_and_Agent_Commands_v3.md`，不是当前模型已经实现的声明。运行中的模型 M 仍为 b70ae056c495b43ca3f305fe438926b97b2723b5。最初SCI3版本仅新增研究接口；本次独立审查修复分支另外修正N02的acquisition/evidence有效性与N03/N04绘图，见 `fixed-review-followup-20260908.md`。这些修改没有热写入M或既有任务。
 
 ## 接受的研究命题
 
@@ -25,7 +25,7 @@
 
 采用 v3 已给出的同模型成对干预与视频聚类统计设计。先连接真实已有接口，避免创建第二套模型或通用调度器。
 
-1. `equal_cost_swap` 接受真实 `RoutePlan` 与 native validity，要求 donor 已选、candidate 未选，位于同一 parent 且有效成员数相同。A/B交换独立Heavy原子，C交换fine/coarse组。修改后逐parent实际token数量必须相同。反事实计划不伪造采样概率，也不直接用于PG actor更新。
+1. `equal_heavy_cost_swap` 接受真实 `RoutePlan` 与 native validity，要求 donor 已选、candidate 未选，位于同一 parent 且有效成员数相同。A/B交换独立Heavy原子，C交换fine/coarse组。修改后逐parent实际token数量必须相同。它不保证B的evidence槽数或总模型成本一致。反事实计划不伪造采样概率，也不直接用于PG actor更新。
 2. `CounterfactualRunner.evaluate_pair` 使用同一个已经加载权重的 GeoSparseDetector、同一个 VideoBatch、GT和epoch，在确定性eval状态下分别执行真实 `forced_plan` 前向与源检测损失。每条路径重跑Heavy及其后续TIA/head；不使用跨计划feature缓存。保存实际执行trace、cls/reg/total有符号差和检测有效mask；恢复RNG、buffers、module modes及被前向改动的临时状态。第一版只输出源R0的总项分解，不冒称已实现R1、逐query风险或训练swap校准。
 3. `paired_video_map_bootstrap` 直接调用固定官方AP函数，按video成对抽样；重复抽到的视频获得独立ID，空预测视频与背景视频保留。每次在完整重采样GT/预测上重算类别AP，再按官方规则平均，禁止平均每视频AP。原始类别集合中有类别在某draw无GT时，该draw的固定类别mAP为未定义，记录missing classes并不重抽；CI注明条件及有效draw数，不能把缺失类记0或悄悄删类。seed不确定性另行报告。
 
