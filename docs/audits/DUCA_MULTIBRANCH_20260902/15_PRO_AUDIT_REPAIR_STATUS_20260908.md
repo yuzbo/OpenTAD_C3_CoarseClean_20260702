@@ -190,3 +190,18 @@ job1245842 的 Slurm 记录为 COMPLETED(0:0)。原 source 为 `/data/run01/sczc
 09:33公共可调度25节点CfgTRES200/AllocTRES139，即61/200 GPU未分配；本用户6 RUNNING/0 PENDING，其中本任务CT占2项。磁盘245G可用、96%已用，公共余量不等于账户配额保证。分钟回执在09:33:35读取时距生成60秒，只读轮询正常；dispatcher=plan/BLOCKED、entries为空，不是自动提交正常。
 
 本轮完成远端状态恢复读取、既有CT预检终态收取及目录更新；没有新的模型修复、训练、正式评测、作业取消或Pro咨询。剩余工作继续按前述最小顺序执行，不能把本轮监控当作六路线验收。证据见[19_HEARTBEAT_EVIDENCE_20260908_0931.json](19_HEARTBEAT_EVIDENCE_20260908_0931.json)。
+
+
+## 10:15 心跳补充
+
+触发时间为2026-09-08 10:14:59.973 CST，按10:15心跳记录；实际远端采样10:16:40至10:18:59。其他未执行的触发不补记。本轮没有新运行失败或新最终mAP。
+
+- CT新G0/G1仍RUNNING，10:18落盘audit分别epoch46/48，optimizer/scheduler/EMA各4700/4900，AMP skip均3并已重放，max retry仍1。两臂最新训练分别为epoch47/49 batch99，loss0.4236/0.4694有限；stderr显示训练内评测进度仍增长。两者均无epoch59，评测后才写audit，不把暂未刷新计数当训练挂起。
+- 远端fe1c53db训练与07383274评测源码仍exact/clean。复用已经通过的1278007和1278042，不重复测试或预检；07383274正式评测仍等待新终态及实际6000更新。旧G2/G3保持原SHA与56.5234%/57.8489%结果，不迁移为新坐标版。
+- H65六份和ET两份小收据mtime/数值未变；H65最高64.2265%，F臂仍phase-off/TIA待修。ET关闭/开启62.0768%/54.8096%，anchor correction与精度问题未解决。没有重复加载大checkpoint、复算已认证hash或推理。
+- Evidence A1/A6/F训练及A1评测仍COMPLETED(0:0)，stdout/stderr无新fatal；A1仍51.5968%，A6/F独立metrics继续缺失。BAFDR U16/LATE/NOKD及FULL PRECHECK仍COMPLETED(0:0)，前三终轮日志6000，当前输出仍无metrics.json。复用此前实际权重验证，utility/真实辅助损失和padding/screen缺陷仍在；不扩展已知错误的旧矩阵。
+- 各active本地源码身份由目录生成器刷新；H65、Evidence、BAFDR、ET与Unified独立读取均为既有SHA且clean。Unified仍BLOCKED_UNIMPLEMENTED。本轮无新机制实现或Pro咨询；官方原配方68.73%的来源与独立复评待补，不用REF67.58%替代。
+
+10:16公共可调度25节点CfgTRES200/AllocTRES159，未分配41/200 GPU；本用户7 RUNNING/0 PENDING，本任务CT占2项。磁盘238G可用、96%已用。10:18:59分钟回执年龄47秒，只读轮询正常，但dispatcher=plan/BLOCKED、entries为空，不是自动提交正常。
+
+本轮只执行监控及目录刷新，没有新训练、评测、取消或重复准入。下一步仍是等待CT终态后提交兼容独立评测，并按原设计逐项补齐剩余实现，而不是降低验收口径。结构化证据：[20_HEARTBEAT_EVIDENCE_20260908_1015.json](20_HEARTBEAT_EVIDENCE_20260908_1015.json)。
