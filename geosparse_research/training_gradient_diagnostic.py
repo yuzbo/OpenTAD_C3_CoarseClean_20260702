@@ -12,6 +12,13 @@ import random
 import sys
 
 
+def normalizer_restore_record(saved, restored):
+    """Expose the frozen runtime's actual conversion; do not repair it here."""
+    return dict(checkpoint_value=float(saved), checkpoint_dtype=str(saved.dtype),
+                restored_value=float(restored), restored_dtype=str(restored.dtype),
+                exact=saved.dtype == restored.dtype and float(saved) == float(restored))
+
+
 def restore_probe_state(model, saved, completed_epochs, amp):
     """Select ordinary weights and resume counters/RNG, never EMA weights."""
     import numpy as np
@@ -37,7 +44,9 @@ def restore_probe_state(model, saved, completed_epochs, amp):
     return dict(weights="ordinary_state_dict", checkpoint_epoch=completed_epochs - 1,
                 next_training_epoch=completed_epochs, next_completed_epoch=completed_epochs + 1,
                 minibatch=model.minibatch, loss_scale=float(scale),
-                loss_normalizer=float(model.rpn_head.loss_normalizer))
+                loss_normalizer=float(model.rpn_head.loss_normalizer),
+                normalizer_restore=normalizer_restore_record(
+                    saved["state_dict"]["rpn_head.loss_normalizer"], model.rpn_head.loss_normalizer))
 
 
 def ordinary_gradient_norm(model, batch, microbatch_size, amp, loss_scale):
