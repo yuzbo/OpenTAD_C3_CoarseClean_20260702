@@ -20,7 +20,7 @@ out_of_scope: 声称增强已经实现、冻结未指定超参数、替代实际
 |PG 与 acquisition|[detector.py](../../geosparse_ext/detector.py#L75) 和 [routing.py](../../geosparse_ext/routing.py#L233) 使用任务成本反馈，反事实增加未选原子并重新编码。标签是标量检测 loss 的 signed difference。|
 |动态预算|改变此次选择量；不等于逐层重新选择、逐层动态深度或新的区间风险目标。|
 
-当前没有等成本 swap 标签、实例平衡 interval risk 或 M0–M3 的实现证据。使用原检测 loss 的边界项不等于已经实现本文建议的新定位风险校准。
+当前没有等成本 swap 标签、实例平衡 interval risk 或 M0–M3 的实现证据。使用原检测 loss 的边界项不等于已经实现本文建议的新定位风险校准。B/C 的执行和现有 C coarse→fine 标签见[另一方法分册](evidence-and-shared-updates.md)；LITE 对梯度价值预测和预算的覆盖见[原文核对](../project/prior-art-bc-lite.md)，不能把“学习价值”单独作为新颖性证明。
 
 ## 公共执行骨架
 
