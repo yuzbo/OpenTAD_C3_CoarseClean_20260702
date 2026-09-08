@@ -13,3 +13,5 @@ EMA normalizer的整数算术与官方ModelEma一致，不因本问题重新指�
 独立梯度诊断仍显式导入该实验绑定的M模型，记录checkpoint与实际恢复normalizer的值、dtype及是否精确；不在诊断中暗中修复M。它测量M真实恢复语义下下一epoch首批的梯度，不能称连续不中断训练的精确重放。
 
 外部证据：official_adatad_audit/normalizer_restore_reproduction.stdout.txt、actual_normalizer_restore_20260908.json。此前20:33审查关于“buffer已保存”的结论保留，但不能据此推出恢复无损；本条作为新增发现保留时间顺序。
+
+验证记录：修复集成1d664447在独立远端干净CPU checkout运行104项相关检查，103通过（含A/B/C分数normalizer及下一批loss/gradient完全一致），1项旧evidence夹具缺少新增接口要求的layout.valid而失败。仅修该夹具得到34a7f2db，原失败测试单独复跑通过（6.70秒）；未将首轮写成全通过，未重复已通过项目。原始日志位于sci3_verification_1d664447与sci3_verification_34a7f2db。独立M诊断入口fdfdc6a0另有7项CPU检查通过（47.73秒）；没有生产GPU验证或新训练。
