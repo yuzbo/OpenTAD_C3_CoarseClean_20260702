@@ -71,8 +71,18 @@ def refresh_primary_start_dependencies(bindings):
     states = load(state_path)['jobs'] if state_path.exists() else {}
     owned = {str(row['slurm_id']) for row in list(prechecks.values()) + list(states.values())
              if row.get('slurm_id')}
-    pending = set(subprocess.check_output(
-        ['squeue', '-h', '--me', '--states=PENDING', '-o', '%i'], text=True).split())
+    try:
+        pending = set(subprocess.check_output(
+            ['squeue', '-h', '--me', '--states=PENDING', '-o', '%i'],
+            text=True, stderr=subprocess.PIPE, timeout=60).split())
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+        # This read-only query can fail while the Slurm controller is busy.
+        # Defer the whole pass: do not release controls with unrefreshed deps.
+        detail = error.stderr or str(error)
+        if isinstance(detail, bytes):
+            detail = detail.decode(errors='replace')
+        return {'slurm_query_error': dict(command=error.cmd, detail=detail.strip(),
+                                         observed_at=time.time())}
     record_path = control / 'primary_start_dependencies.json'
     records = load(record_path) if record_path.exists() else {}
     updates = {}
@@ -190,6 +200,16 @@ def main():
         # Production queue is run for one scheduling pass. The supervisor
         # coordinates prechecks too, including after a storage block clears.
         dependency_updates = refresh_primary_start_dependencies(bindings)
+        if 'slurm_query_error' in dependency_updates:
+            progress_path = control / 'audit_progress.json'
+            progress = load(progress_path) if progress_path.exists() else {}
+            progress.update(updated_at=time.time(), pid=os.getpid(), host=socket.gethostname(),
+                            status='WAITING_SLURM_QUERY',
+                            slurm_query_error=dependency_updates['slurm_query_error'])
+            save(progress_path, progress)
+            print(json.dumps(dependency_updates), flush=True)
+            time.sleep(60)
+            continue
         queue.worker_script = original_worker
         status = precheck(args, bindings, queue)
         if bindings['primary_binding_paths']:

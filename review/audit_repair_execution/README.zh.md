@@ -10,6 +10,7 @@
 - `held_controls.py`：按用户要求先用真实 `sbatch --hold` 提交已部署的五项seed0补充训练，记为 `HELD_SUBMITTED`；只有本任务真实GPU能力凭证、资源与主方法开始依赖满足时才更新节点/依赖并放行。N16补充节点列表为空时保持挂起。既有checkpoint、attempt和任务ID保留，正式产物不使用mock能力凭证。
 - `activate_submitted_controls.py`：当前补充coordinator的v3激活入口，只上传外部调度脚本并重启两个补充coordinator。主coordinator和Slurm训练进程不改动；不要再用历史v1/v2激活入口覆盖v3。
 - `test_held_controls.py`：八项外部调度检查，覆盖一次提交、真实能力准入、并发/节点保留、放行失败、Slurm对账、模糊提交响应与磁盘不足。本地和两台Linux服务器均通过；mock只在独立单测目录，不生成科学结果。
+- `test_slurm_query_recovery.py`：三项真实故障路径回放，覆盖squeue失败/60秒超时、失败时不改依赖、恢复后只更新本任务pending作业且不重复更新。与上述八项合计11项，在本地及A100独立测试目录通过，不执行模型或真实sbatch。
 - `consolidate_control_prechecks.py`：一次性处理A100现场 `MaxSubmitJobs=10` 的提交上限。核对四项原预检均未开始及其owner/脚本/命令后，用一个两小时上限的Slurm作业顺序执行四个完全相同的独立GPU预检命令，逐项保留日志与能力凭证；一项失败仍继续其余检查。原pending提交记录保留，正式训练仍须自己的凭证通过。只停止/恢复A100补充coordinator，不触碰主方法或官方训练；已有amendment时拒绝重复操作。
 - `reserve_primary_gpu1.py`：针对实际发生的N16主方法续训资源冲突，暂停补充队列对两个GPU1节点的使用。在1278034的第1轮全状态保存后缩短其本次allocation，之后恢复仍使用同一任务checkpoint；它不是改变60轮训练预算的工具。
 - `collect_audit_validation_receipts.py`：读取指定主方法已完成的全量验证，核对源版本、配置/数据/初始化权重、211视频/792窗口和best身份后同步小型收据。原始预测保留在远端，不运行推理或训练；规范视频列表来自此前已核验的动态A第10轮收据。本次已用于动态A第25轮、固定A第15轮及固定C第5轮的真实产物，模型M不变。
@@ -42,3 +43,7 @@ A100四项独立预检在一个allocation中执行，是提交名额的合并，
 源报告的I01–I15逐项修复/阻塞说明见docs。117诊断和其他显式未实现扩展仍未完成。所有评论必须给出可达触发、具体源码位置和最小修复，不能用重新训练整个矩阵替代补测或重算。
 
 2026-09-08研究定位修订见[文档入口](../../docs/README.md)：MoD＋同一TIA作为强对照，贡献假设转向定位价值学习。该文档修订不改变M、1545任务登记和远端队列；M0–M3/A2的新设计尚未实现或提交，当前A主方法仅按原目标归入A1机制。
+
+11:08进度检查发现A100补充coordinator心跳落后约29分钟；随后在其记录的ln302核对PID228851已不存在，coordinator.log明确记录squeue的Socket timeout导致未捕获CalledProcessError。正式Slurm作业、主coordinator和官方训练仍存在。修复只在依赖刷新所需的这次只读查询处捕获失败/超时，失败轮写入WAITING_SLURM_QUERY及原错误、保留原状态，不提交或放行任何任务，60秒后重试；查询恢复后按现有计划继续。非查询错误及模糊sbatch响应不吞掉，也不盲重试。
+
+该修复的激活标识为backfill-1h-held-controls-v3-query-retry；本次只对A100补充coordinator部署，N16补充仍为v3，两个primary仍为v1。activate_submitted_controls.py默认使用修复标识；不要运行它的双服务器main来完成单服务器恢复。具体PID、激活结果和任务连续性以操作员执行包audit_slurm_query_recovery_activation.json及最新audit_status.json为准。模型M和所有训练配置未改变。

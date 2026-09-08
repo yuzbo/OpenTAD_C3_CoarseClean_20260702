@@ -7,7 +7,7 @@ from deploy_corrected import command, put
 from activate_dependency_refresh import CODE as PREVIOUS_ACTIVATION
 
 HERE=Path(__file__).resolve().parent
-REVISION='backfill-1h-held-controls-v3'
+REVISION='backfill-1h-held-controls-v3-query-retry'
 CODE=PREVIOUS_ACTIVATION.replace('before_dependency_refresh_', 'before_control_submission_').replace(
     'dependency_refresh_amendment.json', 'control_submission_amendment.json').replace(
     "str(ctl/'audit_queue.py')],check=True)",
