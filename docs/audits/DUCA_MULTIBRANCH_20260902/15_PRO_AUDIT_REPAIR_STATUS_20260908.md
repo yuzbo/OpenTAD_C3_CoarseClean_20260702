@@ -349,3 +349,13 @@ H65三组第5轮optimizer/scheduler/EMA/DUCA schedule均500，初始AMP skip已r
 Evidence F/A6独立收据以及Unified缺失机制仍未补齐。历史BAFDR1267920/1267921未操作。
 
 详见[30_TEST_GUIDED_EVAL5_PROGRESS_20260908_1825.md](30_TEST_GUIDED_EVAL5_PROGRESS_20260908_1825.md)及同名JSON。
+
+## 19:06 后续曲线
+
+新五项仍RUNNING：ET-TRC第15轮ON/OFF为42.1020%/42.7081%，
+H65第10轮均匀/相位关/四相开为30.9742%/30.8467%/25.6088%。
+五个更新后的最佳EMA实际权重与轮次收据一致；没有新增fatal或epoch59终态。
+H65累计AMP skip均已重放。CT、BAFDR和Evidence的既有终态文件保留，
+原实现缺失项继续列明，本轮不重复准入、调参或重提健康训练。
+
+详见[31_HEARTBEAT_EVIDENCE_20260908_1904.md](31_HEARTBEAT_EVIDENCE_20260908_1904.md)及同名JSON。
