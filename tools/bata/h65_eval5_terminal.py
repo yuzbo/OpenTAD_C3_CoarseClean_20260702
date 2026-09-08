@@ -1,6 +1,7 @@
 """Independent terminal binding for the frozen H65 eval5 matched controls."""
 
 from collections import Counter
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -16,6 +17,12 @@ ARMS = {"TEST-UNIFORM": "uniform", "TEST-PHASEOFF": "phaseoff", "TEST-PHASEON": 
 
 def is_eval5(cfg):
     return cfg.get("test_guided_exploratory", False) and cfg.get("h65_pro_experiment_id") in ARMS
+
+
+def training_config_sha256(value):
+    # Frozen tools/train.py records protocol dataclasses via their string representation.
+    payload = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def _git(root, *args):

@@ -74,7 +74,10 @@ def main():
         formal_protocol
     )
     r5_formal = formal_protocol == duca_selected_axis_training.R5_FORMAL_PROTOCOL
-    source_resolved_config_sha256 = _canonical_sha256(cfg.to_dict())
+    source_resolved_config_sha256 = (
+        h65_eval5_terminal.training_config_sha256(cfg.to_dict())
+        if h65_eval5 else _canonical_sha256(cfg.to_dict())
+    )
     if cellcf_formal:
         duca_cellcf_training.assert_safe_cfg_options(
             cfg, args.cfg_options, entrypoint="tools/test.py"

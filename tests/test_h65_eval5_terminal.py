@@ -1,4 +1,6 @@
 from copy import deepcopy
+import ast
+import hashlib
 import json
 from pathlib import Path
 
@@ -8,6 +10,21 @@ import pytest
 from tools.bata import h65_eval5_terminal as terminal
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_resolved_config_uses_frozen_training_serialization():
+    from tools.bata.duca_p0_evaluation import canonical_sha256
+    tree = ast.parse((ROOT / "tools/train.py").read_text())
+    function = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "_canonical_sha256")
+    namespace = {"json": json, "hashlib": hashlib}
+    exec(compile(ast.Module(body=[function], type_ignores=[]), "training_hash", "exec"), namespace)
+    for arm in ("uniform", "phaseoff", "phaseon"):
+        cfg = Config.fromfile(str(ROOT / f"configs/adatad/thumos/h65_pro/h65_pro_eval5_{arm}.py"))
+        assert terminal.training_config_sha256(cfg.to_dict()) == namespace["_canonical_sha256"](cfg.to_dict())
+        assert terminal.training_config_sha256(cfg.to_dict()) != canonical_sha256(cfg.to_dict())
+    launch = (ROOT / "scripts/run_h65_eval5_terminal_n16r4.sbatch").read_text()
+    assert 'THUMOS14_TRAIN_DATA_PATH="$YUZIBO_ROOT/raw/Validation Data/validation"' in launch
+    assert 'THUMOS14_TEST_DATA_PATH="$YUZIBO_ROOT/raw/Test Data/TH14_test_set_mp4"' in launch
 
 
 @pytest.fixture
