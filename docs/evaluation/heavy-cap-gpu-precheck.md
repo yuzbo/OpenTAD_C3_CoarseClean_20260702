@@ -23,3 +23,8 @@ python /ABS/RESEARCH/geosparse_research/heavy_cap_precheck.py \
 必须在原许可Slurm GPU1→CUDA0分配内执行。既有主方法独立评价和FineDiving优先；
 准备不等于提交，提交不等于PASS。输出包括measurement.json、实际逐层trace/cap的result.json，
 失败写failure.json并保留stderr；不覆盖旧precheck输出、不改生产M或已有训练结果。
+
+2026-09-09：代码1945d20ba7addc4d4920b58e770ac8ef8997746c在独立干净远端CPU
+checkout通过4项新检查（47.46秒）：真实小型执行器固定/动态两种来源、0/.5/1实际trace、
+奇数有效尾部、full逐位相同、参数/buffer不变及异常配置恢复。没有重跑已通过的17项cap
+原语测试，也没有生产GPU预检或新科学分数；真实GPU作业的状态单独由部署凭证确认。
