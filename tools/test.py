@@ -27,6 +27,7 @@ from tools.bata.duca_p0_training import atomic_write_json, sha256_file
 from tools.bata import duca_cellcf_training
 from tools.bata import duca_protected_physical_training
 from tools.bata import duca_selected_axis_training
+from tools.bata import h65_eval5_terminal
 from tools.bata.duca_p0_evaluation import (
     canonical_jsonable,
     evaluation_config_sha256,
@@ -44,6 +45,7 @@ def parse_args():
     parser.add_argument("--not_eval", action="store_true", help="whether to not to eval, only do inference")
     parser.add_argument("--cfg-options", nargs="+", action=DictAction, help="override settings")
     parser.add_argument("--metrics-json", default=None)
+    parser.add_argument("--precheck-only", action="store_true", help="one-batch H65 eval5 inference without metrics")
     parser.add_argument("--expected-checkpoint-epoch", type=int, default=None)
     parser.add_argument(
         "--checkpoint-state-key",
@@ -59,6 +61,10 @@ def main():
 
     # load config
     cfg = Config.fromfile(args.config)
+    h65_eval5 = h65_eval5_terminal.is_eval5(cfg)
+    if args.precheck_only and not h65_eval5:
+        raise RuntimeError("one-batch precheck is only supported for the frozen H65 eval5 runs")
+    h65_eval5_identity = None
     formal_protocol = str(cfg.workflow.get("formal_protocol", ""))
     cellcf_formal = formal_protocol == "duca_cellcf_v1"
     protected_physical_formal = (
@@ -93,6 +99,14 @@ def main():
     args.local_rank = int(os.environ["LOCAL_RANK"])
     args.world_size = int(os.environ["WORLD_SIZE"])
     args.rank = int(os.environ["RANK"])
+    if h65_eval5:
+        h65_eval5_identity = h65_eval5_terminal.evaluation_binding(
+            cfg, config_path=args.config, checkpoint_path=args.checkpoint,
+            evaluator_root=path, seed=args.seed, world_size=args.world_size,
+            variant=os.environ.get("DUCA_SELECTED_OPT_VARIANT", ""),
+        )
+        if args.metrics_json and os.path.exists(args.metrics_json):
+            raise RuntimeError("H65 eval5 receipt already exists; use a new evaluation namespace")
     if cellcf_formal or protected_physical_formal or selected_axis_formal:
         expected_commit = os.environ.get("DUCA_EXPECTED_COMMIT")
         observed_commit = subprocess.check_output(
@@ -174,6 +188,8 @@ def main():
 
     # build dataset
     test_dataset = build_dataset(cfg.dataset.test, default_args=dict(logger=logger))
+    if h65_eval5:
+        h65_eval5_terminal.validate_test_population(test_dataset, h65_eval5_identity)
     test_loader = build_dataloader(
         test_dataset,
         rank=args.rank,
@@ -232,7 +248,8 @@ def main():
                 duca_selected_axis_training.validate_terminal_checkpoint_binding(
                     checkpoint_path=checkpoint_path,
                     checkpoint=checkpoint,
-                    git_commit=os.environ["DUCA_EXPECTED_COMMIT"],
+                    git_commit=(h65_eval5_terminal.TRAINING_COMMIT if h65_eval5
+                                else os.environ["DUCA_EXPECTED_COMMIT"]),
                     variant=os.environ.get("DUCA_SELECTED_OPT_VARIANT", ""),
                     seed=args.seed,
                     slurm_job_id=os.environ.get("SLURM_JOB_ID"),
@@ -259,6 +276,8 @@ def main():
                 )
             )
         model.load_state_dict(checkpoint[checkpoint_state_key])
+        if h65_eval5:
+            h65_eval5_identity.update(h65_eval5_terminal.terminal_counts(checkpoint))
         if checkpoint_state_key == "state_dict_ema":
             logger.info("Using Model EMA...")
 
@@ -268,9 +287,18 @@ def main():
         logger.info("Using Automatic Mixed Precision...")
 
     # test the detector
+    evaluation_loader = test_loader
+    if args.precheck_only:
+        class SingleBatchLoader:
+            dataset = test_dataset
+
+            def __iter__(self):
+                yield next(iter(test_loader))
+
+        evaluation_loader = SingleBatchLoader()
     logger.info("Testing Starts...\n")
     evaluation_summary = eval_one_epoch(
-        test_loader,
+        evaluation_loader,
         model,
         cfg,
         logger,
@@ -278,9 +306,11 @@ def main():
         model_ema=None,  # since we have loaded the ema model above
         use_amp=use_amp,
         world_size=args.world_size,
-        not_eval=args.not_eval,
+        not_eval=args.not_eval or args.precheck_only,
     )
-    if args.rank == 0 and args.metrics_json:
+    if args.precheck_only:
+        logger.info("H65_EVAL5_TERMINAL_PRECHECK_OK: strict epoch59 EMA and one real inference batch")
+    if args.rank == 0 and args.metrics_json and not args.precheck_only:
         if checkpoint_path is None or checkpoint_state_key is None:
             raise RuntimeError("structured metric evidence requires a checkpoint")
         if not isinstance(evaluation_summary, dict):
@@ -398,6 +428,9 @@ def main():
                     "runtime_gt_input_to_selector": False,
                 }
             )
+        if h65_eval5:
+            payload.update(h65_eval5_identity)
+            payload["schema_version"] = "h65_pro_test_guided_terminal_evaluation_v1"
         payload["evaluation_sha256"] = _canonical_sha256(payload)
         atomic_write_json(args.metrics_json, payload)
     logger.info("Testing Over...\n")

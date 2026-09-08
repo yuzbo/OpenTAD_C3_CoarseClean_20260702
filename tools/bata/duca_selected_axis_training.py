@@ -1077,6 +1077,8 @@ def validate_terminal_checkpoint_binding(
         )
     elif dense_reference:
         identity.update({"h65_pro_dense_reference": True})
+    elif h65_pro_variant:
+        identity.update({"h65_pro_fullmatrix": True})
     else:
         identity.update(
             {
