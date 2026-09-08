@@ -38,6 +38,10 @@ def main():
                        config=case["config"], provenance=case["provenance"])
             row["label"] = f"{row['route']} {'dynamic' if row['mode']=='dynamic' else 'fixed .5'} / E{row['completed_epochs']}"
             row["mAP_percent"] = (row["metrics"]["average_mAP"] * 100) if row["metrics"] else None
+            if record["validation_receipt"] is not None:
+                filename = f"{row['job_id']}.epoch_{row['completed_epochs']:03d}.validation.json"
+                (OUT / filename).write_text(json.dumps(record["validation_receipt"], indent=2), encoding="utf-8")
+                row["local_validation_receipt"] = filename
             raw = record.get("raw_rows")
             if host["receipt"] and raw is not None:
                 if len(raw) != 792 or [r["window_index"] for r in raw] != list(range(792)):
