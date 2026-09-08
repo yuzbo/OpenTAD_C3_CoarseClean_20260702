@@ -49,3 +49,19 @@
 本机默认Torch的c10.dll加载失败，使用既有OpenTAD环境中的独立CPU测试checkout，不修改全局环境。生产GPU准入与真实科学结果另计；不运行原124项测试代替新功能验证。现有六项主方法及已提交控制保持其身份继续训练，新增研究请求不能重复它们，也不以其mAP作为启动门槛。
 
 30个显式工单、22图和6表按附件的可读ID记录于 `sci3-intake.json`；它是本地接入台账，不是缺失的原始805任务manifest。每项待完成证据保持UNTESTED/PENDING。无真实结果不生成装饰性曲线。
+
+## 已完成的首批验证
+
+代码提交 `b85eac309bd9adb7f44f06fc7732750517e4a613` 在独立远端目录 `/data/run01/sczc063/yuzibo/geosparse_official_20260908/sci3_evidence_b85eac30/repo` 以干净提交运行，17项新增测试全部通过（pytest 64.45秒）。实际小规模 VideoMAE、原TIA、ActionFormer参与前向；输入为合成数据，CPU-only。原始日志在操作员执行包 `official_adatad_audit/sci3_verification_b85eac30/remote.stdout.txt`，没有启动训练。独立只读子代理复核未发现这批接口的阻断错误。
+
+复现代码检查：
+
+```bash
+python -m pytest tests/test_sci3_interventions.py tests/test_sci3_bootstrap.py -q
+```
+
+测量接口的调用方必须提供已经正确加载权重的 `GeoSparseDetector`、来自真实视频的 `VideoBatch` 与元数据、同一窗口的GT，以及与该模型原生网格一致的 `RoutePlan`。`CounterfactualRunner` 不加载或选择checkpoint；输出须由实际实验记录关联到run、epoch、权重及split。此接口的源R0采用eval正样本归一化，不能当作训练时带历史normalizer的损失或实例平衡R1。
+
+`paired_video_map_bootstrap` 接受官方 `mAP` loader已经去重和映射类别后的GT与两份预测DataFrame，并显式传入完整split的video IDs（包括无GT或空预测视频）。输出以0–1比例为单位，差值方向是right-minus-left，按视频抽样的区间不替代seed方差，也不纠正test-best选点偏差。两个结果的权重、协议及成本可比性仍由具体研究工单控制。
+
+下一批依赖是：真实视频/已锁定checkpoint的成对干预产物与GPU验证；R1/query风险归属和训练swap校准；强MoD/LITE、receiver和merge适配；原始805请求包解析。以上均未被这17项测试标为完成。
