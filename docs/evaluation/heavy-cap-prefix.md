@@ -27,3 +27,8 @@ fine升级增加members−1个token。C不可行的低预算明确拒绝，不�
 检查：`python -m pytest tests/test_sci3_heavy_cap.py -q`，含真实小型A/B/C执行trace、
 检测mask、原生768×160尺寸计划、尾部、全空有效域、非零coarse下限和跨parent二次成本。
 这些检查不是真实视频性能实验；实际执行和测试结果由外部receipt记录。
+
+2026-09-09验证：代码提交`bffc90becca72da43b90fdd11e17dbbf6ca3c221`在N16独立干净
+checkout中通过上述17项CPU检查（49.24秒）。输入为合成数据；包含实际小型A/B/C算子，
+没有提交GPU实验、运行完整视频评价或修改正在训练的模型。单独只读源码核验未发现当前
+默认A/B/C范围内的成本公式、C下限及计划消费错误；这不替代生产GPU与性能证据。
