@@ -46,3 +46,5 @@ python /ABS/RESEARCH/geosparse_research/training_gradient_diagnostic.py \
 新增入口检查：`python -m pytest tests/test_sci3_training_gradient_diagnostic.py -q`。部署状态和精确提交测试凭证记录于外部执行包；没有GPU作业或真实输出前不称已经完成梯度诊断。
 
 2026-09-08 20:59核验：实现 `6519073707db556c9dac1d5495289d374add3fe3` 在独立远端干净CPU checkout通过6项新增检查（pytest 56.05秒），外部凭证 `sci3_verification_65190737/remote.stdout.txt`。原10项核心梯度检查未重复；模型M没有修改。下一实际目标为B动态完成20轮普通检查点的第21轮首批梯度；该单批若没有acquisition/actor分量，保留缺项，不制造分支。
+
+2026-09-08 21:12补充：已确认M的普通checkpoint恢复将训练后的float32 normalizer拷贝到新建int64 buffer，造成小数截断。真实A固定E50为58.297714→58，B动态E20为42.682381→42。入口现分别记录checkpoint值/dtype、实际恢复值/dtype及exact状态，保留冻结M的真实行为，不在测量中修复模型。这里的“下一步”指M的中断恢复语义，不能冒充未中断训练的无损重放。独立review分支负责模型修复；已提交/运行的M不改变，标量差不能直接解释真实mAP影响。
