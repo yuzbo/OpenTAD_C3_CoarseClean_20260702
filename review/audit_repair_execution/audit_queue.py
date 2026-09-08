@@ -154,6 +154,15 @@ def precheck(args, bindings, queue):
     return dict(status='DEPLOYED', prechecks=submissions)
 
 
+def record_slurm_query_wait(control, failure):
+    progress_path = control / 'audit_progress.json'
+    progress = load(progress_path) if progress_path.exists() else {}
+    progress.update(updated_at=time.time(), pid=os.getpid(), host=socket.gethostname(),
+                    status='WAITING_SLURM_QUERY', slurm_query_error=failure['slurm_query_error'])
+    save(progress_path, progress)
+    print(json.dumps(failure), flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--manifest', required=True, type=Path)
@@ -201,13 +210,7 @@ def main():
         # coordinates prechecks too, including after a storage block clears.
         dependency_updates = refresh_primary_start_dependencies(bindings)
         if 'slurm_query_error' in dependency_updates:
-            progress_path = control / 'audit_progress.json'
-            progress = load(progress_path) if progress_path.exists() else {}
-            progress.update(updated_at=time.time(), pid=os.getpid(), host=socket.gethostname(),
-                            status='WAITING_SLURM_QUERY',
-                            slurm_query_error=dependency_updates['slurm_query_error'])
-            save(progress_path, progress)
-            print(json.dumps(dependency_updates), flush=True)
+            record_slurm_query_wait(control, dependency_updates)
             time.sleep(60)
             continue
         queue.worker_script = original_worker
@@ -221,7 +224,11 @@ def main():
         sys.argv = [sys.argv[0], '--manifest', str(args.manifest), '--bindings', str(args.bindings), '--execute']
         queue.main()
         if bindings['primary_binding_paths']:
-            release_controls(args, bindings, queue, original_readiness, primary_state)
+            release_result = release_controls(args, bindings, queue, original_readiness, primary_state)
+            if release_result and 'slurm_query_error' in release_result:
+                record_slurm_query_wait(control, release_result)
+                time.sleep(60)
+                continue
         state = load(root / 'slurm_state.json')
         save(control / 'audit_progress.json', dict(updated_at=time.time(), pid=os.getpid(), host=socket.gethostname(), precheck_status=status, primary_dependency_updates=dependency_updates, states={jid:state['jobs'][jid]['status'] for jid in bindings['assigned_training_ids']}))
         time.sleep(60)
