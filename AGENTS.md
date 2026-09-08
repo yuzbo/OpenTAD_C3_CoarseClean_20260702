@@ -1,0 +1,7 @@
+# AdaTAD FineAction adaptation
+
+This independent branch starts from official OpenTAD 346d09d19e2091372cec48172dbe40f7b28bdee6. Keep opentad/ and original tools/train.py and tools/test.py unchanged. This is a new FineAction adaptation of the official AdaTAD-B model, not reproduction of an upstream FineAction recipe: that recipe is absent at the pinned source.
+
+Read docs/adatad_fineaction.md. Use the full official training pool and all 4174 validation videos, seed0, 768 input frames at160px, native stride4 windows,106 classes. Retain the official dataset's explicit invalid-GT filtering report. No internal holdout and no GeoSparse modules. Training is60 epochs with the THUMOS-derived100-epoch cosine horizon and5 warmup epochs. Single allocated GPU/global batch2 is an adaptation, not claimed equivalent to two-rank training. Evaluate all validation windows every5 epochs; select earliest unrounded official EMA best, and keep terminal60 separately.
+
+Remote writes remain under /data/run01/sczc063/yuzibo. GPU work runs only under Slurm on authorized physical GPU1/container CUDA0. CPU media indexing can use its own Slurm allocation without a GPU, excluding the active benchmark node. Never duplicate existing runs or change active GeoSparse snapshots. A GPU precheck must succeed before training; failures retain their logs. Keep datasets, checkpoints, logs and generated receipts outside this code repository.
