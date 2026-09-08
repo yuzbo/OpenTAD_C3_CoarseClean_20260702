@@ -1461,3 +1461,7 @@ rejection and report their UID/values. PRECHECK must cover post-NMS serializatio
 not return immediately after model forward. No predictions or metric GT were
 opened by the failed first D160 seed-4407 cells; no method accuracy exists yet.
 Keep failed namespaces and retry only the corrected evaluation in new roots.
+
+The submitted replacement is 2a8639b6: D2S 1280308/1280309 and PA-TAD
+1280310/1280311, in separate 2a8639b6_r3 roots. The 34 remote regressions passed;
+do not duplicate these jobs or infer accuracy from PRECHECK/submission alone.

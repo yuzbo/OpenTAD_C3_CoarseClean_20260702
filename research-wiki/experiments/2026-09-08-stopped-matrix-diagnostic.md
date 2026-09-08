@@ -170,3 +170,29 @@ test preserves all four synthetic predictions, including three collapsed ones.
 The monitor is temporarily paused during repair to prevent duplicate submission.
 Original failed outputs and full-training weights remain untouched. Replacement
 GPU PRECHECK and diagnostic jobs must use a new immutable source/output root.
+
+## Serialization Repair Deployment, 2026-09-08
+
+- Pushed runtime commit: `2a8639b6650cf3b04d246fe1efc9380e913ec341`.
+- Immutable source: `/data/run01/sczc063/yuzibo/projects/zoomtoken_stopped_matrix_eval_2a8639b6_src`.
+- GitHub ref, remote HEAD and clean status verified through the required proxy;
+  `opentad/` and THUMOS model configurations are unchanged from training.
+- Remote production postprocessing/diagnostic/statistics regressions: 34 passed.
+- D2S PRECHECK 1280308 and evaluation 1280309 accepted by Slurm, with
+  `afterok:1280308` and cancellation if that dependency fails.
+- PA-TAD PRECHECK 1280310 and evaluation 1280311 accepted by Slurm, with
+  `afterok:1280310` and the same failure policy.
+- D2S output: `/data/run01/sczc063/yuzibo/projects/d2s_user_stop_diagnostic_20260908_2a8639b6_r3`.
+- PA-TAD output: `/data/run01/sczc063/yuzibo/projects/patad_user_stop_diagnostic_20260908_2a8639b6_r3`.
+- Requests remain one Slurm GPU/eight CPU cores per job, 30 minutes per PRECHECK
+  and eight hours per evaluation. No training restart or GPU-index override.
+- The same 30-minute monitor is ACTIVE and bound to these replacement jobs.
+
+Submission is not PRECHECK success or a final metric. New runtime admission must
+confirm `post_nms_serialization_checked: true` for each of the nine selected
+one-window PRECHECK witnesses. Full evaluation still requires every selected cell
+to finish all 211 videos/792 windows and publish the diagnostic result file.
+
+Post-submission Slurm snapshot: PRECHECK 1280308/1280310 are PENDING (Priority);
+evaluations 1280309/1280311 are PENDING (Dependency). No replacement GPU PRECHECK
+or evaluation has started at this snapshot. Queueing is not submission failure.

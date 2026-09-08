@@ -14,7 +14,8 @@ that all possible inputs or the full GPU evaluation are correct.
 
 Training source: `21aa2945b934a0dba469a517c224efe9b30d3967`.
 Failed evaluation source: `1f600f8fa9c696c0d476970b353a05f7e004a05f`.
-Active diagnostic source: `d34d51d29900532a399c5a1edc0f2563c5b3641c`.
+Subsequently failed diagnostic source: `d34d51d29900532a399c5a1edc0f2563c5b3641c`.
+Replacement diagnostic source: `2a8639b6650cf3b04d246fe1efc9380e913ec341`.
 All original checkpoints and receipts remain untouched. No training resumes.
 
 ## Confirmed Findings
@@ -221,3 +222,10 @@ prediction file. This closes a real verification gap in the previous PRECHECK.
 Local diagnostic/statistics/C3 regressions: 53 passed. New tests compare zero-
 duration false-positive AP against the unchanged official function. Preserve
 all old artifacts; only evaluation repair/redeployment is authorized.
+
+Replacement source 2a8639b6 is pushed and synchronized as an immutable clean
+remote worktree. Production postprocessing, diagnostic and statistics tests pass
+34/34 on remote CPU. Slurm accepted D2S PRECHECK/evaluation 1280308/1280309 and
+PA-TAD 1280310/1280311, with afterok dependencies and fresh 2a8639b6_r3 output
+roots. The existing 30-minute monitor now follows these jobs. Their submission
+does not constitute completed GPU admission or full-population metric evidence.

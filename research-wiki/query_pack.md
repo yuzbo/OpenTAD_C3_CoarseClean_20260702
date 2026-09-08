@@ -1558,6 +1558,9 @@ max_chars: 8000
   validation to the one-window PRECHECK. No final accuracy exists; evaluation-only
   repair uses fresh namespaces, never a training restart. See the same audit and
   `experiments/2026-09-08-stopped-matrix-diagnostic.md` for terminal/replacement records.
+  Repair 2a8639b6 is pushed/synchronized; 34 remote regressions pass. Replacement
+  PRECHECK/evaluation jobs are D2S 1280308/1280309 and PA-TAD 1280310/1280311,
+  submitted with afterok dependencies. The 30-minute monitor follows these jobs.
 - Correctness audit on 2026-09-08 found and fixed the diagnostic Slurm module
   initialization failure, task-local AP tie-order mismatch with the official
   evaluator, the original formal CLI's digest handoff, and inflated trainable-parameter reporting. Real selected checkpoint
