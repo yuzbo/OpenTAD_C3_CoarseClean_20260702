@@ -1,0 +1,659 @@
+{
+  "schema": "sci3_markdown_intake",
+  "created_date": "2026-09-08",
+  "source": "E:/下载/GeoSparse_TAD_Research_and_Agent_Commands_v3.md",
+  "source_status": "MARKDOWN_READ_MACHINE_PACKAGE_MISSING",
+  "note": "Local readable research intake, not the absent 805 run-request manifest; no scheduler submissions implied. Source task labels retained; local figure IDs are descriptive intake names.",
+  "training_model_commit": "b70ae056c495b43ca3f305fe438926b97b2723b5",
+  "runtime_protocol": "Existing full200/seed0/full211 EMA-best retained pending clarification",
+  "machine_requests": {
+    "reported_total": 805,
+    "verified_original_ids": 0,
+    "status": "MISSING_SOURCE_PACKAGE"
+  },
+  "tasks": [
+    {
+      "source_task_id": "A01",
+      "route": "A",
+      "title": "分类与定位收益分歧",
+      "hypothesis": "分类收益不能充分解释定位收益",
+      "controls": "同checkpoint、视频、候选操作与成本",
+      "metrics": "cls/reg signed gain、分歧比例",
+      "figure_ids": [
+        "V04_A_value_disagreement"
+      ],
+      "falsification": "两者一致且简单分类分数解释定位收益",
+      "evidence_status": "PENDING",
+      "implementation_status": "NEEDS_RESOLUTION",
+      "resolved_run_request_ids": []
+    },
+    {
+      "source_task_id": "A02",
+      "route": "A",
+      "title": "真实价值校准",
+      "hypothesis": "预测值可预测有符号addition或swap风险差",
+      "controls": "分开addition与swap；同模型；swap同parent等成本",
+      "metrics": "校准、符号准确率、排序相关性、regret",
+      "figure_ids": [
+        "V05_A_gain_calibration"
+      ],
+      "falsification": "不优于简单策略或无法预测收益符号",
+      "evidence_status": "PENDING",
+      "implementation_status": "NEEDS_RESOLUTION",
+      "resolved_run_request_ids": []
+    },
+    {
+      "source_task_id": "A03",
+      "route": "A",
+      "title": "计算位置与受益位置",
+      "hypothesis": "计算能改善非当地query的区间风险",
+      "controls": "同模型完整后续路径；仅改变操作",
+      "metrics": "operation-to-query风险差",
+      "figure_ids": [
+        "V06_A_influence"
+      ],
+      "falsification": "跨位置定位收益不稳定或不存在",
+      "evidence_status": "PENDING",
+      "implementation_status": "NEEDS_RESOLUTION",
+      "resolved_run_request_ids": []
+    },
+    {
+      "source_task_id": "A04",
+      "route": "A",
+      "title": "Router×Risk×CF",
+      "hypothesis": "区间风险及CF有可分离、可迁移收益",
+      "controls": "Scout/MoD × R0/R1 × CF off/on完整2×2×2；训练成本匹配",
+      "metrics": "官方mAP、定位切片、因子交互",
+      "figure_ids": [
+        "V07_A_factorial"
+      ],
+      "falsification": "R1单独解释全部收益或CF无独立价值",
+      "evidence_status": "PENDING",
+      "implementation_status": "NEEDS_RESOLUTION",
+      "resolved_run_request_ids": []
+    },
+    {
+      "source_task_id": "A05",
+      "route": "A",
+      "title": "廉价输入可预测性",
+      "hypothesis": "cheap观测能识别真实计算价值",
+      "controls": "冻结诊断划分；控制候选与模型；当前训练视频只能IN_SAMPLE",
+      "metrics": "regret、信息条件与真实收益",
+      "figure_ids": [
+        "V08_A_observability"
+      ],
+      "falsification": "收益存在但cheap输入不可预测",
+      "evidence_status": "PENDING",
+      "implementation_status": "NEEDS_RESOLUTION",
+      "resolved_run_request_ids": []
+    },
+    {
+      "source_task_id": "A06",
+      "route": "A",
+      "title": "一次与逐层规划",
+      "hypothesis": "一次规划有精度与开销的可解释取舍",
+      "controls": "相同TIA、parent、风险与实际成本",
+      "metrics": "token深度路径、mAP、路由延迟",
+      "figure_ids": [
+        "V03_pareto_latency"
+      ],
+      "falsification": "逐层规划全面解释收益且成本更优",
+      "evidence_status": "PENDING",
+      "implementation_status": "NEEDS_RESOLUTION",
+      "resolved_run_request_ids": []
+    },
+    {
+      "source_task_id": "A07",
+      "route": "A",
+      "title": "MoD/CoDA/LITE强近邻",
+      "hypothesis": "新增价值学习超越合理TAD适配",
+      "controls": "相同TIA、原生几何、预训练、TAD目标、实际成本",
+      "metrics": "mAP、高tIoU、延迟Pareto",
+      "figure_ids": [
+        "V02_pareto_macs"
+      ],
+      "falsification": "强已有范式解释全部改进",
+      "evidence_status": "PENDING",
+      "implementation_status": "NEEDS_RESOLUTION",
+      "resolved_run_request_ids": []
+    },
+    {
+      "source_task_id": "B01",
+      "route": "B",
+      "title": "Anchor/Hull/Union/Provenance",
+      "hypothesis": "来源表示超越完整时间编码基线",
+      "controls": "同一features和plan元数据干预；另做匹配训练",
+      "metrics": "mAP、扩张、bridge、miss",
+      "figure_ids": [
+        "V12_B_provenance"
+      ],
+      "falsification": "普通metadata-rich attention达到同等效果",
+      "evidence_status": "PENDING",
+      "implementation_status": "NEEDS_RESOLUTION",
+      "resolved_run_request_ids": []
+    },
+    {
+      "source_task_id": "B02",
+      "route": "B",
+      "title": "受控Heavy gap",
+      "hypothesis": "缺失Heavy证据产生系统定位风险",
+      "controls": "同视频与固定获取集合干预；记录实际成本",
+      "metrics": "gap/时长、召回、扩张、边界误差",
+      "figure_ids": [
+        "V09_B_gap"
+      ],
+      "falsification": "缺失程度与风险无稳定机制联系",
+      "evidence_status": "PENDING",
+      "implementation_status": "NEEDS_RESOLUTION",
+      "resolved_run_request_ids": []
+    },
+    {
+      "source_task_id": "B03",
+      "route": "B",
+      "title": "Receiver×Selector",
+      "hypothesis": "选择与接收各有独立贡献",
+      "controls": "固定evidence比较receiver；固定receiver比较selector",
+      "metrics": "二维mAP矩阵与交互",
+      "figure_ids": [
+        "V10_B_receiver_selector"
+      ],
+      "falsification": "效果仅由selector或接收容量解释",
+      "evidence_status": "PENDING",
+      "implementation_status": "NEEDS_RESOLUTION",
+      "resolved_run_request_ids": []
+    },
+    {
+      "source_task_id": "B04",
+      "route": "B",
+      "title": "同类动作粘连",
+      "hypothesis": "来源校准减少间隔误连接",
+      "controls": "所有同类相邻GT；完整预测；不得只选案例",
+      "metrics": "bridge rate、miss、GT/pred/support时间线",
+      "figure_ids": [
+        "V11_B_bridge"
+      ],
+      "falsification": "粘连减少来自漏检增加或缺乏总体改善",
+      "evidence_status": "PENDING",
+      "implementation_status": "NEEDS_RESOLUTION",
+      "resolved_run_request_ids": []
+    },
+    {
+      "source_task_id": "B05",
+      "route": "B",
+      "title": "槽数与容量",
+      "hypothesis": "收益不是仅增加evidence容量",
+      "controls": "精确slots/M/Q/receiver参数与成本配置",
+      "metrics": "mAP、延迟、VRAM、M/Q",
+      "figure_ids": [
+        "V13_B_slots_cost"
+      ],
+      "falsification": "容量或成本匹配后收益消失",
+      "evidence_status": "PENDING",
+      "implementation_status": "NEEDS_RESOLUTION",
+      "resolved_run_request_ids": []
+    },
+    {
+      "source_task_id": "B06",
+      "route": "B",
+      "title": "Cheap branch强度",
+      "hypothesis": "Heavy内容提供cheap-only之外的收益",
+      "controls": "cheap分支参数与计算匹配",
+      "metrics": "mAP、边界、成本",
+      "figure_ids": [
+        "V02_pareto_macs"
+      ],
+      "falsification": "增强cheap-only即可达到相同效果",
+      "evidence_status": "PENDING",
+      "implementation_status": "NEEDS_RESOLUTION",
+      "resolved_run_request_ids": []
+    },
+    {
+      "source_task_id": "B07",
+      "route": "B",
+      "title": "成熟粗细架构",
+      "hypothesis": "B超越合理粗细范式迁移",
+      "controls": "Coarse-Fine/LookupViT/TokenFuser相同信息与训练",
+      "metrics": "准确率与总延迟Pareto",
+      "figure_ids": [
+        "V03_pareto_latency"
+      ],
+      "falsification": "成熟方法在匹配条件下解释全部收益",
+      "evidence_status": "PENDING",
+      "implementation_status": "NEEDS_RESOLUTION",
+      "resolved_run_request_ids": []
+    },
+    {
+      "source_task_id": "C01",
+      "route": "C",
+      "title": "相似性与细化收益",
+      "hypothesis": "外观相似性不足以判断可共享计算",
+      "controls": "相同C执行器、候选组与真实fine/coarse反事实",
+      "metrics": "similarity/variance与signed gain、regret",
+      "figure_ids": [
+        "V14_C_similarity_gain"
+      ],
+      "falsification": "相似性可解释收益且任务监督无额外价值",
+      "evidence_status": "PENDING",
+      "implementation_status": "NEEDS_RESOLUTION",
+      "resolved_run_request_ids": []
+    },
+    {
+      "source_task_id": "C02",
+      "route": "C",
+      "title": "逐层时间近似误差",
+      "hypothesis": "时间误差变化关联实际定位错误",
+      "controls": "同内容同权重；层级dense/mixed对照",
+      "metrics": "e_t、delta e_t、边界漂移、miss",
+      "figure_ids": [
+        "V15_C_error_timeline"
+      ],
+      "falsification": "时间误差未解释真实定位失败",
+      "evidence_status": "PENDING",
+      "implementation_status": "NEEDS_RESOLUTION",
+      "resolved_run_request_ids": []
+    },
+    {
+      "source_task_id": "C03",
+      "route": "C",
+      "title": "尺度切换随机干预",
+      "hypothesis": "计算模式可引入有害假时间信号",
+      "controls": "匹配每parent成本、逐时间fine数与空间边际；多随机耦合",
+      "metrics": "配对边界变化及正常计划发生频率",
+      "figure_ids": [
+        "V16_C_switch_intervention"
+      ],
+      "falsification": "只在极端压力测试出现或控制后效应消失",
+      "evidence_status": "PENDING",
+      "implementation_status": "NEEDS_RESOLUTION",
+      "resolved_run_request_ids": []
+    },
+    {
+      "source_task_id": "C04",
+      "route": "C",
+      "title": "真实粗细分配",
+      "hypothesis": "细化被分给高收益区域",
+      "controls": "固定案例抽样；当前160px应为5×5组",
+      "metrics": "原视频/mask/GT/pred/真实gain",
+      "figure_ids": [
+        "V17_C_coarsefine"
+      ],
+      "falsification": "漂亮mask不对应收益或只靠挑例子",
+      "evidence_status": "PENDING",
+      "implementation_status": "NEEDS_RESOLUTION",
+      "resolved_run_request_ids": []
+    },
+    {
+      "source_task_id": "C05",
+      "route": "C",
+      "title": "Utility×Calibration",
+      "hypothesis": "价值学习与coarse校准有独立收益",
+      "controls": "完整因子；ToMeSD同样获得affine；额外训练成本单列",
+      "metrics": "mAP、风险、交互、训练成本",
+      "figure_ids": [
+        "V18_C_shared_update"
+      ],
+      "falsification": "通用affine解释全部提升或utility无效",
+      "evidence_status": "PENDING",
+      "implementation_status": "NEEDS_RESOLUTION",
+      "resolved_run_request_ids": []
+    },
+    {
+      "source_task_id": "C06",
+      "route": "C",
+      "title": "回写与粒度极限",
+      "hypothesis": "共享更新执行与核算符合定义",
+      "controls": "同权重all-fine源极限；all-coarse非零；广播/覆盖分开",
+      "metrics": "输出、梯度、实际Heavy计数",
+      "figure_ids": [
+        "V20_system_cost"
+      ],
+      "falsification": "数值/梯度极限或成本不成立",
+      "evidence_status": "PENDING",
+      "implementation_status": "NEEDS_RESOLUTION",
+      "resolved_run_request_ids": []
+    },
+    {
+      "source_task_id": "C07",
+      "route": "C",
+      "title": "强merging对照",
+      "hypothesis": "C超越成熟共享更新范式",
+      "controls": "MSViT、ToMeSD attention及attention+MLP、ALGM等匹配训练",
+      "metrics": "mAP、定位、总成本Pareto",
+      "figure_ids": [
+        "V02_pareto_macs"
+      ],
+      "falsification": "强合并方法解释全部收益",
+      "evidence_status": "PENDING",
+      "implementation_status": "NEEDS_RESOLUTION",
+      "resolved_run_request_ids": []
+    },
+    {
+      "source_task_id": "X00",
+      "route": "X",
+      "title": "源码数据与正确性",
+      "hypothesis": "生产协议与真实执行一致",
+      "controls": "固定官方基座；native mask/PTS/TIA；版本可追溯",
+      "metrics": "实际前向、梯度、完整数据覆盖",
+      "figure_ids": [
+        "V20_system_cost"
+      ],
+      "falsification": "任一生产语义不一致需修复对应项",
+      "evidence_status": "PENDING",
+      "implementation_status": "NEEDS_RESOLUTION",
+      "resolved_run_request_ids": []
+    },
+    {
+      "source_task_id": "X01",
+      "route": "X",
+      "title": "问题存在",
+      "hypothesis": "研究误差在真实数据中有足够发生频率",
+      "controls": "预先定义抽样、包含失败和无差异案例",
+      "metrics": "总体频率与真实时间线",
+      "figure_ids": [
+        "V01_problem"
+      ],
+      "falsification": "只存在精挑或合成案例",
+      "evidence_status": "PENDING",
+      "implementation_status": "NEEDS_RESOLUTION",
+      "resolved_run_request_ids": []
+    },
+    {
+      "source_task_id": "X02",
+      "route": "X",
+      "title": "主结果与匹配成本",
+      "hypothesis": "新增机制有独立准确率收益",
+      "controls": "同训练条件、匹配实际MAC；固定checkpoint配对",
+      "metrics": "官方mAP、视频bootstrap、成本",
+      "figure_ids": [
+        "V02_pareto_macs"
+      ],
+      "falsification": "收益被成本、监督或训练量解释",
+      "evidence_status": "PENDING",
+      "implementation_status": "NEEDS_RESOLUTION",
+      "resolved_run_request_ids": []
+    },
+    {
+      "source_task_id": "X03",
+      "route": "X",
+      "title": "风险切片",
+      "hypothesis": "收益覆盖短动作与高tIoU",
+      "controls": "训练标注冻结时长定义；完整GT分母",
+      "metrics": "short recall、start/end、miss、high-tIoU",
+      "figure_ids": [
+        "V19_risk_slices"
+      ],
+      "falsification": "仅matched误差改善而漏检增加",
+      "evidence_status": "PENDING",
+      "implementation_status": "NEEDS_RESOLUTION",
+      "resolved_run_request_ids": []
+    },
+    {
+      "source_task_id": "X04",
+      "route": "X",
+      "title": "动态预算",
+      "hypothesis": "内容相关预算优于固定或打乱K",
+      "controls": "实际成本匹配；只打乱K；同模型重选位置",
+      "metrics": "K直方图、每parent容量、MAC、mAP",
+      "figure_ids": [
+        "V21_budget_train_transfer"
+      ],
+      "falsification": "预算塌缩、超标或打乱后无差异",
+      "evidence_status": "PENDING",
+      "implementation_status": "NEEDS_RESOLUTION",
+      "resolved_run_request_ids": []
+    },
+    {
+      "source_task_id": "X05",
+      "route": "X",
+      "title": "额外训练成本",
+      "hypothesis": "价值监督收益不是多算训练造成",
+      "controls": "记录额外forward、成功更新数、GPU时间",
+      "metrics": "训练成本与性能",
+      "figure_ids": [
+        "V21_budget_train_transfer"
+      ],
+      "falsification": "等训练成本下额外监督无收益",
+      "evidence_status": "PENDING",
+      "implementation_status": "NEEDS_RESOLUTION",
+      "resolved_run_request_ids": []
+    },
+    {
+      "source_task_id": "X06",
+      "route": "X",
+      "title": "迁移",
+      "hypothesis": "研究原则可跨数据或骨干迁移",
+      "controls": "精确资产、协议、初始化；不据test调参",
+      "metrics": "官方mAP、风险、成本",
+      "figure_ids": [
+        "V21_budget_train_transfer"
+      ],
+      "falsification": "收益仅限单一配置",
+      "evidence_status": "PENDING",
+      "implementation_status": "NEEDS_RESOLUTION",
+      "resolved_run_request_ids": []
+    },
+    {
+      "source_task_id": "X07",
+      "route": "X",
+      "title": "硬件",
+      "hypothesis": "理论稀疏能兑现部署价值",
+      "controls": "同GPU及权重、同步计时、隔离；测量边界一致",
+      "metrics": "p50/p95、吞吐、VRAM、模块成本",
+      "figure_ids": [
+        "V03_pareto_latency"
+      ],
+      "falsification": "总延迟或吞吐没有收益",
+      "evidence_status": "PENDING",
+      "implementation_status": "NEEDS_RESOLUTION",
+      "resolved_run_request_ids": []
+    },
+    {
+      "source_task_id": "X08",
+      "route": "X",
+      "title": "失败与主张",
+      "hypothesis": "论文结论受完整证据约束",
+      "controls": "保留负结果、失败、未完成与资产阻塞",
+      "metrics": "claim→experiment→run→figure→raw evidence",
+      "figure_ids": [
+        "V22_failures"
+      ],
+      "falsification": "主张缺完整可追溯证据",
+      "evidence_status": "PENDING",
+      "implementation_status": "NEEDS_RESOLUTION",
+      "resolved_run_request_ids": []
+    }
+  ],
+  "figures": [
+    {
+      "figure_id": "V01_problem",
+      "source_tasks": [
+        "X01"
+      ],
+      "status": "PENDING"
+    },
+    {
+      "figure_id": "V02_pareto_macs",
+      "source_tasks": [
+        "X02"
+      ],
+      "status": "PENDING"
+    },
+    {
+      "figure_id": "V03_pareto_latency",
+      "source_tasks": [
+        "X07"
+      ],
+      "status": "PENDING"
+    },
+    {
+      "figure_id": "V04_A_value_disagreement",
+      "source_tasks": [
+        "A01"
+      ],
+      "status": "PENDING"
+    },
+    {
+      "figure_id": "V05_A_gain_calibration",
+      "source_tasks": [
+        "A02"
+      ],
+      "status": "PENDING"
+    },
+    {
+      "figure_id": "V06_A_influence",
+      "source_tasks": [
+        "A03"
+      ],
+      "status": "PENDING"
+    },
+    {
+      "figure_id": "V07_A_factorial",
+      "source_tasks": [
+        "A04"
+      ],
+      "status": "PENDING"
+    },
+    {
+      "figure_id": "V08_A_observability",
+      "source_tasks": [
+        "A05"
+      ],
+      "status": "PENDING"
+    },
+    {
+      "figure_id": "V09_B_gap",
+      "source_tasks": [
+        "B02"
+      ],
+      "status": "PENDING"
+    },
+    {
+      "figure_id": "V10_B_receiver_selector",
+      "source_tasks": [
+        "B03"
+      ],
+      "status": "PENDING"
+    },
+    {
+      "figure_id": "V11_B_bridge",
+      "source_tasks": [
+        "B04"
+      ],
+      "status": "PENDING"
+    },
+    {
+      "figure_id": "V12_B_provenance",
+      "source_tasks": [
+        "B01"
+      ],
+      "status": "PENDING"
+    },
+    {
+      "figure_id": "V13_B_slots_cost",
+      "source_tasks": [
+        "B05"
+      ],
+      "status": "PENDING"
+    },
+    {
+      "figure_id": "V14_C_similarity_gain",
+      "source_tasks": [
+        "C01"
+      ],
+      "status": "PENDING"
+    },
+    {
+      "figure_id": "V15_C_error_timeline",
+      "source_tasks": [
+        "C02"
+      ],
+      "status": "PENDING"
+    },
+    {
+      "figure_id": "V16_C_switch_intervention",
+      "source_tasks": [
+        "C03"
+      ],
+      "status": "PENDING"
+    },
+    {
+      "figure_id": "V17_C_coarsefine",
+      "source_tasks": [
+        "C04"
+      ],
+      "status": "PENDING"
+    },
+    {
+      "figure_id": "V18_C_shared_update",
+      "source_tasks": [
+        "C05"
+      ],
+      "status": "PENDING"
+    },
+    {
+      "figure_id": "V19_risk_slices",
+      "source_tasks": [
+        "X03"
+      ],
+      "status": "PENDING"
+    },
+    {
+      "figure_id": "V20_system_cost",
+      "source_tasks": [
+        "X07"
+      ],
+      "status": "PENDING"
+    },
+    {
+      "figure_id": "V21_budget_train_transfer",
+      "source_tasks": [
+        "X04",
+        "X05",
+        "X06"
+      ],
+      "status": "PENDING"
+    },
+    {
+      "figure_id": "V22_failures",
+      "source_tasks": [
+        "X08"
+      ],
+      "status": "PENDING"
+    }
+  ],
+  "tables": [
+    {
+      "table_id": "T1_main_pareto",
+      "status": "PENDING"
+    },
+    {
+      "table_id": "T2_architecture_tax",
+      "status": "PENDING"
+    },
+    {
+      "table_id": "T3_closest_prior_controls",
+      "status": "PENDING"
+    },
+    {
+      "table_id": "T4_value_estimators",
+      "status": "PENDING"
+    },
+    {
+      "table_id": "T5_robustness",
+      "status": "PENDING"
+    },
+    {
+      "table_id": "T6_claim_ledger",
+      "status": "PENDING"
+    }
+  ],
+  "figure_artifacts": [
+    "data.csv or data.json",
+    "plot.py",
+    "figure.svg",
+    "figure.pdf",
+    "figure.png",
+    "caption.md",
+    "receipt.json"
+  ]
+}

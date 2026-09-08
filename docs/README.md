@@ -7,7 +7,7 @@ out_of_scope: 远端实时状态、原始结果、官方 OpenTAD 文档替换
 
 # GeoSparse 研究文档
 
-现行训练模型 M 为 b70ae056c495b43ca3f305fe438926b97b2723b5。本审查分支新增的研究文档不改变 M、已提交作业或它们的结果身份。
+现行训练模型 M 为 b70ae056c495b43ca3f305fe438926b97b2723b5。本分支新增的研究文档和独立研究数据生产接口不改变 M、已提交训练作业或它们的结果身份。
 
 - [论文定位与本次修订](project/paper-plan.md)：同一研究原则、三个执行器，明确贡献假设和无结果摘要。
 - [A 与公共价值定义](methods/localization-value-routing.md)：拟新增风险与 swap、操作范围和成本。
@@ -18,6 +18,7 @@ out_of_scope: 远端实时状态、原始结果、官方 OpenTAD 文档替换
 - [B/C/LITE 比较及四张新图](evaluation/bc-lite-comparison-plan.md)：同 evidence 控制、强合并/价值代理、数据生产缺项；属于设计，不是已提交任务。
 - [四张证据图规格](evaluation/localization-value-figures.md)：需要什么数据、画什么、能够支持什么结论。
 - [动态预算执行核查](evaluation/dynamic-budget-audit.md)：已有软成本损失、验证argmax缺口、冻结EMA逐窗预算测量与结果解释边界。
+- [SCI3 v3 接入](evaluation/sci3-integration.md)及[研究工单台账](evaluation/sci3-intake.json)：30项问题、22图、6表、协议差异与第一批真实配对/统计接口；缺少原始机器包，不能称805请求已解析或已提交。
 - [Pro 严格复审 Prompt](project/pro-review-localization-value.md)：供后续授权讨论使用；生成 Prompt 不代表已经咨询。
 - [训练协议与 I01–I15 修订](GEOSPARSE_AUDIT_REPAIR.zh.md)及[原审计复核 Prompt](PRO_REVIEW_AUDIT_REPAIR_PROMPT.zh.md)。
 - [外部执行代码说明](../review/audit_repair_execution/README.zh.md)。
