@@ -1,5 +1,7 @@
 # GeoSparse on official AdaTAD
 
+User-authorized 2026-09-08 batch32-to16 hardware supplement: read docs/evaluation/batch16-benchmark-amendment.md. This branch changes measurement only. Run geosparse_research/batch16_benchmark.py as a file to import the original benchmark's frozen M model. Measure onlybatch16 reference/optimized with original50/200 sampling and boundaries; preserve originalbatch1/8 andbatch32 OOM. Do not run this branch's generic entry as a new model or overwrite the original run. Real batch16 GPU output equivalence precedes formal timing. Record submission outside the repository and preserve primary-training resource priority.
+
 The base is official sming256/OpenTAD commit 346d09d19e2091372cec48172dbe40f7b28bdee6. Keep `opentad/`, the inherited model/dataset configs, and original train/test entry points unchanged. Implement research routes in `geosparse_ext/` and focused tests.
 
 User-mandated protocol: all 200 THUMOS training videos; all 211 official test videos / 792 test windows at every formal validation; no internal training holdout. Official defaults are 768 input frames, 160px, 768 detector grid, global batch 2, warm-up 5, cosine horizon 100, training end epoch 60. Run seed 0 first. Checkpoint selection uses full-test EMA mAP every 5 epochs and must retain full predictions and provenance.

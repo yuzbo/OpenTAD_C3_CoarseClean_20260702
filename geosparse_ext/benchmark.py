@@ -57,13 +57,22 @@ def batch_at(dataset, indices, step, size):
     return collate([dataset[indices[(step * size + i) % len(indices)]] for i in range(size)])
 
 
+def validate_benchmark_protocol(job):
+    amendment = job.get("benchmark_amendment")
+    if amendment not in {None, "batch32-to16-20260908"}:
+        raise ValueError("unregistered benchmark amendment")
+    expected = [16] if amendment else [1, 8, 32]
+    if not job["exclusive"] or job["batches"] != expected or job["warmup"] != 50 or job["repeats"] != 200:
+        raise ValueError(f"benchmark differs from registered batches={expected}, isolated 50/200 protocol")
+    if job["modes"] != ["device_model", "decoded_tensor_to_output", "encoded_video_to_output"] or job["implementation_pairs"] != ["reference", "optimized"]:
+        raise ValueError("unregistered benchmark boundary or implementation")
+    return 16 if amendment else 1
+
+
 @torch.no_grad()
 def benchmark(job, cfg, output, provenance, runtime, split):
     require_gpu()
-    if not job["exclusive"] or job["batches"] != [1, 8, 32] or job["warmup"] != 50 or job["repeats"] != 200:
-        raise ValueError("benchmark differs from the registered isolated 1/8/32, 50/200 protocol")
-    if job["modes"] != ["device_model", "decoded_tensor_to_output", "encoded_video_to_output"] or job["implementation_pairs"] != ["reference", "optimized"]:
-        raise ValueError("unregistered benchmark boundary or implementation")
+    probe_batch = validate_benchmark_protocol(job)
     seed_all(job["seed"])
     model = load_trained_model(job, cfg, output, provenance)
     dataset = build_dataset(copy.deepcopy(cfg.dataset.test))
@@ -75,7 +84,8 @@ def benchmark(job, cfg, output, provenance, runtime, split):
     summary = dict(job_id=job["job_id"], units="batch of 768-position windows", videos=names,
         source_train_id=job["source_train_id"], selected_checkpoint_epoch=model.epoch,
         checkpoint_identity=model.checkpoint_identity, gpu_identity=allocated_cuda_device(),
-        dataset_window_indices=indices,
+        dataset_window_indices=indices, batches=job["batches"],
+        benchmark_amendment=job.get("benchmark_amendment"),
         slurm_job_gpus=os.environ["SLURM_JOB_GPUS"], cuda_visible_devices=os.environ["CUDA_VISIBLE_DEVICES"],
         warmup=job["warmup"], repeats=job["repeats"], torch=torch.__version__, cuda=torch.version.cuda,
         precision="fp16_autocast" if cfg.solver.amp else "fp32", num_decode_workers=0,
@@ -87,7 +97,7 @@ def benchmark(job, cfg, output, provenance, runtime, split):
     encoder = model.geosparse.encoder
     # Compare the same trained model and deterministic evidence plan before timing.
     if encoder is not None and encoder.route != "DENSE":
-        probe = batch_at(dataset, indices, 0, 1)
+        probe = batch_at(dataset, indices, 0, probe_batch)
         with torch.cuda.amp.autocast(enabled=cfg.solver.amp):
             encoder.implementation = "reference"
             reference = model.forward_test(**probe)
@@ -99,6 +109,11 @@ def benchmark(job, cfg, output, provenance, runtime, split):
         summary["same_plan_output_check"] = "PASS"
     else:
         summary["same_plan_output_check"] = "same dense/cheap execution for both labels"
+    if job.get("benchmark_amendment"):
+        save_json(output / "precheck.json", dict(status="PASS", batch=probe_batch,
+            same_plan_output_check=summary["same_plan_output_check"],
+            checkpoint_identity=model.checkpoint_identity, gpu_identity=summary["gpu_identity"],
+            is_scientific_result=False))
     with open(output / "timings.jsonl", "w", buffering=1) as raw:
         for implementation in job["implementation_pairs"]:
             if encoder is not None:
