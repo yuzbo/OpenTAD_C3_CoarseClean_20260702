@@ -1,0 +1,250 @@
+{
+  "heartbeat_trigger_utc": "2026-09-08T04:25:32.886Z",
+  "heartbeat_trigger_cst": "2026-09-08 12:25:32.886 CST",
+  "heartbeat_label": "12:25",
+  "remote_sampling_window_cst": "2026-09-08 12:27:18-12:27:25 CST",
+  "scope": "Read-only monitoring and catalog publication, not new model or scientific acceptance. Unexecuted or partially completed historical triggers are not backfilled as complete checks.",
+  "ct_training": {
+    "checked_at_cst": "2026-09-08 12:27 CST",
+    "training_sha": "fe1c53db1b2a7e467a6af2eccfe8b7636f667a81",
+    "remote_source": "/data/run01/sczc063/yuzibo/projects/ctdp_coordinate_fe1c53db",
+    "clean_tree": true,
+    "G0": {
+      "job": "1278011",
+      "state": "RUNNING",
+      "started_at_cst": "2026-09-08 02:53:59 CST",
+      "elapsed": "09:33:19",
+      "audit_epoch": 53,
+      "audit_mtime_cst": "2026-09-08 12:21:05.126091 CST",
+      "successful_optimizer_updates": 5400,
+      "scheduler_updates": 5400,
+      "ema_updates": 5400,
+      "optimizer_attempts": 5403,
+      "amp_skipped_attempts": 3,
+      "max_amp_retries_observed": 1,
+      "epoch59_checkpoint_exists": false,
+      "latest_training_epoch": 54,
+      "latest_training_batch": 50,
+      "latest_training_loss": 0.4269,
+      "latest_training_at_cst": "2026-09-08 12:24:38 CST",
+      "evaluation_progress": "Previous epoch53 evaluation completed; epoch54 training in progress.",
+      "audit": "/data/run01/sczc063/yuzibo/experiments/ctdp_coordinate_fe1c53db/formal/duca_ctdp_geometry_g0_seed3407/gpu1_id0/ctdp_training_audit.json",
+      "stdout": "/data/run01/sczc063/yuzibo/slurm_logs/ctdp-g0-fe1c53db_1278011.out",
+      "stderr": "/data/run01/sczc063/yuzibo/slurm_logs/ctdp-g0-fe1c53db_1278011.err"
+    },
+    "G1": {
+      "job": "1278012",
+      "state": "RUNNING",
+      "started_at_cst": "2026-09-08 02:54:29 CST",
+      "elapsed": "09:32:49",
+      "audit_epoch": 54,
+      "audit_mtime_cst": "2026-09-08 12:07:30.209241 CST",
+      "successful_optimizer_updates": 5500,
+      "scheduler_updates": 5500,
+      "ema_updates": 5500,
+      "optimizer_attempts": 5503,
+      "amp_skipped_attempts": 3,
+      "max_amp_retries_observed": 1,
+      "epoch59_checkpoint_exists": false,
+      "latest_training_epoch": 55,
+      "latest_training_batch": 99,
+      "latest_training_loss": 0.4402,
+      "latest_training_at_cst": "2026-09-08 12:14:16 CST",
+      "evaluation_progress": "226 iterations at13:13 elapsed; scheduled epoch55 evaluation in progress.",
+      "audit": "/data/run01/sczc063/yuzibo/experiments/ctdp_coordinate_fe1c53db/formal/duca_ctdp_geometry_g1_seed3407/gpu1_id0/ctdp_training_audit.json",
+      "stdout": "/data/run01/sczc063/yuzibo/slurm_logs/ctdp-g1-fe1c53db_1278012.out",
+      "stderr": "/data/run01/sczc063/yuzibo/slurm_logs/ctdp-g1-fe1c53db_1278012.err"
+    },
+    "completion_estimate": {
+      "basis": "About6-7min training per epoch plus26min evaluation every TWO epochs; about39-40min per pair, not33min for every epoch.",
+      "G0_training_end_cst": "2026-09-08 14:10-14:45 CST",
+      "G1_training_end_cst": "2026-09-08 13:50-14:20 CST",
+      "independent_evaluation": "30-60min additional, plus unbounded queue delay; no guaranteed completion deadline."
+    },
+    "qualification": "Audit written after scheduled evaluation. Batch99 and intermediate mAP do not substitute for terminal epoch59/6000 evidence.",
+    "new_fatal_errors": [],
+    "inspection_scope": "Latest stdout training/update lines and stderr progress; no new failure event in registered running jobs."
+  },
+  "coordinate_evaluator": {
+    "sha": "073832744dd171dee4119dc29d1bb12a057e84f4",
+    "remote_source": "/data/run01/sczc063/yuzibo/projects/ctdp_coordinate_eval_07383274",
+    "clean_tree": true,
+    "identity_observed_at_cst": "2026-09-08 12:27 CST",
+    "precheck_job": "1278042",
+    "precheck_state": "COMPLETED(0:0); reused09:33 verification",
+    "reused_evidence": "19_HEARTBEAT_EVIDENCE_20260908_0931.json",
+    "qualification": "Already passed exact-SHA Linux tests,31 GPU tests and four one-batch PRECHECKs; no repeated tests or model/config comparison.",
+    "formal_evaluation_jobs": [],
+    "next_action": "Wait for each newG0/G1 terminal epoch59 EMA and actual6000 before independent evaluation in07383274 namespace."
+  },
+  "unchanged_terminal_metrics": {
+    "observed_at_cst": "2026-09-08 12:27 CST",
+    "metric_scale": "fraction_0_to_1",
+    "H65": {
+      "average_mAP": [
+        0.6338540623028592,
+        0.6422653640360945,
+        0.6036478160171815,
+        0.6070129227677766,
+        0.640886229714488,
+        0.6381814163848895
+      ],
+      "receipt_root": "/data/run01/sczc063/yuzibo/experiments/h65_pro_eval_67c8f39f_f2068e18",
+      "receipt_mtime_range_cst": "2026-09-04 14:37-14:42 CST; unchanged",
+      "qualification": "F01-F06 phase-off; TIA and matched controls unresolved.",
+      "receipt_mtimes_cst": [
+        "2026-09-04 14:41:27.103217 CST",
+        "2026-09-04 14:42:50.032457 CST",
+        "2026-09-04 14:42:53.927903 CST",
+        "2026-09-04 14:42:49.991315 CST",
+        "2026-09-04 14:42:49.290056 CST",
+        "2026-09-04 14:37:59.101743 CST"
+      ]
+    },
+    "ET": {
+      "OFF": 0.6207677503328417,
+      "ON": 0.5480958031537403,
+      "receipt_root": "/data/run01/sczc063/yuzibo/experiments/ettrc_terminal_eval_67d7079d/formal",
+      "receipt_mtimes_cst": {
+        "OFF": "2026-09-07 13:29:55.149656830 CST",
+        "ON": "2026-09-07 13:25:30.382906575 CST"
+      },
+      "qualification": "Original fixed-anchor learned low-rank proxy result; anchor correction and actual precision audit unresolved."
+    },
+    "reuse_scope": "Small receipts and mtimes read; prior self-hash and large checkpoint verification reused. No new inference."
+  },
+  "evidence_recovery": {
+    "observed_at_cst": "2026-09-08 12:27 CST",
+    "source_sha": "ce767b4df49a82b42f4fab4897ac4ea562e4b548",
+    "jobs": {
+      "1277406_2": "COMPLETED(0:0)",
+      "1277407_7": "COMPLETED(0:0)",
+      "1277768_1": "COMPLETED(0:0)",
+      "1277953_2": "COMPLETED(0:0)"
+    },
+    "log_root": "/data/run01/sczc063/yuzibo/experiments/duca_evidence_storage_resume_ce767b4d/slurm_logs",
+    "terminal_log_markers": {
+      "A1": "Training Over at2026-09-08 00:19:57 CST",
+      "A6": "Training Over at2026-09-08 02:19:36 CST",
+      "F": "Training Over at2026-09-08 03:28:40 CST",
+      "A1_eval": "Testing Over at2026-09-08 00:42:09 CST"
+    },
+    "A1": {
+      "receipt": "/data/run01/sczc063/yuzibo/experiments/duca_evidence_storage_resume_ce767b4d/evaluation/A1/seed_8261/gpu1_id0/official_eval/metrics.json",
+      "metric_field": "metrics.average_mAP",
+      "average_mAP": 0.5159681679375281,
+      "mtime_cst": "2026-09-08 00:42:09.717933 CST",
+      "value_and_mtime_verified_at_cst": "2026-09-08 12:27 CST"
+    },
+    "missing_receipts": [
+      "A6",
+      "F"
+    ],
+    "new_fatal_errors": [],
+    "qualification": "04:30 actual terminal/cross-SHA verification reused. Utility and real robust/cycle remain missing; old weights are not e0c88c9a initializer-repair results."
+  },
+  "bafdr": {
+    "observed_at_cst": "2026-09-08 12:27 CST",
+    "training_sha": "710ce8a6246c471742c83bf7c180d9ab87c36fac",
+    "jobs": {
+      "1276842": "COMPLETED(0:0)",
+      "1276843": "COMPLETED(0:0)",
+      "1277954": "COMPLETED(0:0)",
+      "1277955": "COMPLETED(0:0); FULL PRECHECK only"
+    },
+    "log_root": "/data/run01/sczc063/yuzibo/experiments/bafdr_successful_updates_710ce8a6/slurm_logs",
+    "terminal_log_markers": {
+      "U16": "epoch_59.pth at update6000,00:17:26 CST",
+      "LATE": "epoch_59.pth at update6000,00:14:25 CST",
+      "NOKD": "epoch_59.pth at update6000,03:28:06 CST",
+      "FULL_precheck": "BAFDR_SUCCESSFUL_UPDATE_PRECHECKS_OK"
+    },
+    "metrics_json_files": [],
+    "new_fatal_errors": [],
+    "qualification": "04:28 actual terminal checkpoint validation reused. Padding and real screen validation unresolved. FULL formal/21-cell not released; historical1267920/1267921 untouched."
+  },
+  "unified": {
+    "status": "BLOCKED_UNIMPLEMENTED",
+    "local_head": "793c4f9cdf7dac4f224bc73012aff8bc93949f87",
+    "local_clean_tree": true,
+    "reason": "RealP0/P1 training, legal one-swap and H65 retention/transition remain unimplemented; unchanged code, no repeated full-code audit."
+  },
+  "local_identity": {
+    "scope": "Catalog generator refreshes all registered local directories before publication; consistency verification checks the six active identities and clean trees. No repeated full-code audit.",
+    "H65": {
+      "head": "aac9df0fd896edf9bf440a123e0424bb641df012",
+      "clean_tree": true
+    },
+    "Evidence": {
+      "head": "e0c88c9a9e2582878c88bb2c728891ea5413bc77",
+      "clean_tree": true
+    },
+    "BAFDR": {
+      "head": "710ce8a6246c471742c83bf7c180d9ab87c36fac",
+      "clean_tree": true
+    },
+    "ET": {
+      "head": "67d7079d0d1c33e129d31cd3a45aaf93a67db252",
+      "clean_tree": true
+    },
+    "Unified": {
+      "head": "793c4f9cdf7dac4f224bc73012aff8bc93949f87",
+      "clean_tree": true
+    },
+    "CT": {
+      "head": "fe1c53db1b2a7e467a6af2eccfe8b7636f667a81",
+      "clean_tree": true
+    }
+  },
+  "resources": {
+    "gpu_and_disk_checked_at_cst": "2026-09-08 12:27:25 CST",
+    "queue_checked_at_cst": "2026-09-08 12:27:25 CST",
+    "eligible_gpu_nodes": 25,
+    "configured_gpus": 200,
+    "allocated_gpus": 173,
+    "unallocated_gpus": 27,
+    "user_running_jobs": 7,
+    "user_pending_jobs": 1,
+    "user_job_ids": [
+      "1278774",
+      "1279118",
+      "1279087",
+      "1278012",
+      "1278011",
+      "1276621",
+      "1276622",
+      "1274508"
+    ],
+    "unowned_pending_job": {
+      "job": "1278774",
+      "reason": "JobHeldUser",
+      "action": "Not a registered six-route job; hold not changed."
+    },
+    "disk_available": "209G",
+    "disk_use": "97%",
+    "qualification": "Public GPU/free-space values do not prove account quota/submission capacity; check again before submission."
+  },
+  "minute_supervisor": {
+    "observed_at_cst": "2026-09-08 12:27:25 CST",
+    "checked_at_utc": "2026-09-08T04:26:54+00:00",
+    "age_seconds": 31,
+    "status": "ACTIVE_READ_ONLY_POLLING",
+    "dispatcher_mode": "plan",
+    "dispatcher_status": "BLOCKED",
+    "entries": 0,
+    "receipt": "/data/run01/sczc063/yuzibo/projects/duca_multibranch_supervisor_recovery_20260907/latest_receipt.json",
+    "qualification": "Nested dispatcher fields read directly; fresh read-only polling is not automatic submission."
+  },
+  "baseline_note": "Original-recipe1245842 log68.73% remains previously verified historical log, pending provenance and independent reevaluation. Modified REF-D76867.58% cannot substitute.",
+  "actions": {
+    "new_slurm_jobs": [],
+    "cancelled_slurm_jobs": [],
+    "new_model_code_changes": [],
+    "large_checkpoint_loads": 0,
+    "repeated_admissions": 0,
+    "pro_consultation_performed": false,
+    "historical_bafdr_modified": false
+  },
+  "inspection_note": "Direct SSH sampling read registered stdout/stderr, small receipts, exact Evidence metrics.average_mAP, expanded queue and nested dispatcher fields. No new fatal events or terminal checkpoints; prior acceptance evidence reused only for unchanged artifacts."
+}
+

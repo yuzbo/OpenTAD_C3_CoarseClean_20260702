@@ -1,6 +1,6 @@
 {
   "schema_version": "DUCA-EXPERIMENT-CATALOG-v001",
-  "last_updated_utc": "2026-09-08T03:52:59+00:00",
+  "last_updated_utc": "2026-09-08T04:31:15+00:00",
   "scope": "所有当前 DUCA/ZoomToken 代码实验及其独立修正路线；旧远端作业另列为不纳入结果",
   "repository": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702",
   "entries": [
@@ -100,7 +100,7 @@
       "internal_id": "H65_PRO_ACTIVE",
       "scientific_audit": "2026-09-08核验：F01-F06全部phase=False；F02的+0.34与参考臂optimizer组不同，不能作纯Taylor收益。REF-D768的TIA按8个tubelets聚合，而固定官方源码按整窗384聚合，存在模型差异，不只是训练配方差异。aac9df0f仅修复生成器遗漏optimizer组和禁用中间选模字段，未修复TIA布局或补跑匹配控制。详见15_PRO_AUDIT_REPAIR_STATUS_20260908.md",
       "receipt_recheck": "2026-09-08 06:39 CST：六份F01-F06 metrics JSON的evaluation_sha256逐份复算一致，f2068e18训练/67c8f39f评测身份及六个epoch59 EMA文件存在性已复核；六份Avg-mAP不变。未重复加载已认证的大权重或重新推理，四相仍未开启，TIA及匹配控制仍待修复",
-      "current_cycle": "2026-09-08 11:45 CST：六份F臂小收据mtime与数值未变，最高64.2265%；复用既有自哈希及终态身份验证，不重复大权重加载或推理。F01-F06仍phase-off，TIA与匹配控制未修。官方原配方1245842的68.73%仍是此前日志值，预训练/数据身份和独立复评待补，修改REF不能替代官方锚点",
+      "current_cycle": "2026-09-08 12:27 CST：六份F臂小收据mtime与数值未变，最高64.2265%；复用既有自哈希及终态身份验证，不重复大权重加载或推理。F01-F06仍phase-off，TIA与匹配控制未修。官方原配方1245842的68.73%仍是此前日志值，预训练/数据身份和独立复评待补，修改REF不能替代官方锚点",
       "branch": "codex/h65-pro-admission-fix-20260902（参考臂） + codex/h65-pro-physical-time-optimizer-repair-20260904（F 臂）",
       "sha": "e553a5a4a1063a755900d3dfa4bf8909bf97d466（参考臂） / f2068e18e2c68bdbdd7a607b47f32d05ac3beed7（F 臂）",
       "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/f2068e18e2c68bdbdd7a607b47f32d05ac3beed7",
@@ -128,7 +128,7 @@
       "name": "CT-DP 当前几何四臂：均匀选择、动态选择、物理网格及 CT-Tubelet（均未启用 B-AMoD）",
       "internal_id": "CT_DP_BAMOD_ACTIVE",
       "scientific_audit": "78cde1be的G0/G1确有dense GT与selected检测点错域。fe1c53db已按实际tubelet中心及插值后特征位置将GT映射到selected轴，并使proposal只逆映射一次；G2/G3显式保留dense GT，未通过开启physical head混淆消融。真实registry/head CPU回归通过，但旧训练权重不因此变正确。G0-G3全部B-AMoD关闭；M00-M11才是CTConv乘B-AMoD的机制矩阵",
-      "current_cycle": "2026-09-08 11:47-11:48 CST：新fe1c53db G0/G1均RUNNING，已运行8小时54分左右；落盘audit为epoch51/52、optimizer/scheduler/EMA各5200/5300，AMP skip均3且已重放。G0到epoch52 batch50，loss0.3984；G1已结束epoch53 batch99，loss0.4362，训练内评测到224批；无epoch59或新fatal。按每两轮约39-40分钟估计G0于14:10-14:45、G1于13:50-14:20结束训练，独立评测另需30-60分钟及排队。复用07383274既有预检；没有新正式mAP，旧G2/G3仍保留原身份56.5234%/57.8489%",
+      "current_cycle": "2026-09-08 12:27 CST：新fe1c53db G0/G1均RUNNING，已运行约9小时33分；落盘audit为epoch53/54、optimizer/scheduler/EMA各5400/5500，完成90.0%/91.7%，AMP skip均3且已重放。G0到epoch54 batch50，loss0.4269；G1结束epoch55 batch99，loss0.4402，训练内评测到226批；无epoch59或新fatal。按每两轮约39-40分钟估计G0于14:10-14:45、G1于13:50-14:20结束训练，独立评测另需30-60分钟及排队。复用07383274既有预检；无新正式mAP，旧G2/G3沿用原身份56.5234%/57.8489%",
       "branch": "codex/duca-ctdp-successful-updates-20260907（训练） + codex/duca-ctdp-terminal-eval-20260907（独立评测）",
       "sha": "78cde1be1cb8b3acc7d750afc92ea740f2a03d06（更新合同修复训练） / 11ced13ac6b72091d26405c5d6f152f09914c22d（独立评测） / c0fae67a1236f2c47e6c2935d217659cd1f8fb9d（旧训练）",
       "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/78cde1be1cb8b3acc7d750afc92ea740f2a03d06",
@@ -143,7 +143,7 @@
         "sha": "fe1c53db1b2a7e467a6af2eccfe8b7636f667a81",
         "local_directory": "E:/DeskTop/TAD/_duca_fix_worktrees/ctdp_successful_updates",
         "remote_source": "/data/run01/sczc063/yuzibo/projects/ctdp_coordinate_fe1c53db",
-        "validation": "本地32 passed/1 CUDA skipped；最终SHA远端clean CPU52 passed/1 CUDA skipped。1278007的71 tests/CUDA及四臂真实PRECHECK此前已通过。11:47新正式G0/G1落盘audit各5200/5300，无epoch59；本轮不重复准入",
+        "validation": "本地32 passed/1 CUDA skipped；最终SHA远端clean CPU52 passed/1 CUDA skipped。1278007的71 tests/CUDA及四臂真实PRECHECK此前已通过。12:27新正式G0/G1落盘audit各5400/5500，无epoch59；本轮不重复准入",
         "status": "CUDA_AND_REAL_PRECHECK_PASS; G0_G1_FORMAL_RUNNING",
         "admission_job": "1278007",
         "admission_state": "COMPLETED(0:0), ended 2026-09-08 02:51:01 CST",
@@ -155,8 +155,8 @@
           "G1": "1278012"
         },
         "formal_job_states": {
-          "G0": "RUNNING; epoch52 batch50; persisted epoch51 optimizer/scheduler/EMA5200; elapsed08:53:51; checked2026-09-08 11:47 CST",
-          "G1": "RUNNING; epoch53 batch99 complete, evaluation in progress; persisted epoch52 optimizer/scheduler/EMA5300; elapsed08:53:21; checked2026-09-08 11:47 CST"
+          "G0": "RUNNING; epoch54 batch50; persisted epoch53 optimizer/scheduler/EMA5400; elapsed09:33:19; checked2026-09-08 12:27 CST",
+          "G1": "RUNNING; epoch55 batch99 complete, evaluation in progress; persisted epoch54 optimizer/scheduler/EMA5500; elapsed09:32:49; checked2026-09-08 12:27 CST"
         },
         "formal_run_root": "/data/run01/sczc063/yuzibo/experiments/ctdp_coordinate_fe1c53db/formal",
         "formal_stdout": {
@@ -170,21 +170,21 @@
         "launch_contract": "PRECHECK_ONLY=0; CTDP_STAGE=geometry; seed3407; one GPU per arm; exact new SHA; fresh output; 60 epochs/6000 successful updates; no resume from PRECHECK",
         "first_log_observation": "08:01累计AMP skip均3，无replay耗尽或Traceback；epoch41最终batch loss G0=0.4476/G1=0.4852有限。stderr评测分别到161/374批，仍有既有linear1d非确定性警告，不能声称消除全部随机性",
         "formal_update_observation": {
-          "checked_at_cst": "2026-09-08 11:47:50-11:48:01 CST",
+          "checked_at_cst": "2026-09-08 12:27:18-12:27:30 CST",
           "G0": {
-            "epoch": 51,
-            "successful_optimizer_updates": 5200,
-            "scheduler_updates": 5200,
-            "ema_updates": 5200,
-            "optimizer_attempts": 5203,
+            "epoch": 53,
+            "successful_optimizer_updates": 5400,
+            "scheduler_updates": 5400,
+            "ema_updates": 5400,
+            "optimizer_attempts": 5403,
             "amp_skipped_attempts": 3
           },
           "G1": {
-            "epoch": 52,
-            "successful_optimizer_updates": 5300,
-            "scheduler_updates": 5300,
-            "ema_updates": 5300,
-            "optimizer_attempts": 5303,
+            "epoch": 54,
+            "successful_optimizer_updates": 5500,
+            "scheduler_updates": 5500,
+            "ema_updates": 5500,
+            "optimizer_attempts": 5503,
             "amp_skipped_attempts": 3
           }
         }
@@ -227,7 +227,7 @@
           "G3"
         ],
         "terminal_query_issue": "Historical 08:16-08:22 SSH queries timed out; recovered read-only access at 2026-09-08 09:32:19 CST. Existing1278042 completed normally; no Slurm resubmission or cancellation.",
-        "remote_identity_recheck": "2026-09-08 11:45 CST: training fe1c53db and evaluator07383274 HEAD exact and clean. Unchanged-SHA model/config diff proof from09:35 reused; no repeated tests or precheck."
+        "remote_identity_recheck": "2026-09-08 12:27 CST: training fe1c53db and evaluator07383274 HEAD exact and clean. Unchanged-SHA model/config diff proof from09:35 reused; no repeated tests or precheck."
       },
       "evaluator_github": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/11ced13ac6b72091d26405c5d6f152f09914c22d",
       "evaluator_remote_source": "/data/run01/sczc063/yuzibo/projects/ctdp_terminal_eval_11ced13a",
@@ -324,7 +324,7 @@
       "name": "DUCA-Unified 当前 41 单元系统因素对照：17 开发单元与 24 多种子确认单元",
       "internal_id": "DUCA_UNIFIED_ACTIVE",
       "scientific_audit": "Taylor helper同时存在真实BCT尺寸误判，以及对loss图之外的新合成tensor求梯度的问题；运行时P0/P1与H65 retention/transition仍未接通。41单元是复用控制的系统对照，不是所有因素完全正交的全因子矩阵。已实现子问题可在依赖明确后单独验证，不能给D/F/H缺失机制签发通过",
-      "current_cycle": "2026-09-08 11:45 CST：本地HEAD793c4f9c且clean，未发现新实现提交。真实Taylor P0/P1、合法one-swap及H65 retention/transition仍未接通，保持BLOCKED_UNIMPLEMENTED。这是实现欠账，不是资源排队；本轮不重复全源码审查",
+      "current_cycle": "2026-09-08 12:25心跳：本地身份由目录生成器刷新，HEAD仍793c4f9c且clean，无新增实现提交。真实Taylor P0/P1、合法one-swap及H65 retention/transition仍未接通，保持BLOCKED_UNIMPLEMENTED。这是实现欠账，不是资源排队；本轮不重复全源码审查",
       "branch": "codex/duca-unified-formal-gates-20260903",
       "sha": "793c4f9cdf7dac4f224bc73012aff8bc93949f87",
       "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/793c4f9cdf7dac4f224bc73012aff8bc93949f87",
@@ -341,7 +341,7 @@
       "name": "BAFDR 当前 seed 4407 正式流水线：D160 教师与五臂 K16 筛选",
       "internal_id": "BAFDR_ACTIVE",
       "scientific_audit": "G96是96x96空间分辨率，全局48x16=768原始帧；K16局部256原始帧/128 tubelets。新增确认：padding未在top-K前屏蔽，可能浪费真实尾窗预算；screen finalizer仅凭声明及文件存在，0字节checkpoint和错误hash也能PASS，须复用实际终态验证。连续gate在非零残差路径下可回传router，不能笼统说整个router断梯度。少3-6更新不能单独解释十余个百分点差距",
-      "current_cycle": "2026-09-08 11:45-11:48 CST：U16/LATE/NOKD及FULL PRECHECK1277955均COMPLETED(0:0)，前三臂终轮日志仍为epoch59/update6000，最新stderr无新fatal；复用04:28实际权重验证。710ce8a6输出仍无metrics.json，FULL只有PRECHECK。padding/screen问题未修，不开放正式FULL或21单元；历史1267920/1267921未操作",
+      "current_cycle": "2026-09-08 12:27 CST：U16/LATE/NOKD及FULL PRECHECK1277955均COMPLETED(0:0)，前三臂终轮日志仍为epoch59/update6000，最新stderr无新fatal；复用04:28实际权重验证。710ce8a6输出仍无metrics.json，FULL只有PRECHECK。padding/screen问题未修，不开放正式FULL或21单元；历史1267920/1267921未操作",
       "branch": "codex/zoomtoken-bafdr-successful-updates-20260907（修复） + codex/zoomtoken-bafdr-eval-metadata-repair-20260904（旧评测）",
       "sha": "710ce8a6246c471742c83bf7c180d9ab87c36fac（更新合同修复） / 539287fa8a035765afd7e79863ce77278bef83f2（旧训练） / 29b5a7a2b291203ea7b697cfe416b64f0d365d02（旧评测）",
       "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/710ce8a6246c471742c83bf7c180d9ab87c36fac",
@@ -424,7 +424,7 @@
       "supporting_local_directories": [
         "E:/DeskTop/TAD/zoomtoken_ettrc_correction_20260902"
       ],
-      "current_cycle": "2026-09-08 11:45 CST：OFF/ON两份小收据mtime及数值未变，仍62.0768%/54.8096%；复用既有自哈希与原74473c27训练/67d7079d评测终态认证，不重复大checkpoint或推理。anchor correction及实际精度核对未完成，保留旧负结果",
+      "current_cycle": "2026-09-08 12:27 CST：OFF/ON两份小收据mtime及数值未变，仍62.0768%/54.8096%；复用既有自哈希与原74473c27训练/67d7079d评测终态认证，不重复大checkpoint或推理。anchor correction及实际精度核对未完成，保留旧负结果",
       "deployment_status": "OFF1267218/ON1267219正式训练及epoch59 EMA均完成；独立评测代码67d7079d、本地/远端28 tests、2GPU PRECHECK1275569_0/1通过，完整官方评测1275624_0/1和结构化自哈希receipt现已完成",
       "result_status": "双臂具有可追溯的官方终态结果；本种子开启Taylor/JVP近似明显退化，不支持保持准确率的主张；算子实现忠实度和训练配方的因果排查尚未完成",
       "final_result": "OFF official Avg-mAP=62.076775%，mAP@0.3/0.4/0.5/0.6/0.7=77.063201/71.910513/65.342222/54.513056/41.554882%；ON official Avg-mAP=54.809580%，对应70.378016/64.889287/57.494778/46.651646/34.634174%。ON比OFF低7.267195个百分点，mAP@0.7低6.920708个百分点。单种子4407，不外推多种子显著性，也不把低分本身当作已证明实现错误",
@@ -472,7 +472,7 @@
         "validation": "本地C3 23 passed；远端exact-SHA clean CPU25 passed，含初始输出等价、真实AdamW三步门控/卷积更新、旧checkpoint加载不被隐式重置。未做新模型CUDA或正式训练",
         "status": "REFINER_INIT_FIXED; UTILITY_AND_ROBUST_CYCLE_PENDING"
       },
-      "current_cycle": "2026-09-08 11:45-11:48 CST：A1/A6/F训练及A1评测均COMPLETED(0:0)，读取最新stdout/stderr未见新运行失败；A1小收据mtime未变，直接读取metrics.average_mAP为0.5159681679375281。A6/F仍无独立metrics。复用04:30终态及跨SHA恢复验证；utility/robust/cycle缺失仍阻止A3/A4/A5扩展，旧权重不是e0c88c9a初始化修复版",
+      "current_cycle": "2026-09-08 12:27 CST：A1/A6/F训练及A1评测均COMPLETED(0:0)，读取stdout/stderr终段未见新运行失败；A1小收据mtime未变，直接读取metrics.average_mAP为0.5159681679375281。A6/F仍无独立metrics。复用04:30终态及跨SHA恢复验证；utility/robust/cycle缺失仍阻止A3/A4/A5扩展，旧权重不是e0c88c9a初始化修复版",
       "receipt_recheck": "2026-09-07 22:55心跳：C0/A2两份metrics JSON可读且evaluation_sha256复算通过，仍分别59.2292%/54.2756%；seed8261、246058f2和epoch59 EMA身份未变，不属于完整Recovery结果",
       "deployment_status": "C0训练1269374_0/评测1270672_0、A2训练1270870_3/评测1274711_3均已完成，保留246058f2原身份。旧A1/A6非有限cost修复经过1570a725真实optimizer覆盖、动态DDP、non-reentrant checkpoint及49tests/真实PRECHECK验证，未关闭time/merge/recovery；相关失败日志和权重均保留。其后A1/A6的1274924_2/7与F/A3/A4/A5的1275675_1/4/5/6又因磁盘配额失败，不再运行；旧死依赖eval已取消。ce767b4d增加保持原模型/配置/计数/RNG的跨目录续训，六臂恢复PRECHECK已完成，当前新提交与待办见本轮更新",
       "result_status": "C0/A2原登记值不变；新增A1旧实现的可追溯终态评测51.5968%，不作完整机制验收。A6/F训练终态已绑定但独立评测未完成。e0c88c9a仅修refiner初始化且无新正式性能；utility/robust/cycle仍未实现",
@@ -576,8 +576,8 @@
   "remote_supervisor": {
     "status": "ACTIVE",
     "root": "/data/run01/sczc063/yuzibo/projects/duca_multibranch_supervisor_recovery_20260907",
-    "receipt_age_seconds": 34,
-    "checked_at": "2026-09-08T03:52:27+00:00",
+    "receipt_age_seconds": 19,
+    "checked_at": "2026-09-08T04:30:58+00:00",
     "dispatcher_status": "BLOCKED",
     "dispatcher_mode": "plan",
     "entries": []
@@ -594,20 +594,20 @@
     "scope": "每60秒恢复只读队列轮询，旧source/queue/manifest/admission不变；旧日志和状态保留。不是当前修复队列的自动提交器。目录生成器现以180秒识别过期回执，不能仅因JSON可读就称ACTIVE"
   },
   "cluster_observation": {
-    "checked_at_cst": "2026-09-08 11:45-11:47 CST",
+    "checked_at_cst": "2026-09-08 12:27 CST",
     "public_gpu_available": 27,
     "public_gpu_total": 200,
-    "gpu_count_basis": "11:45 scontrol show nodes，排除DOWN/DRAIN/FAIL/MAINT/RESERVED/NOT_RESPONDING后25个可调度GPU节点CfgTRES200、AllocTRES173；公共未分配27，不等于本账户额度",
-    "user_jobs_in_queue": 12,
-    "account_constraint": "11:47展开数组为11 RUNNING/1 PENDING，其中本任务CT G0/G1占2项；1278774为未登记的其他任务JobHeldUser，不解除其hold或视为本路线资源失败。11:45实验挂载217G可用、97%已用，公共空间不保证个人配额。未提交、取消或重提作业，历史BAFDR1267920/1267921只读不动"
+    "gpu_count_basis": "12:27 scontrol show nodes，排除DOWN/DRAIN/FAIL/MAINT/RESERVED/NOT_RESPONDING后25个可调度GPU节点CfgTRES200、AllocTRES173；公共未分配27，不等于本账户额度",
+    "user_jobs_in_queue": 8,
+    "account_constraint": "12:27展开数组为7 RUNNING/1 PENDING，其中本任务CT G0/G1占2项；1278774为未登记的其他任务JobHeldUser，不解除其hold或视为本路线资源失败。实验挂载209G可用、97%已用，公共空间不保证个人配额。未提交、取消或重提作业，历史BAFDR1267920/1267921只读不动"
   },
   "measurement_scope": "当前比较以官方 TAD mAP、固定输入/更新预算和机制消融为主；不把端到端延迟、吞吐量或显存作为强制验收指标",
   "baseline_reference_note": "12_BASELINE_IDENTITY_CORRECTION_20260907.md",
   "pro_audit_followup": "15_PRO_AUDIT_REPAIR_STATUS_20260908.md",
   "official_baseline_raw_identity": "14_OFFICIAL_BASELINE_RAW_IDENTITY_20260908.json",
   "performance_cause_audit": "13_PERFORMANCE_CAUSE_AUDIT_20260908.md",
-  "heartbeat_evidence": "21_HEARTBEAT_EVIDENCE_20260908_1143.json",
-  "performance_cause_audit_scope": "本轮触发2026-09-08 11:43:31.103 CST，实际远端采样11:45-11:48，核查六路线代码身份、Slurm、CT真实audit及日志、已有小收据与资源。G0/G1落盘5200/5300，无新终态；没有新正式mAP、模型修复或Slurm提交，不重复大checkpoint、已认证哈希及已通过准入。11:04部分只读检查和11:12运行时间答复未完成目录推送，不补记为已完成的完整心跳",
+  "heartbeat_evidence": "22_HEARTBEAT_EVIDENCE_20260908_1225.json",
+  "performance_cause_audit_scope": "本轮触发2026-09-08 12:25:32.886 CST，实际远端采样12:27，核查六路线代码身份、Slurm、CT真实audit及日志、已有小收据与资源。G0/G1落盘5400/5500，无新终态；没有新正式mAP、模型修复或Slurm提交，不重复大checkpoint、已认证哈希及已通过准入。未执行或只完成部分工作的历史触发不补记为完整检查",
   "baseline_comparison_policy": "区分上游公开结果、历史共享复现和本次修改协议实测；官方 evaluator 与完整 receipt 不代表官方训练 recipe 已复现。比较提升前须对齐预训练、数据、batch/曝光、学习率、坐标、模型选择和后处理，不能用较低参考数值替代约69/65的既有锚点，也不能把约69/65规定为每次运行必须达到的分数",
   "result_policy": "本项目strict6000正式改造路线须具备exact SHA、clean-tree、epoch-59 EMA、6000 successful updates、官方evaluator和结构化自哈希receipt；scheduler steps不能替代optimizer成功更新。官方原配方基线按自身原始协议单列，不能追溯套用6000成功更新规则，仍须来源、配置、产物和评测身份认证。跨SHA续训须同时记录原SHA/恢复点与新SHA。收据完整不代替模型/坐标/梯度语义正确性",
   "excluded_remote_jobs": [
