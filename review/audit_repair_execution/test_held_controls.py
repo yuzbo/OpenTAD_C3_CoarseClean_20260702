@@ -85,8 +85,8 @@ class HeldControlsTest(unittest.TestCase):
         controls.submit_controls(self.args, self.b, self.q, lambda script: script)
 
     def release(self, waiting=None):
-        controls.release_controls(self.args, self.b, self.q, self.readiness,
-                                  lambda b: (['10','11'], waiting or []))
+        return controls.release_controls(self.args, self.b, self.q, self.readiness,
+                                         lambda b: (['10','11'], waiting or []))
 
     def test_submit_all_once_and_preserve_existing_attempt(self):
         state=read(self.state_path)
@@ -127,6 +127,25 @@ class HeldControlsTest(unittest.TestCase):
     def test_release_failure_keeps_held(self):
         self.submit(); self.ready=True; self.fail_release=True; self.release()
         self.assertEqual({r['status'] for r in read(self.state_path)['jobs'].values()},{'HELD_SUBMITTED'})
+
+    def test_failed_slurm_read_preserves_jobs_then_recovers_without_resubmit(self):
+        self.submit(); self.ready=True
+        before=self.state_path.read_bytes(); commands=list(self.commands)
+        failures=[subprocess.CalledProcessError(1,['squeue'],stderr='Socket timed out'),
+                  subprocess.TimeoutExpired(['squeue'],60,stderr=b'controller busy')]
+        for error in failures:
+            with self.subTest(error=type(error).__name__), \
+                 patch.object(controls.subprocess,'check_output',side_effect=error) as query:
+                result=self.release()
+                self.assertIn('slurm_query_error',result)
+                self.assertIsInstance(result['slurm_query_error']['detail'],str)
+                self.assertEqual(query.call_args.kwargs['timeout'],60)
+                self.assertEqual(self.state_path.read_bytes(),before)
+                self.assertEqual(self.commands,commands)
+        self.release(); self.submit()
+        self.assertEqual(sum(c[:2]==['scontrol','release'] for c in self.commands),1)
+        self.assertEqual(sum(c[0]=='sbatch' for c in self.commands),2)
+        self.assertEqual(read(self.state_path)['jobs']['tr-a']['status'],'SUBMITTED')
 
     def test_missing_slurm_job_delegates_reconciliation_without_resubmit(self):
         self.submit(); self.live={}; self.release(); self.submit()

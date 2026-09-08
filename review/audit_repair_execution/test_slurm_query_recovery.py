@@ -60,6 +60,19 @@ class QueryRecoveryTest(unittest.TestCase):
         self.assertEqual({c.args[0][2] for c in update.call_args_list}, {'JobId=100', 'JobId=101'})
         self.assertEqual(json.loads(self.record.read_text())['100']['primary_ids'], ['10', '11'])
 
+    def test_failed_release_query_keeps_progress_and_exposes_wait_status(self):
+        progress=self.control/'audit_progress.json'
+        progress.write_text(json.dumps(dict(updated_at=1,states={'tr-a':'HELD_SUBMITTED'})))
+        error=dict(slurm_query_error=dict(command=['squeue','-o','%i|%T'],
+                                         detail='Socket timed out',observed_at=10))
+        with patch.object(audit_queue.time,'time',return_value=11), patch('builtins.print'):
+            audit_queue.record_slurm_query_wait(self.control,error)
+        row=json.loads(progress.read_text())
+        self.assertEqual(row['states'],{'tr-a':'HELD_SUBMITTED'})
+        self.assertEqual(row['updated_at'],11)
+        self.assertEqual(row['status'],'WAITING_SLURM_QUERY')
+        self.assertEqual(row['slurm_query_error'],error['slurm_query_error'])
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

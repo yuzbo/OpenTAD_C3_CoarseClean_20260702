@@ -86,8 +86,19 @@ def release_controls(args, bindings, queue, readiness, primary_state):
         held = [jid for jid in bindings['assigned_training_ids'] if state['jobs'][jid]['status'] == 'HELD_SUBMITTED']
         if not held:
             return
-        live = dict(line.split('|', 1) for line in subprocess.check_output(
-            ['squeue', '-h', '--me', '-o', '%i|%T'], text=True).splitlines() if '|' in line)
+        try:
+            response = subprocess.check_output(
+                ['squeue', '-h', '--me', '-o', '%i|%T'], text=True,
+                stderr=subprocess.PIPE, timeout=60)
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+            # A failed read is not evidence that held jobs disappeared. Leave
+            # every submission unchanged and let the supervisor defer this pass.
+            detail = error.stderr or str(error)
+            if isinstance(detail, bytes):
+                detail = detail.decode(errors='replace')
+            return {'slurm_query_error': dict(command=error.cmd, detail=detail.strip(),
+                                             observed_at=time.time())}
+        live = dict(line.split('|', 1) for line in response.splitlines() if '|' in line)
         active = sum(row['status'] == 'SUBMITTED' for row in state['jobs'].values())
         primary_ids, waiting = primary_state(bindings)
         nodes = None
