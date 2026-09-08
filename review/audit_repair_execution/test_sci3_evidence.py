@@ -48,6 +48,7 @@ receipt=dict(source_commit=SHA,repository=str(repo),tests=TEST_FILES,cpu_only=Tr
 (root/'receipt.json').write_text(json.dumps(receipt,indent=2))
 print(json.dumps(receipt))
 print(log.read_text()[-14000:])
+raise SystemExit(result.returncode)
 '''.replace('ROOT', repr(root)).replace('SHA', repr(sha)).replace('TEST_FILES', repr(tests))
 result = subprocess.run(command('source', 'python3 -'), input=script.encode(), capture_output=True, timeout=200)
 (output / 'remote.stdout.txt').write_bytes(result.stdout)
