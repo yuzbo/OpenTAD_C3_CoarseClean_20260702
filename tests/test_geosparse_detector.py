@@ -106,6 +106,41 @@ def test_ema_and_counterfactual_preserve_official_scalar_loss_normalizer():
 
 
 @pytest.mark.parametrize("route", ["A", "B", "C"])
+def test_ordinary_resume_preserves_fractional_normalizer_and_next_gradients(route):
+    import copy
+    from geosparse_ext.runtime import restore_mutable_state, seed_all
+
+    seed_all(29)
+    model = detector(route).train()
+    inputs = batch(empty=True)
+    model.forward_train(**inputs)
+    normalizer = model.rpn_head.loss_normalizer
+    assert normalizer.is_floating_point() and float(normalizer) != int(normalizer)
+    saved = dict(format="geosparse_full_state_v2", state_dict=copy.deepcopy(model.state_dict()))
+    restored = detector(route).train()
+    parameter_ids = [id(p) for p in restored.parameters()]
+    assert not restored.rpn_head.loss_normalizer.is_floating_point()
+    restore_mutable_state(restored, saved, "state_dict")
+    assert [id(p) for p in restored.parameters()] == parameter_ids
+    restored.epoch, restored.minibatch = model.epoch, model.minibatch
+    for name, value in model.state_dict().items():
+        torch.testing.assert_close(restored.state_dict()[name], value, rtol=0, atol=0)
+    outputs = []
+    for current in (model, restored):
+        seed_all(31)
+        current.zero_grad(set_to_none=True)
+        losses = current.forward_train(**inputs)
+        losses["cost"].backward()
+        outputs.append(losses)
+    for name in outputs[0]:
+        torch.testing.assert_close(outputs[0][name], outputs[1][name], rtol=0, atol=0)
+    for left, right in zip(model.parameters(), restored.parameters()):
+        assert (left.grad is None) == (right.grad is None)
+        if left.grad is not None:
+            torch.testing.assert_close(left.grad, right.grad, rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("route", ["A", "B", "C"])
 def test_official_detector_optimizer_covers_extensions_exactly_once(route):
     from geosparse_ext.runtime import optimizer_for
     model = detector(route).train()

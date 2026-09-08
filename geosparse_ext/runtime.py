@@ -85,6 +85,14 @@ def restore_mutable_state(model, checkpoint, key):
     expected = checkpoint_state_names(model)
     if set(values) != expected:
         raise ValueError(f"checkpoint state differs: missing={sorted(expected - set(values))}, unexpected={sorted(set(values) - expected)}")
+    # The source head creates an integer loss_normalizer, then replaces it with
+    # a float during training. Preserve saved buffer dtypes without replacing
+    # parameters that the already-created optimizer references.
+    for module_name, module in model.named_modules():
+        for buffer_name, buffer in module.named_buffers(recurse=False):
+            name = f"{module_name}.{buffer_name}" if module_name else buffer_name
+            if name in values and buffer.dtype != values[name].dtype:
+                module._buffers[buffer_name] = buffer.to(dtype=values[name].dtype)
     complete = model.state_dict()
     complete.update(values)
     model.load_state_dict(complete, strict=True)
