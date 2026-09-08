@@ -314,10 +314,11 @@ def main():
     args.rank = int(os.environ["RANK"])
     ettrc_identity = None
     if args.ettrc_metrics_json:
-        from tools.bata.ettrc_terminal_receipt import source_identity, validate_request
+        from tools.bata.ettrc_terminal_receipt import source_identity, training_binding, validate_request
         validate_request(cfg, seed=args.seed, world_size=args.world_size,
                          not_eval=args.not_eval, max_batches=args.max_batches)
         ettrc_identity = source_identity(Path(path).resolve())
+        ettrc_identity.update(training_binding(cfg, args.checkpoint, seed=args.seed))
     if s1_binding is not None and args.world_size != 1:
         raise RuntimeError("formal S1 test is frozen to one Slurm GPU process")
     if georoute_official_development_binding is not None and args.world_size != int(
@@ -408,6 +409,9 @@ def main():
 
     # build dataset
     test_dataset = build_dataset(cfg.dataset.test, default_args=dict(logger=logger))
+    if ettrc_identity is not None:
+        from tools.bata.ettrc_terminal_receipt import validate_test_population
+        validate_test_population(test_dataset, ettrc_identity)
     if s1_binding is not None:
         with open(s1_binding["manifest_path"], "r", encoding="utf-8") as handle:
             manifest = json.load(handle)

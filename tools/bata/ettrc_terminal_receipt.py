@@ -6,7 +6,9 @@ import subprocess
 from pathlib import Path
 
 
-TRAINING_COMMIT = "74473c2775caebf0da9d368ce8009d78e2942098"
+TRAINING_COMMIT = "9a346f0d71e8870ad499bb0a58b9f1824b8904c0"
+TRAINING_ROOT = Path("/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal")
+PROTOCOL = "TEST_GUIDED_EXPLORATORY_EVAL5"
 
 
 def file_hash(path):
@@ -47,6 +49,39 @@ def validate_request(cfg, *, seed, world_size, not_eval, max_batches):
         raise ValueError("ET-TRC frozen pair uses EMA and FP32")
     if cfg.evaluation.type != "mAP" or not cfg.post_processing.save_dict:
         raise ValueError("ET-TRC receipt requires official mAP and saved predictions")
+    if not cfg.get("test_guided_exploratory", False):
+        raise ValueError("ET-TRC terminal evaluation requires the disclosed eval5 config")
+
+
+def training_binding(cfg, checkpoint_path, *, seed):
+    arm = "on" if cfg.model.backbone.backbone.enable_taylor else "off"
+    expected = TRAINING_ROOT / arm / "gpu2_id0/checkpoint/epoch_59.pth"
+    if Path(checkpoint_path).resolve() != expected.resolve():
+        raise ValueError("ET-TRC checkpoint must match the frozen training arm and run")
+    protocol_path = expected.parents[1] / "test_guided/protocol.json"
+    protocol = json.loads(protocol_path.read_text(encoding="utf-8"))
+    digest = protocol.pop("receipt_sha256")
+    if digest != canonical_hash(protocol):
+        raise ValueError("ET-TRC training protocol self-hash mismatch")
+    if protocol.get("source_sha") != TRAINING_COMMIT or protocol.get("seed") != seed:
+        raise ValueError("ET-TRC training protocol source/seed mismatch")
+    if (protocol.get("protocol") != PROTOCOL
+            or protocol.get("model_selection_uses_test") is not True
+            or protocol.get("unseen_test_claim_allowed") is not False
+            or protocol.get("evaluation_epochs") != list(range(5, 61, 5))):
+        raise ValueError("ET-TRC training protocol must disclose five-epoch test selection")
+    video_ids = sorted(protocol["test_video_ids"])
+    if len(set(video_ids)) != 211 or protocol["test_window_count"] != 792:
+        raise ValueError("ET-TRC training protocol must cover the full test population")
+    return dict(training_protocol_path=str(protocol_path), training_protocol_sha256=digest,
+                evaluated_video_ids=video_ids, test_window_count=protocol["test_window_count"])
+
+
+def validate_test_population(dataset, binding):
+    actual_ids = sorted({str(row[0]) for row in dataset.data_list})
+    if (not dataset.test_mode or actual_ids != binding["evaluated_video_ids"]
+            or len(dataset) != binding["test_window_count"]):
+        raise ValueError("ET-TRC evaluation must match the complete label-free training test population")
 
 
 def source_identity(root):
@@ -77,6 +112,10 @@ def write_receipt(output, *, cfg, config_path, checkpoint_path, checkpoint,
     evaluator_path = Path(__file__).resolve().parents[2] / "opentad/evaluations/mAP.py"
     payload = dict(
         schema_version="ETTRC-TERMINAL-EVAL-v001", **identity, **counts,
+        protocol=PROTOCOL, evaluation_role="INDEPENDENT_TERMINAL_EMA",
+        model_selection_uses_test=True, unseen_test_claim_allowed=False,
+        ema_update_count_stored=False,
+        ema_count_evidence="FP32 successful-update training control flow; no standalone EMA counter",
         arm="ON" if cfg.model.backbone.backbone.enable_taylor else "OFF",
         seed=seed, world_size=world_size, global_batch=cfg.solver.test.batch_size,
         config_path=str(Path(config_path).resolve()), config_sha256=file_hash(config_path),
