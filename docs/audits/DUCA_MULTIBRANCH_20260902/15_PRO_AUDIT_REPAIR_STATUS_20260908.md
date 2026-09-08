@@ -359,3 +359,24 @@ H65累计AMP skip均已重放。CT、BAFDR和Evidence的既有终态文件保留
 原实现缺失项继续列明，本轮不重复准入、调参或重提健康训练。
 
 详见[31_HEARTBEAT_EVIDENCE_20260908_1904.md](31_HEARTBEAT_EVIDENCE_20260908_1904.md)及同名JSON。
+
+## 21:31 曲线与后继修复补录
+
+本轮21:29触发，21:31:28-21:31:57实际核查。五项仍RUNNING：ET近似开启第40轮最佳55.3617%，
+关闭第35轮最佳62.5093%；同第35轮开启低7.1934点。H65第25轮均匀/相位关/四相开分别
+56.7257%/55.8911%/49.1838%。全部实际最佳EMA与周期收据一致，无新终态或实际fatal；
+H65累计AMP skip均已replay，审计2500/2500/2600次更新一致、耗尽0。本轮没有新调参或提交。
+
+补录另一任务“查找90轮H65实验配置”的四条本地clean分支：H65历史30+60匹配96e5b3a5、
+Evidence监督/时间梯度/support接线79aea08a、BAFDR padding接线b142bffa、Unified时间轴0fcef0bf。
+GitHub尚未见这些分支，不能称已推送。H65远端exact/clean，预检1280306等Priority，
+1280314/1280316等其afterok；尚未开训。它采用历史终态主结果协议，不混入本任务strict60测试选best比较。
+其余三个修复没有本监督认证的生产CUDA/正式结果；任务报告的CPU通过仍待原始日志绑定。
+因此此前“padding/时间轴尚未修”的表述只适用于旧SHA，不能忽略新代码；也不能反过来把新接线修复
+说成Evidence utility/robust/cycle或Unified Taylor/H65机制已经完成。
+
+CT64.2720%/61.6740%、Evidence旧A1 51.5968%未变，BAFDR新独立metrics仍无；旧终态stat未变，
+复用先前真实计数认证。GPU0/200可用，账户6R/10P，盘148.9GiB。分钟回执新鲜但仍plan/BLOCKED。
+历史BAFDR1267920/1267921及其他项目不操作。本轮未咨询Pro、未重复准入、未热改。
+
+详见[32_HEARTBEAT_EVIDENCE_20260908_2129.md](32_HEARTBEAT_EVIDENCE_20260908_2129.md)及同名JSON。

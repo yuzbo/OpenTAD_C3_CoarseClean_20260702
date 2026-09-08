@@ -38,3 +38,16 @@ def test_hung_receipt_query_is_bounded_and_not_reported_active(monkeypatch):
     result = catalog.remote_receipt()
     assert result["status"] == "UNAVAILABLE"
     assert "45" in result["reason"]
+
+
+def test_unpublished_local_repair_does_not_link_to_a_github_commit(monkeypatch):
+    monkeypatch.setattr(catalog, "git_head", lambda path: "local-only")
+    monkeypatch.setattr(catalog, "clean_tree", lambda path: True)
+    monkeypatch.setattr(catalog, "remote_receipt", lambda: {"status": "NOT_QUERIED"})
+    payload = catalog.catalog()
+    entry = dict(payload["entries"][0], github_commit=None, sha="unpublished-local-sha")
+    payload["entries"] = [entry]
+    rendered = catalog.md_text(payload)
+    assert "/commit/unpublished-local-sha" not in rendered
+    assert payload["repository"] in rendered
+    assert "unpublished-local-sha" in rendered
