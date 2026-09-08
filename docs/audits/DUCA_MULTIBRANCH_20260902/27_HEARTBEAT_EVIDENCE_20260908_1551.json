@@ -1,0 +1,186 @@
+{
+  "automation_id": "opentad-c3-duca",
+  "heartbeat_trigger_utc": "2026-09-08T07:51:06.015Z",
+  "heartbeat_trigger_cst": "2026-09-08 15:51:06.015",
+  "remote_sampling_window_cst": "2026-09-08 15:53:03 to15:53:09",
+  "scope": "Six-route monitoring plus bounded availability check of the explicitly authorized Computer Use Pro entry. No new result certification or broad implementation audit.",
+  "completed_registered_jobs": [
+    "1276842",
+    "1276843",
+    "1277406_2",
+    "1277407_7",
+    "1277768_1",
+    "1277953_2",
+    "1277954",
+    "1277955",
+    "1278011",
+    "1278012",
+    "1279211_0",
+    "1279211_1"
+  ],
+  "registered_job_states": "All listed jobs still COMPLETED(0:0);1277955 is FULL PRECHECK only, not formal training. No registered running job found in this queue snapshot.",
+  "current_cycle": {
+    "H65_PRO_ACTIVE": "2026-09-08 15:53 CST：六份F臂小收据mtime和指标未变，最高64.2265%；复用此前终态/自哈希认证，没有重复大checkpoint或推理。F01-F06仍phase-off，TIA/匹配控制未修。原始官方1245842日志68.73仍待来源补证及独立复评，不用修改REF替代",
+    "CT_DP_BAMOD_ACTIVE": "2026-09-08 15:53 CST：G0/G1训练1278011/1278012与独立评测1279211_0/1均保持COMPLETED(0:0)，epoch59 audit仍6000/6000/6000，checkpoint大小/mtime及两份receipt数值未变。复用14:29实际337个Adam状态认证与15:10新收据自哈希验证；G0/G1 Avg-mAP仍64.2720%/61.6740%，mAP@0.7为42.6802%/39.9154%。没有新作业或失败，不重复评测。后续Pro入口检查因Computer Use的kernel assets路径错误阻塞，未发送材料或获得Pro意见",
+    "DUCA_UNIFIED_ACTIVE": "2026-09-08 15:51心跳：本地身份由生成器实时刷新；真实Taylor P0/P1训练接线、合法one-swap和H65 retention/transition仍未完成，保持BLOCKED_UNIMPLEMENTED。没有新模型实现或正式结果，不将实现欠账写成资源排队，也不重复全源码审查",
+    "BAFDR_ACTIVE": "2026-09-08 15:53 CST：U16/LATE/NOKD及FULL PRECHECK1277955仍COMPLETED(0:0)，前三stdout终行仍为epoch59/update6000，stderr无新fatal。复用04:28真实终态验证；710ce8a6新metrics仍0份，FULL无正式训练。padding/真实终态screen仍未修复，不扩旧SHA矩阵，历史1267920/1267921未操作",
+    "ET_TRC_ACTIVE": "2026-09-08 15:53 CST：OFF/ON小收据mtime及指标未变，62.0768%/54.8096%；复用既有74473c27训练/67d7079d评测及终态认证，不重跑推理。anchor correction和实际精度核对尚未完成，继续保留fixed-stride低秩代理负结果，不能称event gate或exact JVP已实现",
+    "EVIDENCE_ACTIVE": "2026-09-08 15:53 CST：A1/A6/F训练和A1评测均COMPLETED(0:0)，stdout/stderr未见新fatal；ce767b4d输出仍仅有A1一份metrics，metrics.average_mAP=0.5159681679375281且mtime未变，A6/F独立评测仍缺失。复用04:30真实更新/恢复认证；utility/robust/cycle仍缺失，不将e0c88c9a初始化修复或旧权重当完整实现，不补提旧SHA缺陷矩阵"
+  },
+  "ct": {
+    "training_sha": "fe1c53db1b2a7e467a6af2eccfe8b7636f667a81",
+    "evaluator_sha": "073832744dd171dee4119dc29d1bb12a057e84f4",
+    "remote_checkouts_clean": true,
+    "G0": {
+      "epoch": 59,
+      "optimizer_updates": 6000,
+      "scheduler_updates": 6000,
+      "ema_updates": 6000,
+      "amp_skips_replayed": 3,
+      "checkpoint_size_bytes": 623822543,
+      "checkpoint_mtime_epoch": 1788848397.0543523,
+      "metrics": {
+        "average_mAP": 0.6427200272571093,
+        "mAP@0.3": 0.8007885484368389,
+        "mAP@0.4": 0.7460867056195133,
+        "mAP@0.5": 0.6741285579333751,
+        "mAP@0.6": 0.5657943413687253,
+        "mAP@0.7": 0.42680198292709387
+      },
+      "receipt_sha256": "140e78dd2f0f23a977c5f55051e4c1510d04f576966ffcc9951edbc64be2d962",
+      "receipt_mtime_cst": "2026-09-08T14:49:20.392380+08:00"
+    },
+    "G1": {
+      "epoch": 59,
+      "optimizer_updates": 6000,
+      "scheduler_updates": 6000,
+      "ema_updates": 6000,
+      "amp_skips_replayed": 3,
+      "checkpoint_size_bytes": 623822543,
+      "checkpoint_mtime_epoch": 1788847133.0771325,
+      "metrics": {
+        "average_mAP": 0.6167397028285398,
+        "mAP@0.3": 0.7861633235376628,
+        "mAP@0.4": 0.7285757322889715,
+        "mAP@0.5": 0.6347676761532852,
+        "mAP@0.6": 0.5350382081934079,
+        "mAP@0.7": 0.39915357396937123
+      },
+      "receipt_sha256": "15782f03c350358f32f20639952b6676892047d2213388a43a2d00535783b7bc",
+      "receipt_mtime_cst": "2026-09-08T14:51:54.634430+08:00"
+    },
+    "verification_reuse": "Actual337 Adam states6000 validated14:29; receipt self hashes and211-video identity validated15:10. Current receipts/stat/audit unchanged; no large checkpoint reload or repeated hash certification.",
+    "prior_certificate_record": "26_HEARTBEAT_EVIDENCE_20260908_1508.json"
+  },
+  "unchanged_receipts": {
+    "H65_F01_to_F06": [
+      0.6338540623028592,
+      0.6422653640360945,
+      0.6036478160171815,
+      0.6070129227677766,
+      0.640886229714488,
+      0.6381814163848895
+    ],
+    "ET_OFF": 0.6207677503328417,
+    "ET_ON": 0.5480958031537403,
+    "Evidence_A1": 0.5159681679375281,
+    "Evidence_A1_field": "metrics.average_mAP",
+    "verification": "Values/mtimes read live15:53 and unchanged; previously verified terminal/self-hash results reused."
+  },
+  "missing_results": {
+    "Evidence_A6": "No independent metrics.json",
+    "Evidence_F": "No independent metrics.json",
+    "BAFDR_new_metrics_json_count": 0,
+    "BAFDR_FULL": "PRECHECK only",
+    "Unified": "BLOCKED_UNIMPLEMENTED"
+  },
+  "local_identity": {
+    "scope": "All six registered active local HEAD/clean states refreshed by the generator and checked against these expected unchanged identities before publication.",
+    "H65": {
+      "head": "aac9df0fd896edf9bf440a123e0424bb641df012",
+      "clean_tree": true
+    },
+    "Evidence": {
+      "head": "e0c88c9a9e2582878c88bb2c728891ea5413bc77",
+      "clean_tree": true
+    },
+    "BAFDR": {
+      "head": "710ce8a6246c471742c83bf7c180d9ab87c36fac",
+      "clean_tree": true
+    },
+    "ET": {
+      "head": "67d7079d0d1c33e129d31cd3a45aaf93a67db252",
+      "clean_tree": true
+    },
+    "Unified": {
+      "head": "793c4f9cdf7dac4f224bc73012aff8bc93949f87",
+      "clean_tree": true
+    },
+    "CT": {
+      "head": "fe1c53db1b2a7e467a6af2eccfe8b7636f667a81",
+      "clean_tree": true
+    },
+    "checked_at_cst": "This heartbeat publication"
+  },
+  "resources": {
+    "checked_at_cst": "2026-09-08 15:53",
+    "eligible_nodes": 25,
+    "configured_gpus": 200,
+    "allocated_gpus": 199,
+    "unallocated_gpus": 1,
+    "user_running_jobs": 5,
+    "user_pending_jobs": 1,
+    "user_queue_job_ids": [
+      "1278774",
+      "1279578",
+      "1279571",
+      "1276621",
+      "1276622",
+      "1274508"
+    ],
+    "unowned_pending_job": {
+      "1278774": "JobHeldUser; unchanged, not released"
+    },
+    "disk_available": "179G",
+    "disk_use": "97%",
+    "qualification": "Public visible capacity is not personal quota. No other job adopted or cancelled."
+  },
+  "minute_supervisor": {
+    "checked_at_utc": "2026-09-08T07:52:37+00:00",
+    "age_seconds": 32,
+    "status": "ACTIVE",
+    "dispatcher_mode": "plan",
+    "dispatcher_status": "BLOCKED",
+    "qualification": "Read-only polling works; automatic submission of the current repair queue still not active."
+  },
+  "pro_entry_check": {
+    "reason": "Previously confirmed matched single-seed CT dynamic-selection underperformance; user authorized ixBrowser ChatGPT Pro via Computer Use.",
+    "required_route": "Computer Use -> ixBrowser -> visibly verified ChatGPT Pro",
+    "tool_search": "Found node_repl and read installed Computer Use skill/guidance/API/confirmation rules before trying initialization.",
+    "native_initialization_attempts": 2,
+    "node_repl_resets": 1,
+    "browser_inventory_attempts": 1,
+    "native_error": "failed to write kernel assets: 系统找不到指定的路径。 (os error 3)",
+    "browser_inventory_error": "failed to write kernel assets: 系统找不到指定的路径。 (os error 3)",
+    "status": "BLOCKED_COMPUTER_USE_RUNTIME",
+    "ixBrowser_window_verified": false,
+    "login_state": "NOT_OBSERVED",
+    "selected_pro_model": "NOT_OBSERVED",
+    "materials_sent": false,
+    "consultation_completed": false,
+    "fallback_to_other_browser_or_API": false,
+    "next_action": "Restore the Computer Use runtime before consulting; do not infer account/login/Pro availability from a kernel initialization error."
+  },
+  "actions": {
+    "new_slurm_jobs": [],
+    "model_edits": 0,
+    "remote_hot_edits": 0,
+    "cancelled_jobs": [],
+    "repeated_admissions": 0,
+    "repeated_prechecks": 0,
+    "large_checkpoint_loads": 0,
+    "new_official_results": 0,
+    "pro_consultations": 0,
+    "historical_bafdr_jobs_touched": []
+  }
+}

@@ -290,3 +290,17 @@ job1245842 的 Slurm 记录为 COMPLETED(0:0)。原 source 为 `/data/run01/sczc
 15:10可见可调度25节点CfgTRES200/AllocTRES200，未分配GPU0/200；账户9 RUNNING/2 PENDING，其他任务1279307为Priority、1278774为JobHeldUser，未操作或纳入六路线。实验盘182G可用、97%已用。分钟回执17秒新鲜，dispatcher仍plan/BLOCKED，只能称只读轮询正常。
 
 本轮完成两份新独立结果认证、六路线监控与目录刷新；没有新模型修复、Slurm提交、取消、重复PRECHECK或Pro咨询。已知实现欠账并未因评测成功而获得验收，历史BAFDR1267920/1267921仍不操作。证据：[26_HEARTBEAT_EVIDENCE_20260908_1508.json](26_HEARTBEAT_EVIDENCE_20260908_1508.json)。
+
+## 15:51 心跳补充
+
+本轮触发2026-09-08 15:51:06.015 CST，实时远端采样15:53:03至15:53:09。此前已认证结果的指标与mtime未变，没有新增模型提交、登记作业运行失败或独立最终性能。
+
+- CT训练1278011/1278012和独立评测1279211_0/1仍COMPLETED(0:0)，真实audit均epoch59/optimizer6000/scheduler6000/EMA6000，checkpoint大小与mtime未变。复用14:29实际337个Adam状态认证与15:10 receipt自哈希认证，不重复大权重、准入或推理。G0/G1仍64.2720%/61.6740%，mAP@0.7为42.6802%/39.9154%。
+- H65最高64.2265%，六臂仍phase-off；ET关闭/开启62.0768%/54.8096%。H65时间聚合/匹配控制、ET anchor修正/实际精度核对仍未完成。原始官方AdaTAD68.73仍仅保留原日志身份，不能用修改REF或新CT G0替代。
+- Evidence A1/A6/F与A1评测均完成，A1仍51.5968%，A6/F缺独立收据；BAFDR U16/LATE/NOKD终态日志仍6000，输出新metrics为0，FULL只有预检。utility/真实辅助损失、padding/真实终态screen及Unified真实P0/P1/H65接线缺项继续保留，不扩已知缺陷旧SHA矩阵。
+
+本轮为落实已有Pro授权，检查指定Computer Use入口：读取已安装Computer Use技能与运行说明后，node_repl初始化@oai/sky失败，重置并重试仍返回 `failed to write kernel assets: 系统找不到指定的路径。 (os error 3)`；另一Computer Use会话的浏览器库存读取也同样失败。阻塞发生在运行环境初始化，尚未读取ixBrowser窗口、登录状态或所选模型。未发送材料、未完成Pro咨询、未改用API/其他浏览器或其他模型；不能把此错误说成账号未登录或Pro服务不可用。
+
+15:53可见可调度25节点CfgTRES200/AllocTRES199，剩余1/200 GPU；账户5 RUNNING/1 PENDING共6项，其他任务1278774仍JobHeldUser且未操作。实验盘179G可用、97%已用。分钟回执年龄32秒，ACTIVE，但dispatcher仍plan/BLOCKED，不是自动提交成功。
+
+本轮只更新监控证据并定位Pro入口运行环境阻塞，没有训练/评测重提、模型修改、远端热改、取消或重复PRECHECK。历史BAFDR1267920/1267921未操作。证据：[27_HEARTBEAT_EVIDENCE_20260908_1551.json](27_HEARTBEAT_EVIDENCE_20260908_1551.json)。
