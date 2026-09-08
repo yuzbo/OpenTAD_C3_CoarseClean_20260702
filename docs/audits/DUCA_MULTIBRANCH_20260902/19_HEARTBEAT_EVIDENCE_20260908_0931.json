@@ -1,0 +1,270 @@
+{
+  "heartbeat_trigger_utc": "2026-09-08T01:31:29.117Z",
+  "heartbeat_trigger_cst": "2026-09-08 09:31:29 CST",
+  "remote_sampling_window_cst": "2026-09-08 09:32-09:37 CST",
+  "scope": "Read-only six-route monitoring; recover existing evaluator precheck outcome; no new model acceptance or final mAP.",
+  "ssh": {
+    "recovered_at_cst": "2026-09-08 09:32:19 CST",
+    "result": "date returned successfully",
+    "previous_failure": "08:16-08:22 queries timed out; no inference that Slurm jobs failed",
+    "bounded_query_seconds": 60
+  },
+  "local_code": {
+    "checked_at_cst": "2026-09-08 09:33:57 CST",
+    "H65": {
+      "directory": "E:/DeskTop/TAD/_duca_fix_worktrees/h65_admission",
+      "sha": "aac9df0fd896edf9bf440a123e0424bb641df012",
+      "clean_tree": true
+    },
+    "CT_DP": {
+      "directory": "E:/DeskTop/TAD/_duca_fix_worktrees/ctdp_successful_updates",
+      "sha": "fe1c53db1b2a7e467a6af2eccfe8b7636f667a81",
+      "clean_tree": true
+    },
+    "EVIDENCE": {
+      "directory": "E:/DeskTop/TAD/_duca_fix_worktrees/evidence_storage_resume",
+      "sha": "e0c88c9a9e2582878c88bb2c728891ea5413bc77",
+      "clean_tree": true
+    },
+    "BAFDR": {
+      "directory": "E:/DeskTop/TAD/_duca_fix_worktrees/bafdr_successful_updates",
+      "sha": "710ce8a6246c471742c83bf7c180d9ab87c36fac",
+      "clean_tree": true
+    },
+    "ET_TRC": {
+      "directory": "E:/DeskTop/TAD/_duca_fix_worktrees/ettrc_terminal_eval",
+      "sha": "67d7079d0d1c33e129d31cd3a45aaf93a67db252",
+      "clean_tree": true
+    },
+    "UNIFIED": {
+      "directory": "E:/DeskTop/TAD/OpenTAD_DUCA_Unified_FormalGates_20260903",
+      "sha": "793c4f9cdf7dac4f224bc73012aff8bc93949f87",
+      "clean_tree": true
+    }
+  },
+  "ct_training": {
+    "checked_at_cst": "2026-09-08 09:35:43 CST",
+    "training_sha": "fe1c53db1b2a7e467a6af2eccfe8b7636f667a81",
+    "remote_source": "/data/run01/sczc063/yuzibo/projects/ctdp_coordinate_fe1c53db",
+    "clean_tree": true,
+    "G0": {
+      "job": "1278011",
+      "slurm_state": "RUNNING",
+      "audit_epoch": 44,
+      "successful_optimizer_updates": 4500,
+      "scheduler_updates": 4500,
+      "ema_updates": 4500,
+      "optimizer_attempts": 4503,
+      "amp_skipped_attempts": 3,
+      "max_amp_retries_observed": 1,
+      "epoch59_checkpoint_exists": false,
+      "latest_training_epoch": 45,
+      "latest_training_batch": 99,
+      "latest_training_loss": 0.4519,
+      "activity": "epoch45 training ended; evaluation in progress",
+      "audit": "/data/run01/sczc063/yuzibo/experiments/ctdp_coordinate_fe1c53db/formal/duca_ctdp_geometry_g0_seed3407/gpu1_id0/ctdp_training_audit.json",
+      "stdout": "/data/run01/sczc063/yuzibo/slurm_logs/ctdp-g0-fe1c53db_1278011.out",
+      "stderr": "/data/run01/sczc063/yuzibo/slurm_logs/ctdp-g0-fe1c53db_1278011.err"
+    },
+    "G1": {
+      "job": "1278012",
+      "slurm_state": "RUNNING",
+      "audit_epoch": 46,
+      "successful_optimizer_updates": 4700,
+      "scheduler_updates": 4700,
+      "ema_updates": 4700,
+      "optimizer_attempts": 4703,
+      "amp_skipped_attempts": 3,
+      "max_amp_retries_observed": 1,
+      "epoch59_checkpoint_exists": false,
+      "latest_training_epoch": 47,
+      "latest_training_batch": 50,
+      "latest_training_loss": 0.4641,
+      "activity": "epoch47 training",
+      "audit": "/data/run01/sczc063/yuzibo/experiments/ctdp_coordinate_fe1c53db/formal/duca_ctdp_geometry_g1_seed3407/gpu1_id0/ctdp_training_audit.json",
+      "stdout": "/data/run01/sczc063/yuzibo/slurm_logs/ctdp-g1-fe1c53db_1278012.out",
+      "stderr": "/data/run01/sczc063/yuzibo/slurm_logs/ctdp-g1-fe1c53db_1278012.err"
+    },
+    "new_fatal_errors": [],
+    "counting_note": "Persisted audit is written after scheduled evaluation; do not infer unpersisted updates from batch progress or stale audit alone.",
+    "old_G2_G3": "Reuse 06:38 authenticated 78cde1be/11ced13a terminal results 56.5234%/57.8489%; no fresh inference or checkpoint load this cycle."
+  },
+  "ct_coordinate_evaluator": {
+    "sha": "073832744dd171dee4119dc29d1bb12a057e84f4",
+    "training_sha": "fe1c53db1b2a7e467a6af2eccfe8b7636f667a81",
+    "remote_source": "/data/run01/sczc063/yuzibo/projects/ctdp_coordinate_eval_07383274",
+    "clean_tree": true,
+    "model_config_diff_from_training": {
+      "checked_at_cst": "2026-09-08 09:35:43 CST",
+      "command": "git diff --name-only fe1c53db1b2a7e467a6af2eccfe8b7636f667a81 HEAD -- opentad configs",
+      "returncode": 0,
+      "changed_files": []
+    },
+    "precheck_job": "1278042",
+    "state": "COMPLETED",
+    "exit_code": "0:0",
+    "started_at_cst": "2026-09-08 08:11:29 CST",
+    "ended_at_cst": "2026-09-08 08:14:51 CST",
+    "observed_at_cst": "2026-09-08 09:33-09:37 CST",
+    "gpu_tests_passed": 31,
+    "verified_arms": [
+      "G0",
+      "G1",
+      "G2",
+      "G3"
+    ],
+    "per_arm_checkpoint_contract": {
+      "epoch": 1,
+      "state_key": "state_dict_ema",
+      "successful_optimizer_updates": 6,
+      "scheduler_updates": 6,
+      "ema_updates": 6,
+      "optimizer_state_count": 337
+    },
+    "successful_single_batch_inference_count": 4,
+    "terminal_marker": "CTDP_ALL_EVAL_PRECHECKS_OK",
+    "stdout": "/data/run01/sczc063/yuzibo/experiments/ctdp_coordinate_eval_07383274/slurm_logs/precheck_1278042.out",
+    "stderr": "/data/run01/sczc063/yuzibo/experiments/ctdp_coordinate_eval_07383274/slurm_logs/precheck_1278042.err",
+    "formal_evaluation_jobs": [],
+    "next_action": "Wait for new G0/G1 epoch59 EMA and actual6000 update validation, then use07383274 formal namespace. Do not repeat1278007 or1278042."
+  },
+  "closed_routes": {
+    "checked_at_cst": "2026-09-08 09:33:57 CST",
+    "metric_scale": "fraction_0_to_1",
+    "h65": {
+      "receipt_pattern": "/data/run01/sczc063/yuzibo/experiments/h65_pro_eval_67c8f39f_f2068e18/F{01..06}_seed3407/gpu1_id0/eval/F{01..06}_seed3407_epoch59_ema_metrics.json",
+      "average_mAP": [
+        0.6338540623028592,
+        0.6422653640360945,
+        0.6036478160171815,
+        0.6070129227677766,
+        0.640886229714488,
+        0.6381814163848895
+      ],
+      "receipt_mtimes_unchanged": true,
+      "qualification": "Existing phase-off results, not official unmodified AdaTAD reproduction. TIA and matched controls unresolved."
+    },
+    "et": {
+      "receipt_root": "/data/run01/sczc063/yuzibo/experiments/ettrc_terminal_eval_67d7079d/formal",
+      "OFF": {
+        "average_mAP": 0.6207677503328417,
+        "mtime_cst": "2026-09-07 13:29:55 CST"
+      },
+      "ON": {
+        "average_mAP": 0.5480958031537403,
+        "mtime_cst": "2026-09-07 13:25:30 CST"
+      },
+      "qualification": "Old fixed-anchor learned residual proxy; anchor correction and precision audit unresolved."
+    },
+    "reuse_note": "06:39 receipt self-hash and terminal identity checks reused for unchanged small receipts. No repeated checkpoint loading or inference."
+  },
+  "evidence_recovery": {
+    "checked_at_cst": "2026-09-08 09:33-09:35 CST",
+    "training_sha": "ce767b4df49a82b42f4fab4897ac4ea562e4b548",
+    "jobs": {
+      "1277406_2": "COMPLETED(0:0)",
+      "1277407_7": "COMPLETED(0:0)",
+      "1277768_1": "COMPLETED(0:0)",
+      "1277953_2": "COMPLETED(0:0)"
+    },
+    "actual_log_root": "/data/run01/sczc063/yuzibo/experiments/duca_evidence_storage_resume_ce767b4d/slurm_logs",
+    "log_files": [
+      "formal_1277406_2.out",
+      "formal_1277406_2.err",
+      "formal_1277407_7.out",
+      "formal_1277407_7.err",
+      "formal_1277768_1.out",
+      "formal_1277768_1.err",
+      "eval_1277953_2.out",
+      "eval_1277953_2.err"
+    ],
+    "new_fatal_errors": [],
+    "scan_note": "A literal fail_on_amp_replay_exhaustion=True in expanded config is not an actual runtime failure. Training/Testing Over endpoints and stderr read.",
+    "A1": {
+      "receipt": "/data/run01/sczc063/yuzibo/experiments/duca_evidence_storage_resume_ce767b4d/evaluation/A1/seed_8261/gpu1_id0/official_eval/metrics.json",
+      "average_mAP": 0.5159681679375281,
+      "mtime_cst": "2026-09-08 00:42:09 CST"
+    },
+    "missing_receipts": [
+      "A6",
+      "F"
+    ],
+    "qualification": "04:30 actual terminal and cross-SHA recovery checks reused. Utility learning and real robust/cycle mechanisms remain unimplemented; e0c88c9a initializer repair is not the identity of these results."
+  },
+  "bafdr": {
+    "checked_at_cst": "2026-09-08 09:33-09:37 CST",
+    "training_sha": "710ce8a6246c471742c83bf7c180d9ab87c36fac",
+    "jobs": {
+      "1276842": "COMPLETED(0:0)",
+      "1276843": "COMPLETED(0:0)",
+      "1277954": "COMPLETED(0:0)",
+      "1277955": "COMPLETED(0:0); FULL PRECHECK only"
+    },
+    "log_root": "/data/run01/sczc063/yuzibo/experiments/bafdr_successful_updates_710ce8a6/slurm_logs",
+    "observed_terminal_logs": "U16/LATE/NOKD saved epoch59 at update6000; FULL PRECHECK has BAFDR_SUCCESSFUL_UPDATE_PRECHECKS_OK.",
+    "metrics_json_files": [],
+    "qualification": "04:28 actual6000 checkpoint verification reused. Padding routing and real screen terminal validation remain unresolved; no FULL formal/21-cell expansion.",
+    "historical_jobs_read_only": {
+      "1267920": "FAILED(1:0)",
+      "1267921": "CANCELLED by1258; ended2026-09-07 16:50:17"
+    }
+  },
+  "unified": {
+    "status": "BLOCKED_UNIMPLEMENTED",
+    "reason": "Real P0/P1 training wiring, legal one-swap, H65 retention/transition unresolved.",
+    "scope": "Local identity only; no new whole-code audit."
+  },
+  "resources": {
+    "checked_at_cst": "2026-09-08 09:33 CST",
+    "eligible_gpu_nodes": 25,
+    "configured_gpus": 200,
+    "allocated_gpus": 139,
+    "unallocated_gpus": 61,
+    "user_running_jobs": 6,
+    "user_pending_jobs": 0,
+    "user_job_ids": [
+      "1278138",
+      "1278012",
+      "1278011",
+      "1276621",
+      "1276622",
+      "1274508"
+    ],
+    "disk_available": "245G",
+    "disk_use": "96%",
+    "qualification": "Public free GPUs and space do not establish per-user quota or submission availability."
+  },
+  "minute_supervisor": {
+    "observed_at_cst": "2026-09-08 09:33:35 CST",
+    "receipt": "/data/run01/sczc063/yuzibo/projects/duca_multibranch_supervisor_recovery_20260907/latest_receipt.json",
+    "checked_at_utc": "2026-09-08T01:32:35+00:00",
+    "age_seconds": 60,
+    "status": "ACTIVE_READ_ONLY_POLLING",
+    "dispatcher_mode": "plan",
+    "dispatcher_status": "BLOCKED",
+    "dispatcher_returncode": 3,
+    "entries": 0,
+    "qualification": "Not an automatic submitter for the current repair queue."
+  },
+  "inspection_corrections": [
+    "Initial agent used nonexistent combined opentad/configs path; corrected git diff over separate opentad and configs paths is empty.",
+    "Evidence log path lookup corrected; actual logs read without altering remote files."
+  ],
+  "actions": {
+    "new_slurm_jobs": [],
+    "cancelled_slurm_jobs": [],
+    "new_model_code_changes": [],
+    "large_checkpoint_loads": 0,
+    "repeated_admissions": 0,
+    "pro_consultation_performed": false,
+    "historical_bafdr_modified": false
+  },
+  "remaining_priorities": [
+    "Supervise CT G0/G1 and collect terminal6000 evidence before compatible independent evaluation.",
+    "Official baseline provenance and same-weight TIA alignment; no replacement by modified REF-D768.",
+    "BAFDR padding and real screen verification.",
+    "ET anchor correction and actual precision audit.",
+    "Evidence utility and real auxiliary-loss paths.",
+    "Unified P0/P1 and H65 retention/transition."
+  ]
+}

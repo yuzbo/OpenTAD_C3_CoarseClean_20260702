@@ -173,3 +173,20 @@ job1245842 的 Slurm 记录为 COMPLETED(0:0)。原 source 为 `/data/run01/sczc
 08:01公共25个可调度节点CfgTRES200/AllocTRES132，未分配68GPU；本账户7 RUNNING/0 PENDING，此样本早于新增1278042。08:11磁盘263G可用、96%使用，公共空间与GPU余量不保证本账户配额。07:59分钟轮询仍plan/BLOCKED且entries为空，只能称只读轮询；后续SSH不可达不推导监督器或Slurm已退出。目录查询已加45秒总超时，将真实超时标UNAVAILABLE，避免心跳无限等待。
 
 本轮没有新正式训练、正式性能评测、作业取消或Pro咨询；仅新增兼容评测代码与一次推理PRECHECK。六路线未修复机制不因这项接线获得验收，历史BAFDR1267920/1267921未操作。证据见[18_HEARTBEAT_EVIDENCE_20260908_0757.json](18_HEARTBEAT_EVIDENCE_20260908_0757.json)。
+
+
+## 09:31 心跳补充
+
+本轮触发为2026-09-08 09:31:29 CST，实际远端采样09:32至09:37。09:32:19 SSH读取恢复，既有任务未因先前查询超时而失败；没有把其他未执行触发补记为已检查。
+
+- CT新坐标G0/G1仍RUNNING，09:35:43落盘audit分别为epoch44/46，optimizer/scheduler/EMA各4500/4700，AMP skip均3并已重放。G0已结束epoch45训练并在评测，G1到epoch47 batch50，最新loss分别0.4519/0.4641有限。两臂均无epoch59，不报告新正式性能；audit在评测后落盘，不能将间隔误判为挂起。
+- 兼容评测器07383274的既有PRECHECK1278042已于08:14:51 COMPLETED(0:0)。本轮收取31个GPU测试通过、G0-G3四份epoch1 EMA/真实6更新/337 optimizer states绑定、四次单批推理PASS及CTDP_ALL_EVAL_PRECHECKS_OK。没有重跑任何预检。远端训练fe1c53db及评测07383274仍exact/clean，分别对opentad与configs执行git diff为空。
+- 07383274现已具备评测启动证据，但正式评测仍等待新G0/G1终态epoch59及实际6000更新。旧G2/G3继续保留78cde1be/11ced13a及56.5234%/57.8489%原身份；不将它们重新命名为新坐标版结果。
+- H65六份小收据及ET两份小收据mtime/数值未变；H65最高64.2265%，仍phase-off且TIA未修。ET关闭/开启为62.0768%/54.8096%，anchor correction与精度审计未完成。复用此前自哈希及大checkpoint验证，没有新推理。
+- Evidence A1/A6/F训练与A1评测均COMPLETED(0:0)。初次路径查询未命中后已补读真实slurm_logs，Training/Testing Over及stderr未见新fatal；配置里的fail_on_amp_replay_exhaustion=True不是失败事件。A1仍51.5968%，A6/F仍缺独立metrics。utility/robust/cycle问题仍在，不能把e0c88c9a新初始化赋给旧checkpoint。
+- BAFDR U16/LATE/NOKD及FULL PRECHECK均COMPLETED(0:0)，前三者终轮日志为epoch59/update6000，实际权重验证复用04:28记录。当前710ce8a6输出仍无metrics.json，padding/screen问题不因预检通过获得豁免。FULL正式与21单元未开放。历史1267920/1267921仅只读查询，未取消、修改或重提。
+- 六条active本地worktree身份均与目录一致且clean；Unified保持BLOCKED_UNIMPLEMENTED，真实P0/P1与H65保留/转换本轮没有新增实现。官方原配方1245842的68.73%仍为此前核查的日志值，预训练/数据来源与独立复评未完成，不用修改版REF67.58%替代。
+
+09:33公共可调度25节点CfgTRES200/AllocTRES139，即61/200 GPU未分配；本用户6 RUNNING/0 PENDING，其中本任务CT占2项。磁盘245G可用、96%已用，公共余量不等于账户配额保证。分钟回执在09:33:35读取时距生成60秒，只读轮询正常；dispatcher=plan/BLOCKED、entries为空，不是自动提交正常。
+
+本轮完成远端状态恢复读取、既有CT预检终态收取及目录更新；没有新的模型修复、训练、正式评测、作业取消或Pro咨询。剩余工作继续按前述最小顺序执行，不能把本轮监控当作六路线验收。证据见[19_HEARTBEAT_EVIDENCE_20260908_0931.json](19_HEARTBEAT_EVIDENCE_20260908_0931.json)。
