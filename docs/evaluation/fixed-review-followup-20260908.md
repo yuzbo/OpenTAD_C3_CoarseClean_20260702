@@ -23,6 +23,19 @@ python -m pytest tests/test_geosparse_review_tail.py tests/test_geosparse_review
 
 这些是CPU合成输入正确性检查；通过情况由精确提交的测试收据记录，不是实际视频精度、CUDA训练准入或机制成立证明。真实诊断运行应从独立工具源码加载冻结M，不能默默改用本分支的模型修复版本。
 
+2026-09-08 19:23核验：实现提交 `281af76998412562bf56ee7da967894650b2966b` 在独立远端干净checkout通过上述31项检查（pytest 55.73秒）。测试源码为真实小宽度模型；768位置/755有效的atom1/4/8前向反向均通过。原始收据与完整stdout位于外部执行包 `official_adatad_audit/sci3_verification_281af769/`。只检查预期变更范围：相对M的官方opentad/configs/tools无改动，geosparse_ext仅detector.py、evidence.py、figures.py。
+
+## 新增补测提交
+
+| case | Slurm ID | 提交时状态与资源规则 |
+| --- | --- | --- |
+| B动态E20 EMA全测试预算 | 245543 | A100独立低优先级分配，SUBMITTED；不与隔离benchmark共享设备。 |
+| A动态E60 EMA全测试预算 | 1280292 | N16物理GPU1→CUDA0，SUBMITTED并hold；等待1279571结束且A固定实际RUNNING或完成后释放同ID。 |
+| C动态E20 EMA全测试预算 | 245503 | 既有PENDING任务，不重复提交。 |
+| A动态best E40强制q=.5精度/成本 | 1280030 | 既有hold任务，保留同一资源放行条件和原GPU预检。 |
+
+两项新回放复用已经完成七个案例的Scout/计划构建脚本与C20采用的A100设备映射修订。读取不可变epoch_19.pth/epoch_59.pth，严格检查EMA/source/config及211/792覆盖；预算和Heavy MAC来自实际计划，不能冒充新TAD精度或延迟。提交记录不是完整预算结果。
+
 ## 检查点和研究结论
 
 六个fixed/dynamic主任务、B-full、统一dense继续按M及原身份推进。官方独立训练best/E60保留；没有证据要求重训。缺失某epoch验证时补已有检查点推理，不重训60轮。
