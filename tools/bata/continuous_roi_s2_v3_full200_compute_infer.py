@@ -26,6 +26,7 @@ from tools.bata.continuous_roi_s2_v3_full200_compute_eval import (
 )
 from tools.bata.continuous_roi_s2_v3_full200_compute_train import (
     REQUIRED_IDENTITY_HASHES,
+    bind_pretrained_checkpoint,
     validate_full_data_manifest,
 )
 from tools.bata.zoomtoken_full200_matrix_spec import (
@@ -274,8 +275,26 @@ def post_nms_with_prediction_uids(
 
 
 def run_label_free_inference(args: argparse.Namespace) -> dict[str, Any]:
+    manifest = validate_full_data_manifest(args.manifest)
+    seal = load_checkpoint_seal(
+        args.checkpoint_seal,
+        expected_commit=args.expected_commit,
+        expected_population_manifest_sha256=manifest["manifest_sha256"],
+    )
+    cell = _cell_from_seal(seal, arm=args.arm, seed=args.seed)
+    return run_bound_cell_inference(args, manifest=manifest, cell=cell)
+
+
+def run_bound_cell_inference(
+    args: argparse.Namespace,
+    *,
+    manifest: Mapping[str, Any],
+    cell: Mapping[str, Any],
+    precheck_only: bool = False,
+) -> dict[str, Any]:
+    """Execute an admitted cell; the caller owns matrix admission and GT opening."""
     if "SLURM_JOB_ID" not in os.environ:
-        raise RuntimeError("formal label-free inference requires a Slurm allocation")
+        raise RuntimeError("label-free inference requires a Slurm allocation")
     import torch
     from mmengine.config import Config
 
@@ -286,14 +305,7 @@ def run_label_free_inference(args: argparse.Namespace) -> dict[str, Any]:
 
     if torch.cuda.device_count() < 1:
         raise RuntimeError("formal label-free inference requires a Slurm-allocated GPU")
-    manifest = validate_full_data_manifest(args.manifest)
     manifest_sha = manifest["manifest_sha256"]
-    seal = load_checkpoint_seal(
-        args.checkpoint_seal,
-        expected_commit=args.expected_commit,
-        expected_population_manifest_sha256=manifest_sha,
-    )
-    cell = _cell_from_seal(seal, arm=args.arm, seed=args.seed)
     identity_hashes = _load_identity_hashes(args.identity_hashes)
     if identity_hashes["config_sha256"] != sha256_file(cell["config_path"]):
         raise ValueError("identity hash file does not bind the inference config")
@@ -302,6 +314,10 @@ def run_label_free_inference(args: argparse.Namespace) -> dict[str, Any]:
         cell["config_path"], arm=args.arm, seed=args.seed, spec=MATRIX_SPEC
     )
     cfg = Config.fromfile(cell["config_path"])
+    terminal = json.loads(Path(cell["training_terminal_receipt_path"]).read_text())
+    bind_pretrained_checkpoint(
+        cfg, terminal["runtime_identity"]["pretrained_checkpoint"], identity_hashes
+    )
     cfg.dataset.test.ann_file = manifest["evaluation"]["heldout_inference_annotation"]
     cfg.dataset.test.class_map = manifest["class_map"]["path"]
     cfg.dataset.test.data_path = manifest["media"]["root"]
@@ -325,6 +341,8 @@ def run_label_free_inference(args: argparse.Namespace) -> dict[str, Any]:
         drop_last=False,
         **cfg.solver.test,
     )
+    if loader.batch_size != 1:
+        raise ValueError("window ordinal binding requires test batch_size=1")
     device_loader = ZoomTokenDeviceLoader(loader, torch.device("cuda", 0))
     model = build_detector(cfg.model).cuda().eval()
     backbone_module = getattr(model, "backbone", None)
@@ -365,6 +383,10 @@ def run_label_free_inference(args: argparse.Namespace) -> dict[str, Any]:
                 post_cfg=post_config,
                 ext_cls=external_classifier,
             )
+        if precheck_only:
+            return {"ema_loaded_strictly": True, "forward_windows": 1,
+                    "dataset_windows": len(dataset.data_list),
+                    "metric_gt_opened": False}
         for video_id, rows in window_results.items():
             if video_id not in raw:
                 raise ValueError("model emitted an out-of-population video")

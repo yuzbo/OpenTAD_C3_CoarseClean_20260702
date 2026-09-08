@@ -1425,3 +1425,13 @@ updated: 2026-08-31
     full-stack latency 失败，不得重跑、换 GPU/population、改门、增加 async/prefetch/worker tuning、模型救援或
     successor。该 STOP 只约束当前 R1 contiguous-support single-GPU 效率路线，不外推所有 decode reuse、动态计算、
     official test、训练泛化或边界保护；唯一下一动作是一次 fresh exact-Project Pro。
+
+## User-Stop Boundary, 2026-09-08
+
+Do not resubmit cancelled D2S job 1276621 or PA-TAD job 1276622. The user has
+requested evaluation of available complete final EMA weights instead. D2S has
+two matched complete seeds and PA-TAD one; full data per trained cell does not
+make either original three-seed matrix complete. Do not relabel intermediate
+weights as final, change the model/NMS, or weaken the formal nine-cell seals.
+The independent diagnostic is recorded in
+`experiments/2026-09-08-stopped-matrix-diagnostic.md`.

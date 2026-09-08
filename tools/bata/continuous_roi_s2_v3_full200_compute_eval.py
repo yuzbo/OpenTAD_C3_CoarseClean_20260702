@@ -964,6 +964,18 @@ def load_ground_truth_after_single_open(
     _validated_gt_open_marker(
         marker_path=marker_path, annotation_path=annotation_path
     )
+    return _read_complete_ground_truth(
+        annotation_path=annotation_path,
+        expected_video_order=expected_video_order,
+        class_map=class_map,
+    )
+
+
+def _read_complete_ground_truth(
+    *, annotation_path: str | Path, expected_video_order: Sequence[str],
+    class_map: Sequence[str],
+) -> tuple[GroundTruth, ...]:
+    """Shared parser; callers must first enforce their own GT-opening barrier."""
     payload = json.loads(Path(annotation_path).read_text(encoding="utf-8"))
     database = payload.get("database")
     if not isinstance(database, Mapping):
@@ -1033,6 +1045,16 @@ def assert_official_point_evaluator_parity(
         expected_video_order=bundle.video_order,
         class_map=class_map,
     )
+    return _official_point_metrics(
+        annotation_path=annotation_path, ground_truth=ground_truth,
+        bundle=bundle, class_map=class_map, atol=atol,
+    )
+
+
+def _official_point_metrics(
+    *, annotation_path: str | Path, ground_truth: Sequence[GroundTruth],
+    bundle: PredictionBundle, class_map: Sequence[str], atol: float = 1e-12,
+) -> dict[str, float]:
     occurrences = tuple(VideoOccurrence(video_id, video_id) for video_id in bundle.video_order)
     local = full_class_map_vector(
         ground_truth,

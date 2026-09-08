@@ -23,6 +23,7 @@ from tools.bata.continuous_roi_s2_v3_full200_compute_eval import (
     VideoOccurrence,
 )
 from tools.bata.continuous_roi_s2_v3_full200_compute_infer import (
+    PROTOCOL_ID,
     build_checkpoint_seal,
     load_checkpoint_seal,
 )
@@ -192,6 +193,9 @@ def test_checkpoint_seal_requires_nine_complete_full_training_receipts(tmp_path)
             terminal = tmp_path / f"{arm}-{seed}.terminal.json"
             terminal_payload = {
                 "complete": True,
+                "protocol_id": PROTOCOL_ID,
+                "arm": arm,
+                "seed": seed,
                 "checkpoint_sha256": sha256_file(checkpoint),
                 "checkpoint_state": "epoch_59_state_dict_ema_update_6000",
             }

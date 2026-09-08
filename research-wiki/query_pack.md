@@ -1549,6 +1549,11 @@ max_chars: 8000
 
 ## Pointers
 
+- User stop on 2026-09-08: D2S `1276621` and PA-TAD `1276622` are cancelled.
+  Evaluate only complete, matched final EMA cells (D2S seeds 4407/4408; PA-TAD
+  seed 4407), on the complete 211-video/792-window evaluation population.
+  This is diagnostic-only, not complete three-seed evidence. See
+  `research-wiki/experiments/2026-09-08-stopped-matrix-diagnostic.md`.
 - GeoRoute implementation and gates:
   `research-wiki/experiments/georoute-adatad.md`.
 - Current GeoRoute hypothesis and decisions:
