@@ -220,5 +220,20 @@
       "ETTRC": "00:12:07",
       "H65": "00:07:37"
     }
-  }
+  },
+  "last_status_check_at": "2026-09-08T17:39:58+08:00",
+  "first_real_full_test": {
+    "ON": {
+      "job": "1280117",
+      "started_at_cst": "2026-09-08 17:37:04",
+      "completed_training_epochs": 5
+    },
+    "OFF": {
+      "job": "1280118",
+      "started_at_cst": "2026-09-08 17:37:11",
+      "completed_training_epochs": 5
+    },
+    "full_metrics_available": false
+  },
+  "h65_progress_at_last_check": "三组RUNNING，epoch2即第3轮训练；无新报错"
 }
