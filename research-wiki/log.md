@@ -7383,3 +7383,14 @@ admissible replacement full-ASFormer gradient gate, bound to the full commit.
   Only the test fixture is corrected; real CUDA AMP/replay assertions and
   production training are unchanged. Old logs are retained and the successor
   requires a new exact-SHA admission before formal jobs.
+
+## 2026-09-08 CT-DP coordinate-compatible terminal evaluator
+
+- Ported the existing independent evaluator onto the fe1c53db coordinate
+  repair without model/config changes. Old 78cde1be checkpoints are rejected;
+  existing G2/G3 results retain their original training/evaluator identities.
+- Local receipt/update/C3 tests: 45 passed, 1 CUDA skipped. The separate
+  coordinate collection encountered the known Windows Torch DLL failure;
+  Linux exact-SHA tests and a one-batch inference PRECHECK remain required.
+- Details: `experiments/ctdp-coordinate-terminal-evaluation-20260908.md`.
+  This is evaluation implementation, not a new training or performance result.

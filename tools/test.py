@@ -33,6 +33,8 @@ def parse_args():
     )
     parser.add_argument("--seed", type=int, default=42, help="random seed")
     parser.add_argument("--id", type=int, default=0, help="repeat experiment id")
+    parser.add_argument("--ctdp-metrics-json", default=None, help="CT-DP terminal official receipt")
+    parser.add_argument("--ctdp-eval-precheck", action="store_true", help="CT-DP one-batch inference precheck")
     parser.add_argument(
         "--not_eval",
         action="store_true",
@@ -129,6 +131,24 @@ def main():
         )
     assert_detector_training_allowed(cfg, entrypoint="tools/test.py")
     assert_no_raw_prediction_shortcut_for_pc_ot_mras(cfg)
+
+    ctdp_identity = None
+    if args.ctdp_metrics_json or args.ctdp_eval_precheck:
+        from tools.bata.ctdp_terminal_receipt import (
+            checkpoint_counts, source_identity, validate_request, write_receipt,
+        )
+
+        if args.checkpoint == "none" or args.id != 0:
+            raise ValueError("CT-DP evaluation requires an explicit checkpoint and id0")
+        if args.ctdp_metrics_json and args.ctdp_eval_precheck:
+            raise ValueError("CT-DP precheck cannot produce a terminal receipt")
+        validate_request(cfg, seed=args.seed, world_size=int(os.environ["WORLD_SIZE"]),
+                         not_eval=args.not_eval, max_batches=args.max_batches,
+                         precheck=args.ctdp_eval_precheck, cfg_options=args.cfg_options)
+        ctdp_identity = source_identity(path, args.config)
+        if os.path.exists(cfg.work_dir):
+            raise FileExistsError("CT-DP evaluation requires a new output directory")
+        cfg.post_processing.save_dict = True
 
     # DDP init
     args.local_rank = int(os.environ["LOCAL_RANK"])
@@ -228,6 +248,9 @@ def main():
         checkpoint = torch.load(checkpoint_path, map_location=device)
         logger.info("Checkpoint is epoch {}.".format(checkpoint["epoch"]))
         evaluation_epoch = int(checkpoint["epoch"])
+        if ctdp_identity is not None:
+            counts = checkpoint_counts(checkpoint, args.config, precheck=args.ctdp_eval_precheck)
+            logger.info("CTDP_EVAL_CHECKPOINT_OK %s", counts)
         if s1_binding is not None:
             if checkpoint.get("experiment_metadata") != sidecar["experiment_metadata"]:
                 raise ValueError(
@@ -266,6 +289,15 @@ def main():
         max_batches=args.max_batches,
         epoch=evaluation_epoch,
     )
+    if ctdp_identity is not None and args.rank == 0:
+        if args.ctdp_eval_precheck:
+            logger.info("CTDP_EVAL_PRECHECK_OK")
+        else:
+            write_receipt(args.ctdp_metrics_json, cfg=cfg, config_path=args.config,
+                          checkpoint_path=checkpoint_path, checkpoint=checkpoint,
+                          identity=ctdp_identity,
+                          video_ids=[str(row[0]) for row in test_dataset.data_list])
+            logger.info("CTDP_TERMINAL_RECEIPT_OK %s", args.ctdp_metrics_json)
     logger.info("Testing Over...\n")
 
 
