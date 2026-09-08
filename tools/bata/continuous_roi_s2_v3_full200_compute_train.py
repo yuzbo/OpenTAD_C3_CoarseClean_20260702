@@ -549,7 +549,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         
         runtime_identity_receipt = {
             "model_class": raw_model.__class__.__name__,
-            "total_trainable_parameters": total_trainable,
+            "initial_requires_grad_parameters": total_trainable,
             "backbone_class": backbone_module.__class__.__name__ if backbone_module else None,
             "projection_class": projection_module.__class__.__name__ if projection_module else None,
             "pretrained_checkpoint": pretrained_path.as_posix(),
@@ -565,9 +565,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             if getattr(backbone_module, "fusion_mode", None) != "fixed_mean":
                 raise RuntimeError(f"Audit failure: fusion_mode is {backbone_module.fusion_mode}, expected fixed_mean")
 
-        if rank == 0:
-            logger.info(f"[RUNTIME_IDENTITY_AUDIT] {runtime_identity_receipt}")
-
         model = build_formal_ddp(model)
         if not bool(cfg.solver.fp16_compress):
             raise ValueError("formal cell changed the frozen FP16 communication policy")
@@ -577,6 +574,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         model_ema = ModelEma(model)
         scaler = GradScaler()
         optimizer = build_optimizer(copy.deepcopy(cfg.optimizer), model, logger)
+        runtime_identity_receipt["total_trainable_parameters"] = sum(
+            param.numel()
+            for group in optimizer.param_groups
+            for param in group["params"]
+            if param.requires_grad
+        )
+        if rank == 0:
+            logger.info(f"[RUNTIME_IDENTITY_AUDIT] {runtime_identity_receipt}")
         scheduler, scheduler_epochs = build_scheduler(
             copy.deepcopy(cfg.scheduler), optimizer, len(train_loader)
         )

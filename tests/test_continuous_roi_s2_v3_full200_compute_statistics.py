@@ -225,3 +225,29 @@ def test_checkpoint_seal_requires_nine_complete_full_training_receipts(tmp_path)
         expected_commit="candidate",
         expected_population_manifest_sha256="population",
     )["seal_sha256"] == seal["seal_sha256"]
+
+
+@pytest.mark.parametrize("gt_segments,prediction_rows,expected_ap", [
+    ([(0.0, 1.0)], [(0.0, 1.0, 0.5), (2.0, 3.0, 0.5)], 50.0),
+    ([(0.0, 2.0), (1.0, 3.0)], [(0.0, 3.0, 0.9), (0.0, 2.0, 0.8)], 100.0),
+])
+def test_map_matches_official_score_and_gt_iou_ties(gt_segments, prediction_rows, expected_ap):
+    import pandas as pd
+    from opentad.evaluations.mAP import compute_average_precision_detection
+
+    ground_truth = [GroundTruth("v", index, 0, start, end)
+                    for index, (start, end) in enumerate(gt_segments)]
+    predictions = [Prediction("v", 0, index, 0, score, start, end)
+                   for index, (start, end, score) in enumerate(prediction_rows)]
+    local = full_class_map_vector(
+        ground_truth, predictions, occurrences=[VideoOccurrence("v", "v")],
+        class_count=1, tiou_thresholds=[0.5],
+    )
+    official = compute_average_precision_detection(
+        pd.DataFrame([{"video-id": "v", "t-start": s, "t-end": e, "label": 0}
+                      for s, e in gt_segments]),
+        pd.DataFrame([{"video-id": "v", "t-start": s, "t-end": e, "score": score, "label": 0}
+                      for s, e, score in prediction_rows]), tiou_thresholds=[0.5],
+    )
+    assert local[0] == pytest.approx(expected_ap, abs=1e-12)
+    assert local[0] == pytest.approx(100.0 * official[0], abs=1e-12)

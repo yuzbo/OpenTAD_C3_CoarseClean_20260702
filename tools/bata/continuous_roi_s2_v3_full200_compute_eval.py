@@ -11,6 +11,8 @@ from pathlib import Path
 from statistics import median
 from typing import Any, Iterable, Mapping, Sequence
 
+import numpy as np
+
 root_dir = Path(__file__).resolve().parents[2]
 if str(root_dir) not in sys.path:
     sys.path.insert(0, str(root_dir))
@@ -235,9 +237,11 @@ def full_class_map_vector(
         if npos == 0:
             class_vectors.append([0.0] * len(thresholds))
             continue
-        prediction_rows.sort(
-            key=lambda item: (-item[0].score, item[1], item[0].uid)
-        )
+        # Match the official evaluator, including its reverse-argsort tie order.
+        prediction_order = np.asarray(
+            [row[0].score for row in prediction_rows], dtype=np.float64
+        ).argsort()[::-1]
+        prediction_rows = [prediction_rows[int(index)] for index in prediction_order]
         locks = {
             cluster_id: [set() for _ in thresholds]
             for cluster_id in gt_by_cluster
@@ -246,16 +250,14 @@ def full_class_map_vector(
         false_positive = [[0.0] * len(prediction_rows) for _ in thresholds]
         for prediction_index, (prediction, cluster_id) in enumerate(prediction_rows):
             targets = gt_by_cluster[cluster_id]
-            ranked = sorted(
-                (
-                    (-temporal_iou(prediction, target), target.start, target.end, target.uid, index)
-                    for index, target in enumerate(targets)
-                ),
-                key=lambda row: row,
+            overlaps = np.asarray(
+                [temporal_iou(prediction, target) for target in targets],
+                dtype=np.float64,
             )
+            ranked = overlaps.argsort()[::-1]
             for threshold_index, threshold in enumerate(thresholds):
-                for negative_overlap, _, _, _, target_index in ranked:
-                    overlap = -negative_overlap
+                for target_index in ranked:
+                    overlap = float(overlaps[target_index])
                     if overlap < threshold:
                         break
                     if target_index not in locks[cluster_id][threshold_index]:

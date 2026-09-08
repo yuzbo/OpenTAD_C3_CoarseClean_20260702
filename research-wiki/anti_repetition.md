@@ -1435,3 +1435,13 @@ make either original three-seed matrix complete. Do not relabel intermediate
 weights as final, change the model/NMS, or weaken the formal nine-cell seals.
 The independent diagnostic is recorded in
 `experiments/2026-09-08-stopped-matrix-diagnostic.md`.
+
+The first diagnostic PRECHECK jobs 1280173/1280174 failed before model execution
+because the non-login Slurm shell did not initialize Environment Modules. Their
+dependent tests 1280175/1280176 never started. Do not call those submissions a
+successful test deployment. Preserve them as failed execution evidence.
+Task-local AP must match the unchanged official evaluator's reverse-argsort tie
+semantics; do not silence parity failures or alter scores. Old trainable-parameter
+receipt fields overcount frozen backbone weights. See
+`experiments/audits/2026-09-08-stopped-matrix/EXPERIMENT_AUDIT.md` for reproductions,
+the real 6000-step checkpoint audit, corrected counts and rejected false leads.

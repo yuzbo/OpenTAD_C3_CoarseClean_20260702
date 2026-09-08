@@ -8,6 +8,7 @@
 #SBATCH --time=08:00:00
 
 set -euo pipefail
+source /usr/share/modules/init/bash
 module load cuda/11.8
 module load miniforge3/24.11
 source /data/run01/sczc063/yuzibo/conda_envs/opentad/bin/activate

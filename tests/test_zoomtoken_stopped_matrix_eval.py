@@ -1,3 +1,4 @@
+import ast
 import copy
 import json
 from pathlib import Path
@@ -108,3 +109,29 @@ def test_launcher_is_evaluation_only_and_does_not_override_slurm_devices():
     assert "PRECHECK_ONLY" in launcher
     assert "torchrun" not in launcher
     assert "CUDA_VISIBLE_DEVICES" not in launcher
+
+
+def test_slurm_nonlogin_shell_initializes_environment_modules_before_loading():
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "scripts/submit_zoomtoken_stopped_matrix_eval_n16r4.sbatch").read_text()
+    assert script.index("source /usr/share/modules/init/bash") < script.index("module load cuda/11.8")
+
+
+def test_runtime_trainable_count_counts_only_optimizer_members():
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "tools/bata/continuous_roi_s2_v3_full200_compute_train.py").read_text()
+    assignments = [node for node in ast.walk(ast.parse(source))
+                   if isinstance(node, ast.Assign) and any(
+                       isinstance(target, ast.Subscript)
+                       and isinstance(target.slice, ast.Constant)
+                       and target.slice.value == "total_trainable_parameters"
+                       for target in node.targets)]
+    assert len(assignments) == 1
+    optimizer = SimpleNamespace(param_groups=[{"params": [
+        SimpleNamespace(requires_grad=True, numel=lambda: 7),
+        SimpleNamespace(requires_grad=False, numel=lambda: 11),
+    ]}])
+    expression = ast.Expression(body=assignments[0].value)
+    assert eval(compile(expression, "trainable_count", "eval"), {"optimizer": optimizer}) == 7
+    assert source.index("optimizer = build_optimizer") < source.index(
+        'runtime_identity_receipt["total_trainable_parameters"]')
