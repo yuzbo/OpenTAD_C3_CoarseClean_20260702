@@ -316,3 +316,22 @@ job1245842 的 Slurm 记录为 COMPLETED(0:0)。原 source 为 `/data/run01/sczc
 16:33可见可调度25节点CfgTRES200/AllocTRES197，剩余3/200 GPU；账户9 RUNNING/2 PENDING，共11项。其他任务1279871为Priority、1278774为JobHeldUser，均未操作。实验盘175G可用、97%已用；分钟回执56秒，ACTIVE但dispatcher仍plan/BLOCKED，只读轮询不等于自动提交正常。
 
 上一轮Computer Use初始化的kernel assets路径错误仍记为未解决，本轮没有重复重置/探测，也没有访问ixBrowser、发送材料或进行Pro咨询。没有新模型修改、提交、取消、重提、远端热改或重复PRECHECK；历史BAFDR1267920/1267921未操作。证据：[28_HEARTBEAT_EVIDENCE_20260908_1631.json](28_HEARTBEAT_EVIDENCE_20260908_1631.json)。
+
+## 17:33 用户协议修订与正式部署
+
+用户明确要求每5 epoch全测试集评测，并明确允许选择最佳checkpoint、按测试集调参。
+新实验标记TEST_GUIDED_EXPLORATORY_EVAL5，选择未四舍五入Avg-mAP最高的EMA、同分取最早epoch；
+保留完整曲线、全部调参尝试和单独的epoch59终态EMA。披露测试集重复使用，不能称未见测试泛化
+或与官方论文协议公平可比；推理仍无测试GT。旧实验不追溯改写，本节覆盖此前针对新实验的禁止选模规则。
+
+- H65新629162cd恢复整窗TIA，选后384帧使用192tubelets，dense768使用384tubelets。
+  跨clip、不跨视频的输出和梯度测试通过；相位开关控制只改allocation。CUDA51tests与三个PRECHECK由1280125通过。
+  新均匀/相位关闭/相位开启正式1280127/1280128/1280129均RUNNING，已进入epoch1。
+- ET新9a346f0d修复TIA前anchor correction污染，仍是fixed-stride共享低秩代理而非精确JVP/事件门。
+  远端37tests和真实2GPU训练/推理PRECHECK1280077/1280078通过。ON1280117、OFF1280118均RUNNING，FP32/global batch2。
+- 17:33:38核对五份实际protocol.json，自哈希、精确SHA、种子、211视频/792窗口和五轮选模日程一致。
+  新全测试集分数尚未产生，不能把初期loss当性能；当前是实现修复和新协议启动，尚未完成结果驱动调参。
+- CT后续矩阵的eval5、BAFDR padding/screen及专用训练接线、Evidence utility/robust/cycle和Unified Taylor/H65机制仍未完成。
+  此次5项启动不是六路线整体验收。其他任务与历史BAFDR1267920/1267921未操作，未进行Pro咨询。
+
+详见[29_TEST_GUIDED_EVAL5_DEPLOYMENT_20260908.md](29_TEST_GUIDED_EVAL5_DEPLOYMENT_20260908.md)及同名JSON。

@@ -30,6 +30,12 @@
 
 ## 协议规则
 
+2026-09-08 六路线新实验修订：用户明确要求每 5 epoch 全测试集评测、
+按官方 Avg-mAP 选择最佳 EMA，并允许按测试集调参。此类结果标记为
+TEST_GUIDED_EXPLORATORY_EVAL5，单列终态 EMA 分数和所有调参尝试；不再声称
+独立未见测试集泛化或与原论文协议公平可比。该修订不允许向模型推理输入
+注入测试 GT，也不改变历史实验协议和其他路线规则。详见 AGENTS.md。
+
 - 不允许 validation/test GT 参与测试时选择。
 - 不允许 validation/test teacher leakage。
 - 不允许 hidden raw-prediction cache shortcut。

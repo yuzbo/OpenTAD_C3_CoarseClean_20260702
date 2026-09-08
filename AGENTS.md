@@ -1,5 +1,21 @@
 @RTK.md
 
+## OpenTAD six-route protocol amendment (2026-09-08)
+
+The user's latest instruction explicitly authorizes selecting the best checkpoint
+and tuning hyperparameters using the THUMOS14 test set. For new six-route runs,
+evaluate the full test set after completed epochs 5, 10, ..., 60; select EMA by
+unrounded official Avg-mAP, keeping the earliest epoch on ties. Label these runs
+TEST_GUIDED_EXPLORATORY_EVAL5. Preserve epoch-59 EMA and its separate terminal
+score, the full learning curve, and every tuning attempt with its changed
+parameters, source/config identity and observed test scores. Never recast a
+test-selected score as unseen-test generalization or a fair official-paper
+comparison. Keep test GT out of the model's inference inputs. This supersedes
+older no-test-tuning/no-best-selection rules only for these newly disclosed
+six-route experiments; historical sealed runs retain their original protocol.
+The successful-update, failure-repair, exact-source and artifact-retention rules
+remain in force. Do not use this amendment to unlock unimplemented mechanisms.
+
 # Repository Instructions
 
 这是当前 C3 粗分类路线的纯净 OpenTAD 仓库。保持仓库小而可运行：不要加入历史 `research-wiki/`、旧 tracker、服务器日志、生成图、检查点、数据集、压缩包或旧路线报告。
@@ -51,5 +67,5 @@ python -m pytest tests/test_c3_coarse_classifier_model_matrix.py tests/test_c3_a
 - 以已确认的科研目标、有效评测和协议匹配的基线判断是否不达标；不得擅自新增分数门槛，不把中期低分、排队或未完成评测当作最终性能失败。
 - 讨论应提供相关精确 SHA、代码与配置、官方基线身份、训练更新数、真实 stdout/stderr、评测指标及收据，明确哪些是已证实错误、未实现机制或待验证假设。仅发送必要材料，不上传 SSH 私钥、令牌、代理凭证或无关私密资料。
 - 记录讨论时间、页面或对话链接（可获得时）、关键结论、定位依据、采纳或拒绝建议的理由，以及后续修改和验证结果，关联回对应实验目录记录。
-- Pro 建议不等于验收。采纳前核对实际源码和原设计；修改继续遵守独立 codex/ 修复分支、本地 focused tests、远端 exact-SHA clean tests、必要 CUDA 与对应 PRECHECK、新命名空间重提及保留旧产物的规则。不得为追分偷换官方基线、数据划分或训练预算，也不得按测试集调参或挑 checkpoint。
+- Pro 建议不等于验收。采纳前核对实际源码和原设计；修改继续遵守独立 codex/ 修复分支、本地 focused tests、远端 exact-SHA clean tests、必要 CUDA 与对应 PRECHECK、新命名空间重提及保留旧产物的规则。不得为追分偷换官方基线、数据划分或训练预算；新六路线实验按上方用户修订允许测试集调参和最佳 EMA 选择，必须如实披露。
 - 如果 Computer Use 无法操作 ixBrowser、账户未登录或 Pro 不可用，报告并记录具体阻塞，继续可独立推进的工作；不得声称已经咨询，也不得绕过指定入口。
