@@ -1,0 +1,127 @@
+{
+  "document_type": "research_design_registry",
+  "revision": "localization-value-20260908",
+  "dispatchable": false,
+  "model_source": "b70ae056c495b43ca3f305fe438926b97b2723b5",
+  "method_spec": "../methods/localization-value-routing.md",
+  "comparison_plan": "mod-tia-comparison-plan.md",
+  "current_manifest_job_count_unchanged": 1545,
+  "seed_scope": [
+    0
+  ],
+  "scheduling_policy": "Preserve existing full A/B/C dynamic and fixed-.5 priority; no performance gates; reuse equivalent runs.",
+  "unresolved_shared_spec": [
+    "MoD block layouts, per-layer/parent capacities, and reachable cost-matching points",
+    "Original-style versus controlled atomization, residual scaling and gradient estimator",
+    "M1 contextual router architecture and compute cost",
+    "Interval-risk assignment, reduction, weights, duration normalization and empty/missed GT",
+    "Swap donor/candidate conditioning, affected layers and later-router response",
+    "Counterfactual sampling frequency, training overhead and reproducible intervention state"
+  ],
+  "designs": [
+    {
+      "design_id": "M0",
+      "router": "per_layer_hidden_state_mod",
+      "risk": "standard_tad",
+      "calibration": "none",
+      "status": "IMPLEMENTATION_PENDING",
+      "required_layouts": [
+        "all_routed",
+        "alternating_dense_routed"
+      ],
+      "original_route_weight_gradient": true,
+      "slurm_ids": []
+    },
+    {
+      "design_id": "M1",
+      "router": "per_layer_contextual",
+      "risk": "standard_tad",
+      "calibration": "none",
+      "status": "SPEC_PENDING",
+      "slurm_ids": []
+    },
+    {
+      "design_id": "M2",
+      "router": "same_as_M1",
+      "risk": "shared_interval_risk",
+      "calibration": "none",
+      "status": "SPEC_AND_IMPLEMENTATION_PENDING",
+      "slurm_ids": []
+    },
+    {
+      "design_id": "M3",
+      "router": "same_as_M1",
+      "risk": "shared_interval_risk",
+      "calibration": {
+        "fixed": "equal_cost_swap",
+        "dynamic": "acquisition_with_marginal_cost"
+      },
+      "status": "SPEC_AND_IMPLEMENTATION_PENDING",
+      "slurm_ids": []
+    },
+    {
+      "design_id": "A0",
+      "router": "current_pre_scout_once",
+      "risk": "standard_tad",
+      "calibration": "none",
+      "estimator": "pg",
+      "status": "BRANCH_EXISTS_EXACT_CONFIG_REUSE_CHECK_PENDING",
+      "slurm_ids": []
+    },
+    {
+      "design_id": "A1",
+      "router": "current_pre_scout_once",
+      "risk": "standard_tad",
+      "calibration": {
+        "fixed": "signed_acquisition",
+        "dynamic": "signed_acquisition"
+      },
+      "estimator": "pg_acquisition",
+      "status": "CURRENT_IMPLEMENTATION_REUSE_ORIGINAL_RUNS",
+      "existing_train_ids": [
+        "tr-0afe8e4fc09b",
+        "tr-624db235c913"
+      ],
+      "reuse_scope": "Original objective and original protocol only; not yet cost-matched to new MoD controls.",
+      "new_submission_required": false
+    },
+    {
+      "design_id": "A2",
+      "router": "pre_scout_once",
+      "risk": "shared_interval_risk",
+      "calibration": {
+        "fixed": "equal_cost_swap",
+        "dynamic": "acquisition_with_marginal_cost"
+      },
+      "status": "SPEC_AND_IMPLEMENTATION_PENDING",
+      "slurm_ids": []
+    }
+  ],
+  "figure_specs": [
+    {
+      "figure_id": "V1",
+      "question": "classification versus localization gains",
+      "producer_status": "NOT_IMPLEMENTED",
+      "data_status": "NOT_COLLECTED"
+    },
+    {
+      "figure_id": "V2",
+      "question": "compute-location to output-location intervention effect",
+      "producer_status": "NOT_IMPLEMENTED",
+      "data_status": "NOT_COLLECTED"
+    },
+    {
+      "figure_id": "V3",
+      "question": "localization quality and actual budget distributions",
+      "producer_status": "EXISTING_FRAMEWORK_REQUIRES_NEW_CONTROLS_AND_SLICES",
+      "data_status": "NO_COMPLETE_COMPARISON"
+    },
+    {
+      "figure_id": "V4",
+      "question": "paired same-GPU total-latency Pareto",
+      "producer_status": "EXISTING_FRAMEWORK_REQUIRES_PAIRED_HARDWARE_DATA",
+      "data_status": "NO_COMPLETE_COMPARISON"
+    }
+  ]
+}
+
