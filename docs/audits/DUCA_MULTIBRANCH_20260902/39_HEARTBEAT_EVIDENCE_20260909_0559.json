@@ -2472,7 +2472,7 @@
     "receipt_verified_at": "2026-09-09T06:04:52.148175+08:00"
   },
   "reused_checkpoint_verification": {
-    "H65": "36_HEARTBEAT_EVIDENCE_20260909_0319.json: actual terminal/best EMA and global/parameter counts; current stat/audit/receipts checked, no new polling torch.load",
+    "H65": "36_HEARTBEAT_EVIDENCE_20260909_0323.json: actual terminal/best EMA and global/parameter counts; current stat/audit/receipts checked, no new polling torch.load",
     "ET": "34/35 actual terminal certificates plus 1281042/1281049 real strict epoch59 EMA load; current new independent terminal receipts certified",
     "CT": "Previous fe1c53db actual 337 optimizer states 6000 and 07383274 independent receipts; current receipt self-hashes/metrics rechecked"
   },

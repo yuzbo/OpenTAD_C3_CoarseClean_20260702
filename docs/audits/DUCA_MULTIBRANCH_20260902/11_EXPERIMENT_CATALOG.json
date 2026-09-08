@@ -1,6 +1,6 @@
 {
   "schema_version": "DUCA-EXPERIMENT-CATALOG-v001",
-  "last_updated_utc": "2026-09-08T22:13:16+00:00",
+  "last_updated_utc": "2026-09-08T23:31:58+00:00",
   "scope": "所有当前 DUCA/ZoomToken 代码实验及其独立修正路线；旧远端作业另列为不纳入结果",
   "repository": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702",
   "entries": [
@@ -1424,9 +1424,9 @@
       "remote_run_root": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-UNIFORM_seed3407/gpu1_id0",
       "remote_stdout": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/logs/uniform_1280127.out",
       "remote_stderr": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/logs/uniform_1280127.err",
-      "deployment_status": "2026-09-09 06:06核查：训练1280127仍COMPLETED(0:0)，12次完整测试/best/协议收据有效，best匹配未四舍五入最大值和最早同分规则；远端629162cd exact/clean，终态及best仍在。全局optimizer/scheduler/EMA/DUCA schedule审计均6000，复用36号实际权重核验，不重复加载大checkpoint；独立终态评测及少步参数归属待补",
-      "result_status": "60轮训练与12次全测试完成；测试集选模最佳及训练内终轮成绩可报告，独立终态receipt仍待补",
-      "final_result": "完整THUMOS14测试集211视频/792窗口：第5轮 5.2404%；第10轮 30.9742%；第15轮 38.1240%；第20轮 49.0216%；第25轮 56.7257%；第30轮 60.7207%；第35轮 62.5658%；第40轮 63.4838%；第45轮 63.8428%；第50轮 63.9646%；第55轮 63.9520%；第60轮 63.8596%；最佳第50轮 63.9646%，最佳对应mAP@0.7 41.7472%。第60轮训练内EMA评测 63.8596%，mAP@0.7 42.0630%。12份周期与best收据有效；未变best复用已有实际EMA认证。全局6000与参数实际参与计数分开记录，不把scheduler替代optimizer证据。新SHA独立terminal receipt仍缺；测试集参与选模/调参，不称未见测试泛化或原论文公平复现。",
+      "deployment_status": "2026-09-09 06:49训练产物核查：1280127仍COMPLETED(0:0)，12次全测试/best/协议收据有效，原629162cd exact/clean且权重未变。新增独立评测4af4ad96本地/远端43 tests通过，1281162三臂真实推理预检全部通过；07:26正式评测1281175_0 RUNNING并已跨过身份绑定，不是重训",
+      "result_status": "60轮及12次全测试完成；最佳和训练内终轮成绩已核验，独立终态全测试正在运行",
+      "final_result": "完整THUMOS14测试集211视频/792窗口：第5轮 5.2404%；第10轮 30.9742%；第15轮 38.1240%；第20轮 49.0216%；第25轮 56.7257%；第30轮 60.7207%；第35轮 62.5658%；第40轮 63.4838%；第45轮 63.8428%；第50轮 63.9646%；第55轮 63.9520%；第60轮 63.8596%；最佳第50轮 63.9646%，最佳对应mAP@0.7 41.7472%。第60轮训练内EMA评测 63.8596%，mAP@0.7 42.0630%。12份周期与best收据有效；未变best复用已有实际EMA认证。全局6000与参数实际参与计数分开记录，不把scheduler替代optimizer证据。4af4ad96独立terminal评测1281175_0正在运行，receipt尚未生成；测试集参与选模/调参，不称未见测试泛化或原论文公平复现。",
       "periodic_results": [
         {
           "completed_epochs": 5,
@@ -1620,7 +1620,7 @@
         "verification_reused": true
       },
       "test_guided_hyperparameter_trials": [],
-      "next_action": "保留全部12次曲线、最佳与终轮EMA，补629162cd独立终态评测绑定，并核对少步参数的模块归属；四相开启终轮比关闭低6.7774点，优先定位该匹配配方下的分配/学习机制。不得因跑完就宣称方法有效，也不盲目重训或按同SHA热改；任何测试指导调参必须保留全部尝试。",
+      "next_action": "收集1281175独立终态原始receipt并比较全部未四舍五入mAP；不重复训练。继续定位四相开启比关闭终轮低6.7774点的原因及条件参数参与归属，不把评测绑定修复当成模型性能修复；测试指导调参须保留全部尝试。",
       "terminal_training_evaluation": {
         "completed_epochs": 60,
         "epoch": 59,
@@ -1660,7 +1660,61 @@
         "ema_finite": true,
         "all_parameter_states_6000": true,
         "parameter_participation_note": "Global successful-update counter is 6000. Per-parameter Adam steps are reported separately; lower-step parameter ownership/conditional participation has not been certified by this snapshot.",
-        "independent_terminal_receipt_status": "PENDING"
+        "independent_terminal_receipt_status": "RUNNING"
+      },
+      "supporting_local_directories": [
+        "E:/DeskTop/TAD/_duca_fix_worktrees/h65_eval5_terminal_20260909"
+      ],
+      "evaluator_github": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/4af4ad96e0a9688488246b2632fad55926ffc4c8",
+      "terminal_evaluator": {
+        "branch": "codex/h65-pro-eval5-terminal-20260909",
+        "sha": "4af4ad96e0a9688488246b2632fad55926ffc4c8",
+        "training_sha": "629162cdddbe490d896899a067e9803e237df467",
+        "local_directory": "E:/DeskTop/TAD/_duca_fix_worktrees/h65_eval5_terminal_20260909",
+        "remote_source": "/data/run01/sczc063/yuzibo/projects/h65_eval5_terminal_4af4ad96",
+        "remote_output": "/data/run01/sczc063/yuzibo/experiments/h65_eval5_terminal_4af4ad96",
+        "model_config_diff": [],
+        "local_validation": "43 passed; required py_compile, bash -n and git diff --check passed",
+        "remote_exact_clean_validation": "43 passed; all three source resolved-config hashes exactly match original training audits",
+        "precheck_jobs": [
+          "1281162_0",
+          "1281162_1",
+          "1281162_2"
+        ],
+        "precheck_status": "COMPLETED(0:0); strict terminal EMA plus one real inference batch in each arm",
+        "formal_jobs": [
+          "1281175_0",
+          "1281175_1",
+          "1281175_2"
+        ],
+        "formal_status": "RUNNING as of 2026-09-09T07:26:41.651176+08:00",
+        "new_training": false,
+        "checkpoint_selection": "original epoch59 EMA only; existing test-selected best kept separately",
+        "source_config_binding": "Original 629162cd checkout absolute config; original raw train/test paths; training default=str dataclass serialization retained",
+        "original_failed_precheck": {
+          "sha": "b4776cbd5e541a9e1ec6b351ea14a14312a64d2e",
+          "jobs": [
+            "1281146_0",
+            "1281146_1",
+            "1281146_2"
+          ],
+          "status": "FAILED(1:0)",
+          "root": "/data/run01/sczc063/yuzibo/experiments/h65_eval5_terminal_b4776cbd",
+          "reason": "resolved_config_sha256 mismatch before inference: evaluator used dataclass-as-dict canonicalization and non-original thumos14/train/test path strings. All old logs and checkpoints retained; repaired with new SHA/source/output, not hotpatch."
+        }
+      },
+      "new_evaluation_jobs": {
+        "uniform": "1281175_0"
+      },
+      "new_evaluation_states": {
+        "uniform": "RUNNING"
+      },
+      "independent_terminal_evaluation": {
+        "status": "RUNNING_RECEIPT_PENDING",
+        "job_id": "1281175_0",
+        "checked_at": "2026-09-09T07:26:41.651176+08:00",
+        "receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_eval5_terminal_4af4ad96/formal/uniform/gpu1_id0/official_eval/metrics.json",
+        "receipt_exists": false
       },
       "local_head": "629162cdddbe490d896899a067e9803e237df467",
       "local_clean_tree": true
@@ -1680,9 +1734,9 @@
       "remote_run_root": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-PHASEOFF_seed3407/gpu1_id0",
       "remote_stdout": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/logs/phaseoff_1280128.out",
       "remote_stderr": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/logs/phaseoff_1280128.err",
-      "deployment_status": "2026-09-09 06:06核查：训练1280128仍COMPLETED(0:0)，12次完整测试/best/协议收据有效，best匹配未四舍五入最大值和最早同分规则；远端629162cd exact/clean，终态及best仍在。全局optimizer/scheduler/EMA/DUCA schedule审计均6000，复用36号实际权重核验，不重复加载大checkpoint；独立终态评测及少步参数归属待补",
-      "result_status": "60轮训练与12次全测试完成；测试集选模最佳及训练内终轮成绩可报告，独立终态receipt仍待补",
-      "final_result": "完整THUMOS14测试集211视频/792窗口：第5轮 5.4013%；第10轮 30.8467%；第15轮 38.9224%；第20轮 49.1960%；第25轮 55.8911%；第30轮 60.2283%；第35轮 62.1153%；第40轮 63.2568%；第45轮 63.5516%；第50轮 63.4065%；第55轮 63.7444%；第60轮 64.2632%；最佳第60轮 64.2632%，最佳对应mAP@0.7 43.0885%。第60轮训练内EMA评测 64.2632%，mAP@0.7 43.0885%。12份周期与best收据有效；新best实际EMA认证通过。全局6000与参数实际参与计数分开记录，不把scheduler替代optimizer证据。新SHA独立terminal receipt仍缺；测试集参与选模/调参，不称未见测试泛化或原论文公平复现。",
+      "deployment_status": "2026-09-09 06:49训练产物核查：1280128仍COMPLETED(0:0)，12次全测试/best/协议收据有效，原629162cd exact/clean且权重未变。新增独立评测4af4ad96本地/远端43 tests通过，1281162三臂真实推理预检全部通过；07:26正式评测1281175_1 RUNNING并已跨过身份绑定，不是重训",
+      "result_status": "60轮及12次全测试完成；最佳和训练内终轮成绩已核验，独立终态全测试正在运行",
+      "final_result": "完整THUMOS14测试集211视频/792窗口：第5轮 5.4013%；第10轮 30.8467%；第15轮 38.9224%；第20轮 49.1960%；第25轮 55.8911%；第30轮 60.2283%；第35轮 62.1153%；第40轮 63.2568%；第45轮 63.5516%；第50轮 63.4065%；第55轮 63.7444%；第60轮 64.2632%；最佳第60轮 64.2632%，最佳对应mAP@0.7 43.0885%。第60轮训练内EMA评测 64.2632%，mAP@0.7 43.0885%。12份周期与best收据有效；新best实际EMA认证通过。全局6000与参数实际参与计数分开记录，不把scheduler替代optimizer证据。4af4ad96独立terminal评测1281175_1正在运行，receipt尚未生成；测试集参与选模/调参，不称未见测试泛化或原论文公平复现。",
       "periodic_results": [
         {
           "completed_epochs": 5,
@@ -1876,7 +1930,7 @@
         "verification_reused": false
       },
       "test_guided_hyperparameter_trials": [],
-      "next_action": "保留全部12次曲线、最佳与终轮EMA，补629162cd独立终态评测绑定，并核对少步参数的模块归属；四相开启终轮比关闭低6.7774点，优先定位该匹配配方下的分配/学习机制。不得因跑完就宣称方法有效，也不盲目重训或按同SHA热改；任何测试指导调参必须保留全部尝试。",
+      "next_action": "收集1281175独立终态原始receipt并比较全部未四舍五入mAP；不重复训练。继续定位四相开启比关闭终轮低6.7774点的原因及条件参数参与归属，不把评测绑定修复当成模型性能修复；测试指导调参须保留全部尝试。",
       "terminal_training_evaluation": {
         "completed_epochs": 60,
         "epoch": 59,
@@ -1919,7 +1973,61 @@
         "ema_finite": true,
         "all_parameter_states_6000": false,
         "parameter_participation_note": "Global successful-update counter is 6000. Per-parameter Adam steps are reported separately; lower-step parameter ownership/conditional participation has not been certified by this snapshot.",
-        "independent_terminal_receipt_status": "PENDING"
+        "independent_terminal_receipt_status": "RUNNING"
+      },
+      "supporting_local_directories": [
+        "E:/DeskTop/TAD/_duca_fix_worktrees/h65_eval5_terminal_20260909"
+      ],
+      "evaluator_github": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/4af4ad96e0a9688488246b2632fad55926ffc4c8",
+      "terminal_evaluator": {
+        "branch": "codex/h65-pro-eval5-terminal-20260909",
+        "sha": "4af4ad96e0a9688488246b2632fad55926ffc4c8",
+        "training_sha": "629162cdddbe490d896899a067e9803e237df467",
+        "local_directory": "E:/DeskTop/TAD/_duca_fix_worktrees/h65_eval5_terminal_20260909",
+        "remote_source": "/data/run01/sczc063/yuzibo/projects/h65_eval5_terminal_4af4ad96",
+        "remote_output": "/data/run01/sczc063/yuzibo/experiments/h65_eval5_terminal_4af4ad96",
+        "model_config_diff": [],
+        "local_validation": "43 passed; required py_compile, bash -n and git diff --check passed",
+        "remote_exact_clean_validation": "43 passed; all three source resolved-config hashes exactly match original training audits",
+        "precheck_jobs": [
+          "1281162_0",
+          "1281162_1",
+          "1281162_2"
+        ],
+        "precheck_status": "COMPLETED(0:0); strict terminal EMA plus one real inference batch in each arm",
+        "formal_jobs": [
+          "1281175_0",
+          "1281175_1",
+          "1281175_2"
+        ],
+        "formal_status": "RUNNING as of 2026-09-09T07:26:41.651176+08:00",
+        "new_training": false,
+        "checkpoint_selection": "original epoch59 EMA only; existing test-selected best kept separately",
+        "source_config_binding": "Original 629162cd checkout absolute config; original raw train/test paths; training default=str dataclass serialization retained",
+        "original_failed_precheck": {
+          "sha": "b4776cbd5e541a9e1ec6b351ea14a14312a64d2e",
+          "jobs": [
+            "1281146_0",
+            "1281146_1",
+            "1281146_2"
+          ],
+          "status": "FAILED(1:0)",
+          "root": "/data/run01/sczc063/yuzibo/experiments/h65_eval5_terminal_b4776cbd",
+          "reason": "resolved_config_sha256 mismatch before inference: evaluator used dataclass-as-dict canonicalization and non-original thumos14/train/test path strings. All old logs and checkpoints retained; repaired with new SHA/source/output, not hotpatch."
+        }
+      },
+      "new_evaluation_jobs": {
+        "phaseoff": "1281175_1"
+      },
+      "new_evaluation_states": {
+        "phaseoff": "RUNNING"
+      },
+      "independent_terminal_evaluation": {
+        "status": "RUNNING_RECEIPT_PENDING",
+        "job_id": "1281175_1",
+        "checked_at": "2026-09-09T07:26:41.651176+08:00",
+        "receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_eval5_terminal_4af4ad96/formal/phaseoff/gpu1_id0/official_eval/metrics.json",
+        "receipt_exists": false
       },
       "local_head": "629162cdddbe490d896899a067e9803e237df467",
       "local_clean_tree": true
@@ -1939,9 +2047,9 @@
       "remote_run_root": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-PHASEON_seed3407/gpu1_id0",
       "remote_stdout": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/logs/phaseon_1280129.out",
       "remote_stderr": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/logs/phaseon_1280129.err",
-      "deployment_status": "2026-09-09 06:06核查：训练1280129仍COMPLETED(0:0)，12次完整测试/best/协议收据有效，best匹配未四舍五入最大值和最早同分规则；远端629162cd exact/clean，终态及best仍在。全局optimizer/scheduler/EMA/DUCA schedule审计均6000，复用36号实际权重核验，不重复加载大checkpoint；独立终态评测及少步参数归属待补",
-      "result_status": "60轮训练与12次全测试完成；测试集选模最佳及训练内终轮成绩可报告，独立终态receipt仍待补",
-      "final_result": "完整THUMOS14测试集211视频/792窗口：第5轮 4.9665%；第10轮 25.6088%；第15轮 32.4714%；第20轮 43.3471%；第25轮 49.1838%；第30轮 52.6773%；第35轮 55.2683%；第40轮 57.0365%；第45轮 57.4413%；第50轮 56.9274%；第55轮 57.5081%；第60轮 57.4857%；最佳第55轮 57.5081%，最佳对应mAP@0.7 34.0924%。第60轮训练内EMA评测 57.4857%，mAP@0.7 34.2285%。12份周期与best收据有效；未变best复用已有实际EMA认证。全局6000与参数实际参与计数分开记录，不把scheduler替代optimizer证据。新SHA独立terminal receipt仍缺；测试集参与选模/调参，不称未见测试泛化或原论文公平复现。",
+      "deployment_status": "2026-09-09 06:49训练产物核查：1280129仍COMPLETED(0:0)，12次全测试/best/协议收据有效，原629162cd exact/clean且权重未变。新增独立评测4af4ad96本地/远端43 tests通过，1281162三臂真实推理预检全部通过；07:26正式评测1281175_2 RUNNING并已跨过身份绑定，不是重训",
+      "result_status": "60轮及12次全测试完成；最佳和训练内终轮成绩已核验，独立终态全测试正在运行",
+      "final_result": "完整THUMOS14测试集211视频/792窗口：第5轮 4.9665%；第10轮 25.6088%；第15轮 32.4714%；第20轮 43.3471%；第25轮 49.1838%；第30轮 52.6773%；第35轮 55.2683%；第40轮 57.0365%；第45轮 57.4413%；第50轮 56.9274%；第55轮 57.5081%；第60轮 57.4857%；最佳第55轮 57.5081%，最佳对应mAP@0.7 34.0924%。第60轮训练内EMA评测 57.4857%，mAP@0.7 34.2285%。12份周期与best收据有效；未变best复用已有实际EMA认证。全局6000与参数实际参与计数分开记录，不把scheduler替代optimizer证据。4af4ad96独立terminal评测1281175_2正在运行，receipt尚未生成；测试集参与选模/调参，不称未见测试泛化或原论文公平复现。",
       "periodic_results": [
         {
           "completed_epochs": 5,
@@ -2135,7 +2243,7 @@
         "verification_reused": true
       },
       "test_guided_hyperparameter_trials": [],
-      "next_action": "保留全部12次曲线、最佳与终轮EMA，补629162cd独立终态评测绑定，并核对少步参数的模块归属；四相开启终轮比关闭低6.7774点，优先定位该匹配配方下的分配/学习机制。不得因跑完就宣称方法有效，也不盲目重训或按同SHA热改；任何测试指导调参必须保留全部尝试。",
+      "next_action": "收集1281175独立终态原始receipt并比较全部未四舍五入mAP；不重复训练。继续定位四相开启比关闭终轮低6.7774点的原因及条件参数参与归属，不把评测绑定修复当成模型性能修复；测试指导调参须保留全部尝试。",
       "terminal_training_evaluation": {
         "completed_epochs": 60,
         "epoch": 59,
@@ -2177,7 +2285,61 @@
         "ema_finite": true,
         "all_parameter_states_6000": false,
         "parameter_participation_note": "Global successful-update counter is 6000. Per-parameter Adam steps are reported separately; lower-step parameter ownership/conditional participation has not been certified by this snapshot.",
-        "independent_terminal_receipt_status": "PENDING"
+        "independent_terminal_receipt_status": "RUNNING"
+      },
+      "supporting_local_directories": [
+        "E:/DeskTop/TAD/_duca_fix_worktrees/h65_eval5_terminal_20260909"
+      ],
+      "evaluator_github": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/4af4ad96e0a9688488246b2632fad55926ffc4c8",
+      "terminal_evaluator": {
+        "branch": "codex/h65-pro-eval5-terminal-20260909",
+        "sha": "4af4ad96e0a9688488246b2632fad55926ffc4c8",
+        "training_sha": "629162cdddbe490d896899a067e9803e237df467",
+        "local_directory": "E:/DeskTop/TAD/_duca_fix_worktrees/h65_eval5_terminal_20260909",
+        "remote_source": "/data/run01/sczc063/yuzibo/projects/h65_eval5_terminal_4af4ad96",
+        "remote_output": "/data/run01/sczc063/yuzibo/experiments/h65_eval5_terminal_4af4ad96",
+        "model_config_diff": [],
+        "local_validation": "43 passed; required py_compile, bash -n and git diff --check passed",
+        "remote_exact_clean_validation": "43 passed; all three source resolved-config hashes exactly match original training audits",
+        "precheck_jobs": [
+          "1281162_0",
+          "1281162_1",
+          "1281162_2"
+        ],
+        "precheck_status": "COMPLETED(0:0); strict terminal EMA plus one real inference batch in each arm",
+        "formal_jobs": [
+          "1281175_0",
+          "1281175_1",
+          "1281175_2"
+        ],
+        "formal_status": "RUNNING as of 2026-09-09T07:26:41.651176+08:00",
+        "new_training": false,
+        "checkpoint_selection": "original epoch59 EMA only; existing test-selected best kept separately",
+        "source_config_binding": "Original 629162cd checkout absolute config; original raw train/test paths; training default=str dataclass serialization retained",
+        "original_failed_precheck": {
+          "sha": "b4776cbd5e541a9e1ec6b351ea14a14312a64d2e",
+          "jobs": [
+            "1281146_0",
+            "1281146_1",
+            "1281146_2"
+          ],
+          "status": "FAILED(1:0)",
+          "root": "/data/run01/sczc063/yuzibo/experiments/h65_eval5_terminal_b4776cbd",
+          "reason": "resolved_config_sha256 mismatch before inference: evaluator used dataclass-as-dict canonicalization and non-original thumos14/train/test path strings. All old logs and checkpoints retained; repaired with new SHA/source/output, not hotpatch."
+        }
+      },
+      "new_evaluation_jobs": {
+        "phaseon": "1281175_2"
+      },
+      "new_evaluation_states": {
+        "phaseon": "RUNNING"
+      },
+      "independent_terminal_evaluation": {
+        "status": "RUNNING_RECEIPT_PENDING",
+        "job_id": "1281175_2",
+        "checked_at": "2026-09-09T07:26:41.651176+08:00",
+        "receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_eval5_terminal_4af4ad96/formal/phaseon/gpu1_id0/official_eval/metrics.json",
+        "receipt_exists": false
       },
       "local_head": "629162cdddbe490d896899a067e9803e237df467",
       "local_clean_tree": true
@@ -2197,7 +2359,7 @@
       "branch": "codex/h65-matched-controls-20260908",
       "sha": "96e5b3a5e9d77d65b7a0afca86277261dd63295b",
       "local_directory": "E:/DeskTop/TAD/_duca_fix_worktrees/h65_matched_controls",
-      "deployment_status": "2026-09-09 05:04再次读取stdout/stderr及sacct：signed1280314/control链1280316仍FAILED(1:0)，epoch16 AMP replay后p_action非有限。没有本登记命名空间的fulltia正式启动/恢复证据；由原任务修复，旧job/log/checkpoint保留，本监督未接管、删除校验或盲目重提",
+      "deployment_status": "2026-09-09 06:49再次读取stdout/stderr及sacct：signed1280314/control链1280316仍FAILED(1:0)，epoch16 AMP replay后p_action非有限。没有本登记命名空间的fulltia正式启动/恢复证据；由原任务修复，旧job/log/checkpoint保留，本监督未接管、删除校验或盲目重提",
       "result_status": "FAILED_NUMERICAL；Stage2仅有5/10/15轮日志曲线，无终态结果",
       "final_result": "独立历史30+60轮协议；signed/control均在stage2 epoch16失败，最后落盘审计为epoch15、1600成功更新，不能作为最终性能。第15轮tIoU0.3-0.7日志signed为77.46/72.55/64.59/53.73/38.65%，control为77.52/73.13/64.98/53.23/38.55%；仅为四舍五入中期telemetry，不与本任务strict60测试选best混用。直接错误p_action calibration check received non-finite values，数值污染源待定位，非资源未分配",
       "next_action": "原任务01a08058-1402-7b21-8c17-ec6c1ad522f7须按原checkpoint/RNG定位首个非有限输出和AMP重放状态；在独立修复SHA、本地focused及远端exact/CUDA/PRECHECK通过后新命名空间重提。本监督已登记失败与完整日志位置，未热改、未接管或重复提交；保留失败，不删除校准校验来掩盖数值问题",
@@ -2259,7 +2421,7 @@
         "retry_submitted": false,
         "owner_notified_via_thread_tool": false,
         "note": "Thread coordination tool unavailable in this turn; recorded in shared catalog, not claimed delivered to the owner.",
-        "last_rechecked_at": "2026-09-09T05:04:40.534096+08:00"
+        "last_rechecked_at": "2026-09-09T06:49:27.709472+08:00"
       },
       "local_head": "96e5b3a5e9d77d65b7a0afca86277261dd63295b",
       "local_clean_tree": true
@@ -2348,8 +2510,8 @@
   "remote_supervisor": {
     "status": "ACTIVE",
     "root": "/data/run01/sczc063/yuzibo/projects/duca_multibranch_supervisor_recovery_20260907",
-    "receipt_age_seconds": 33,
-    "checked_at": "2026-09-08T22:12:45+00:00",
+    "receipt_age_seconds": 11,
+    "checked_at": "2026-09-08T23:31:49+00:00",
     "dispatcher_status": "BLOCKED",
     "dispatcher_mode": "plan",
     "entries": []
@@ -2366,24 +2528,30 @@
     "scope": "每60秒恢复只读队列轮询，旧source/queue/manifest/admission不变；旧日志和状态保留。不是当前修复队列的自动提交器。目录生成器现以180秒识别过期回执，不能仅因JSON可读就称ACTIVE"
   },
   "cluster_observation": {
-    "checked_at_cst": "2026-09-09 06:06 CST",
-    "public_gpu_available": 66,
+    "checked_at_cst": "2026-09-09 07:26 CST",
+    "public_gpu_available": 75,
     "public_gpu_total": 200,
     "gpu_count_basis": "scontrol CfgTRES/AllocTRES，排除DOWN/DRAIN/FAIL/UNKNOWN/FUTURE/POWERED_DOWN；公共余量不保证个人即时配额",
-    "user_jobs_in_queue": 2,
-    "account_constraint": "账户1 RUNNING/1 PENDING，均为其他任务，held未操作；本轮ET评测已完成，五项新训练也已完成。实验盘120.98GiB可用；缺失机制和未评测路线不能解释为本任务GPU排队"
+    "user_jobs_in_queue": 4,
+    "account_constraint": "本任务3项H65独立终态评测RUNNING，另有1项其他任务JobHeldUser未操作；五项新训练与两项ET独立评测已完成。实验盘120.65GiB可用。未实现机制不能解释成GPU排队"
   },
   "measurement_scope": "当前比较以官方 TAD mAP、固定输入/更新预算和机制消融为主；不把端到端延迟、吞吐量或显存作为强制验收指标",
   "baseline_reference_note": "12_BASELINE_IDENTITY_CORRECTION_20260907.md",
   "pro_audit_followup": "15_PRO_AUDIT_REPAIR_STATUS_20260908.md",
   "official_baseline_raw_identity": "14_OFFICIAL_BASELINE_RAW_IDENTITY_20260908.json",
   "performance_cause_audit": "13_PERFORMANCE_CAUSE_AUDIT_20260908.md",
-  "heartbeat_evidence": "39_HEARTBEAT_EVIDENCE_20260909_0559.json",
-  "performance_cause_audit_scope": "2026-09-09 06:04/06:06实际核验：ET独立评测1281049_0/1均完成，OFF61.7587%、ON54.5976%，新edfbd7e5原始收据与配置/预测/evaluator校验通过，六项mAP与训练内终轮完全一致。五项完整训练60份周期/best未变，H65四相和ET近似开启仍是负结果；CT当前最高64.2720%。本轮没有模型修改、新训练、调参或取消；H65独立收据、其他缺失机制及历史90轮失败继续明确保留",
+  "heartbeat_evidence": "40_HEARTBEAT_EVIDENCE_20260909_0647.json",
+  "performance_cause_audit_scope": "2026-09-09 06:49/07:26核查：五项完整训练的60份周期/best/协议及两项ET独立成绩未变。H65评测入口b4776cbd三项PRECHECK在推理前因dataclass序列化及原始raw路径不一致失败，已读完整日志；4af4ad96保持模型/config不变并恢复原绑定，本地/远端43 tests及1281162真实推理预检通过，新1281175三项独立全测试RUNNING。没有重训或调参；四相/ET开启负结果、其他机制缺失与历史90轮数值失败继续保留",
   "baseline_comparison_policy": "区分上游公开结果、历史共享复现和本次修改协议实测；官方 evaluator 与完整 receipt 不代表官方训练 recipe 已复现。比较提升前须对齐预训练、数据、batch/曝光、学习率、坐标、模型选择和后处理，不能用较低参考数值替代约69/65的既有锚点，也不能把约69/65规定为每次运行必须达到的分数",
   "result_policy": "历史strict6000结果仍需exact SHA、clean-tree、epoch59 EMA、实际6000次optimizer/scheduler/EMA更新、官方evaluator及自哈希receipt。新TEST_GUIDED_EXPLORATORY_EVAL5每5轮完整测试、按未四舍五入Avg-mAP选最佳EMA且允许测试集调参；所有尝试和曲线保留，终态EMA另列。必须披露测试集重复使用，不称独立泛化或与官方论文公平可比。推理不输入测试GT，原始官方配方与历史封闭实验不追溯改写，收据不替代真实机制验证",
   "test_guided_policy": "2026-09-08用户授权每5 epoch完整测试、最佳EMA和测试集调参；新实验单列，终态另报，不声称未见测试泛化。详见29_TEST_GUIDED_EVAL5_DEPLOYMENT_20260908.md",
   "excluded_remote_jobs": [
+    {
+      "job_ids": "1281146_0/1281146_1/1281146_2",
+      "remote_directory": "/data/run01/sczc063/yuzibo/projects/h65_eval5_terminal_b4776cbd",
+      "source_head": "b4776cbd5e541a9e1ec6b351ea14a14312a64d2e",
+      "reason": "独立终态PRECHECK在实际epoch59 EMA加载后、推理前被resolved_config_sha256拒绝。完整三对stdout/stderr与原训练配置日志已读：训练default=str而旧evaluator把dataclass转dict，且launcher未恢复原raw Validation/Test路径。4af4ad96仅修正评测绑定/路径，未改opentad/configs或旧checkpoint；本地/远端43 tests及1281162三臂真实推理通过，正式独立评测1281175_0/1/2已运行。旧job/source/output/log全部保留"
+    },
     {
       "job_ids": "远端监督器PID2272497退出，无Slurm job",
       "remote_directory": "/data/run01/sczc063/yuzibo/projects/duca_multibranch_supervisor_20260902",
