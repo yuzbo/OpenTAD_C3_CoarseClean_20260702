@@ -1,5 +1,4 @@
 """Real small VideoMAE/TIA/ActionFormer gradients, with synthetic video input."""
-import copy
 import random
 
 import numpy as np
@@ -38,7 +37,7 @@ def test_components_reconstruct_real_total_and_match_plain_backward(route):
     assert measured["global_clip"]["coefficient"] == pytest.approx(min(1., 1. / (float(norm) + 1e-6)), rel=2e-5)
 
 
-@pytest.mark.parametrize("fail", [False, True])
+@pytest.mark.parametrize("fail", [None, "forward", "backward"])
 def test_training_diagnostic_restores_state_grads_rng_and_mixed_modes(monkeypatch, fail):
     model, data = setup("B")
     model.geosparse.config["budget_mode"] = "dynamic"
@@ -55,7 +54,8 @@ def test_training_diagnostic_restores_state_grads_rng_and_mixed_modes(monkeypatc
     pending = model.pending_cost
     rng = random.getstate(), np.random.get_state(), torch.get_rng_state()
     normalizer = model.rpn_head.loss_normalizer.clone()
-    if fail:
+    hook = None
+    if fail == "forward":
         forward = model.forward_train
 
         def broken_forward(**kwargs):
@@ -64,8 +64,18 @@ def test_training_diagnostic_restores_state_grads_rng_and_mixed_modes(monkeypatc
             raise RuntimeError("injected after full training forward")
 
         monkeypatch.setattr(model, "forward_train", broken_forward)
-        with pytest.raises(RuntimeError, match="injected"):
-            measure_training_gradients(model, data)
+    elif fail == "backward":
+        def broken_backward(grad):
+            raise RuntimeError("injected backward failure")
+
+        hook = next(model.rpn_head.parameters()).register_hook(broken_backward)
+    if fail is not None:
+        try:
+            with pytest.raises(RuntimeError, match="injected"):
+                measure_training_gradients(model, data)
+        finally:
+            if hook is not None:
+                hook.remove()
     else:
         measure_training_gradients(model, data)
     for name, value in model.state_dict().items():
@@ -119,3 +129,12 @@ def test_frozen_backbone_stays_frozen_and_cpu_amp_is_not_implied():
     measured = measure_training_gradients(model, data)
     assert "source_backbone" not in measured["gradients"]["total"]["groups"]
     assert measured["gradients"]["task"]["groups"]["source_tia"]["norm"] > 0
+
+
+def test_nondivisible_microbatch_is_rejected_before_forward():
+    model, first = setup("A")
+    data = {key: torch.cat([value] * 3, 0) if torch.is_tensor(value) else value * 3
+            for key, value in first.items()}
+    with pytest.raises(ValueError, match="divide"):
+        measure_training_gradients(model, data, microbatch_size=2)
+    assert model.minibatch == 0

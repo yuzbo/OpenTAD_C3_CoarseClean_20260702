@@ -103,6 +103,8 @@ def measure_training_gradients(model, batch, *, microbatch_size=None, amp=False,
     microbatch_size = size if microbatch_size is None else microbatch_size
     if size == 0 or not isinstance(microbatch_size, int) or not 1 <= microbatch_size <= size:
         raise ValueError("microbatch_size must be between one and the effective batch size")
+    if size % microbatch_size:
+        raise ValueError("microbatch must divide the fixed effective batch")
     if not math.isfinite(loss_scale) or loss_scale <= 0 or not math.isfinite(clip_norm) or clip_norm <= 0:
         raise ValueError("loss_scale and clip_norm must be finite and positive")
     if amp and not next(model.parameters()).is_cuda:

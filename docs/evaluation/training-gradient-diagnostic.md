@@ -10,7 +10,7 @@
 
 函数临时进入训练模式，并在正常或异常退出时恢复 buffers、原梯度对象、随机状态、混合 module mode、requires_grad、minibatch、pending_cost、计划、反事实记录、执行 trace 和 TIA 时间尺寸。没有 optimizer、scheduler、EMA 或 dual 更新。调用者应使用独立加载的诊断模型，勿插入正在进行的异步训练。
 
-多 microbatch 时按原训练器的 micro/effective 权重累积，并保持各 microbatch 的 loss normalizer 顺序。此顺序不等价于单次大 batch 的正样本归一化，接口不声称两种划分数学等价。FP16 必须在实际 CUDA 环境核验；CPU 检查不标成 AMP 验证。非有限梯度单独记录，不从中生成正常 cosine 或 clip 结论。
+多 microbatch 时要求其大小整除 effective batch，与生产训练器一致；按原训练器的 micro/effective 权重累积，并保持各 microbatch 的 loss normalizer 顺序。此顺序不等价于单次大 batch 的正样本归一化，接口不声称两种划分数学等价。FP16 必须在实际 CUDA 环境核验；CPU 检查不标成 AMP 验证。非有限梯度单独记录，不从中生成正常 cosine 或 clip 结论。
 
 复现 focused 检查：
 
