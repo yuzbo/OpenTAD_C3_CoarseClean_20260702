@@ -59,3 +59,29 @@ point results cannot substitute for the cancelled complete experiment plan.
 Original nine-cell checkpoint and prediction seals remain enforced for formal
 runs. A six- or three-cell diagnostic must never be passed off as a nine-cell
 completion. Existing negative evidence in other routes remains unchanged.
+
+## Deployment Receipt, 2026-09-08
+
+- Evaluation runtime commit: `1f600f8fa9c696c0d476970b353a05f7e004a05f`.
+- Evaluation immutable source: `/data/run01/sczc063/yuzibo/projects/zoomtoken_stopped_matrix_eval_1f600f8f_src`.
+- GitHub ref, exact remote HEAD and clean status were verified through the
+  prescribed proxy. Model and config trees are unchanged from training.
+- D2S PRECHECK `1280173` is pending for Priority; evaluation `1280175` is pending
+  on `afterok:1280173` with invalid dependencies cancelling the test job.
+- PA-TAD PRECHECK `1280174` is pending for Priority; evaluation `1280176` is
+  pending on `afterok:1280174` with the same cancellation policy.
+- D2S diagnostic root: `/data/run01/sczc063/yuzibo/projects/d2s_user_stop_diagnostic_20260908_1f600f8f_r1`.
+- PA-TAD diagnostic root: `/data/run01/sczc063/yuzibo/projects/patad_user_stop_diagnostic_20260908_1f600f8f_r1`.
+- All jobs request one Slurm GPU, eight CPU cores. PRECHECK has a 30-minute
+  limit; evaluation eight hours. No fixed physical GPU index is assigned.
+- Local tests: 26 shared/diagnostic checks, 25 D2S-context checks, 21 PA-TAD-context
+  checks, and 20 prescribed C3 regression checks passed (overlapping suites).
+  Python compilation, both Bash syntax checks and git diff checks passed.
+- Actual checkpoint-state and GPU-forward PRECHECK is still pending. Existing
+  full-training terminal receipts are verified; do not claim GPU PRECHECK PASS.
+- Automation `zoomtoken-experiment-monitor` is ACTIVE every 30 minutes and bound
+  to the four jobs above. It must not restart the cancelled training jobs.
+
+The deployment statuses above are a dated snapshot, not final accuracy results.
+`control/diagnostic_plan.json` records successful runtime admission;
+`diagnostic_results.json` records completion of the selected diagnostic set.
