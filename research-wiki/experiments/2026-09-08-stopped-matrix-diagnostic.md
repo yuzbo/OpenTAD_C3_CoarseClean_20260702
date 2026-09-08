@@ -85,3 +85,35 @@ completion. Existing negative evidence in other routes remains unchanged.
 The deployment statuses above are a dated snapshot, not final accuracy results.
 `control/diagnostic_plan.json` records successful runtime admission;
 `diagnostic_results.json` records completion of the selected diagnostic set.
+
+## Correctness Audit And Replacement, 2026-09-08 18:23 Asia/Shanghai
+
+The first PRECHECK jobs 1280173/1280174 failed with `module: command not found`
+before model execution; dependent jobs 1280175/1280176 were cancelled without
+starting. Those failed namespaces and original training artifacts are preserved.
+
+The replacement diagnostic source is `d34d51d29900532a399c5a1edc0f2563c5b3641c`,
+clean and pushed on the same GitHub branch. It initializes Environment Modules,
+matches official AP tie ordering and corrects future trainable-parameter metadata.
+Model, configuration and NMS code are unchanged. All nine selected real checkpoint
+AdamW states equal 6000, EMA tensors are finite, and CPU strict loading passed.
+
+| Route | GPU PRECHECK | Diagnostic evaluation |
+| --- | --- | --- |
+| D2S, six cells | 1280197 COMPLETED 0:0 | 1280198 RUNNING on g0006 |
+| PA-TAD, three cells | 1280199 COMPLETED 0:0 | 1280200 RUNNING on g0050 |
+
+Both PRECHECK jobs performed one real label-free GPU forward for each selected
+cell and wrote their admission plans. Full 792-window evaluation is not yet
+complete. No final metric or original three-seed completion is claimed.
+
+- Immutable source: `/data/run01/sczc063/yuzibo/projects/zoomtoken_stopped_matrix_eval_d34d51d2_src`.
+- D2S output: `/data/run01/sczc063/yuzibo/projects/d2s_user_stop_diagnostic_20260908_d34d51d2_r2`.
+- PA-TAD output: `/data/run01/sczc063/yuzibo/projects/patad_user_stop_diagnostic_20260908_d34d51d2_r2`.
+- The existing 30-minute monitor is ACTIVE and bound to these replacement jobs.
+
+An additional audit fix corrects the original formal nine-cell CLI's file-digest
+handoff. That separate entry is not called by these running diagnostics; the
+immutable d34d51d2 runtime need not be replaced for this fix. Full findings,
+reproductions, model/data-flow analysis, corrected parameter counts and remaining
+limits are in `audits/2026-09-08-stopped-matrix/EXPERIMENT_AUDIT.md`.

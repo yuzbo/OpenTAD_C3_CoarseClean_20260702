@@ -1445,3 +1445,10 @@ semantics; do not silence parity failures or alter scores. Old trainable-paramet
 receipt fields overcount frozen backbone weights. See
 `experiments/audits/2026-09-08-stopped-matrix/EXPERIMENT_AUDIT.md` for reproductions,
 the real 6000-step checkpoint audit, corrected counts and rejected false leads.
+
+Replacement d34d51d2 PRECHECK jobs 1280197/1280199 passed with actual GPU forwards;
+diagnostics 1280198/1280200 are running at 2026-09-08 18:23 Asia/Shanghai. Do not
+resubmit them or restart training merely because full metrics are pending.
+The formal nine-cell CLI also confused the seal payload digest with a file digest;
+its focused fix must preserve the one-shot GT barrier. This separate CLI is not
+called by the active diagnostics and does not require cancelling those jobs.

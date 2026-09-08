@@ -3,6 +3,7 @@ import math
 
 import pytest
 
+from tools.bata import continuous_roi_s2_v3_full200_compute_eval as evaluation
 from tools.bata.continuous_roi_s2_v3_full200_compute import (
     canonical_sha256,
     sha256_file,
@@ -136,7 +137,8 @@ def test_fixed_class_denominator_and_slot_metrics():
     assert metrics.normalized_end_error_median == pytest.approx(0.0)
 
 
-def test_prediction_seal_is_9_of_9_and_gt_open_is_irreversible(tmp_path):
+@pytest.mark.parametrize("entry", ["direct", "cli"])
+def test_prediction_seal_is_9_of_9_and_gt_open_is_irreversible(tmp_path, monkeypatch, entry):
     videos = [f"v{index:03d}" for index in range(211)]
     class_map = ["Action"]
     prediction_paths = {}
@@ -166,12 +168,35 @@ def test_prediction_seal_is_9_of_9_and_gt_open_is_irreversible(tmp_path):
     annotation = tmp_path / "annotation.json"
     annotation.write_text(json.dumps({"database": {}}), encoding="utf-8")
     marker = tmp_path / "gt_open_started.json"
-    begin_single_gt_open(
-        marker_path=marker,
-        annotation_path=annotation,
-        prediction_seal_path=seal_path,
-        expected_prediction_seal_sha256=sha256_file(seal_path),
-    )
+    if entry == "direct":
+        begin_single_gt_open(
+            marker_path=marker,
+            annotation_path=annotation,
+            prediction_seal_path=seal_path,
+            expected_prediction_seal_sha256=sha256_file(seal_path),
+        )
+    else:
+        manifest = tmp_path / "manifest.json"
+        manifest.write_text(json.dumps({
+            "evaluation": {"video_order": videos},
+            "class_map": {"classes": class_map},
+        }), encoding="utf-8")
+        checkpoint_seal = tmp_path / "checkpoint_seal.json"
+        checkpoint_seal.write_text("{}", encoding="utf-8")
+
+        def stop_before_gt_loading(**kwargs):
+            raise RuntimeError("test_barrier_reached")
+
+        monkeypatch.setattr(evaluation, "load_ground_truth_after_single_open", stop_before_gt_loading)
+        assert seal["seal_sha256"] != sha256_file(seal_path)
+        with pytest.raises(RuntimeError, match="test_barrier_reached"):
+            evaluation.main([
+                "evaluate-matrix", "--prediction-seal", str(seal_path),
+                "--checkpoint-seal", str(checkpoint_seal),
+                "--manifest", str(manifest), "--annotation", str(annotation),
+                "--marker-path", str(marker), "--output-dir", str(tmp_path / "output"),
+            ])
+    assert json.loads(marker.read_text(encoding="utf-8"))["prediction_seal_sha256"] == sha256_file(seal_path)
     assert seal["row_count"] == 9
     with pytest.raises(FileExistsError):
         begin_single_gt_open(

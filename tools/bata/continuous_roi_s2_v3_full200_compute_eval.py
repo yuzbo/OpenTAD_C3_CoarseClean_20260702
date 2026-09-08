@@ -1185,7 +1185,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         manifest = json.loads(Path(args.manifest).read_text(encoding="utf-8"))
         manifest_sha = manifest.get("manifest_sha256", sha256_file(args.manifest))
         prediction_seal = json.loads(Path(args.prediction_seal).read_text(encoding="utf-8"))
-        prediction_seal_sha = prediction_seal.get("seal_sha256", sha256_file(args.prediction_seal))
+        prediction_seal_sha = sha256_file(args.prediction_seal)
         begin_single_gt_open(
             marker_path=args.marker_path,
             annotation_path=args.annotation,

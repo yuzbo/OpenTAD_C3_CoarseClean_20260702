@@ -1551,9 +1551,12 @@ max_chars: 8000
 
 - Correctness audit on 2026-09-08 found and fixed the diagnostic Slurm module
   initialization failure, task-local AP tie-order mismatch with the official
-  evaluator, and inflated trainable-parameter reporting. Real selected checkpoint
+  evaluator, the original formal CLI's digest handoff, and inflated trainable-parameter reporting. Real selected checkpoint
   AdamW states are all 6000, EMA tensors are finite, and representative strict CPU
-  loads pass. GPU PRECHECK remains required. See
+  loads pass. Replacement GPU PRECHECK jobs 1280197/1280199 passed; d34d51d2
+  diagnostics 1280198/1280200 are running as of 18:23 Asia/Shanghai. The later
+  formal-CLI fix is not needed by this independent diagnostic entry. No complete
+  accuracy result or original three-seed completion is established. See
   `experiments/audits/2026-09-08-stopped-matrix/EXPERIMENT_AUDIT.md`.
 - User stop on 2026-09-08: D2S `1276621` and PA-TAD `1276622` are cancelled.
   Evaluate only complete, matched final EMA cells (D2S seeds 4407/4408; PA-TAD

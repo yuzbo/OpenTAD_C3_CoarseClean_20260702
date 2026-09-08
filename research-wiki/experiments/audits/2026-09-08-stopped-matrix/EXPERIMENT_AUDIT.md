@@ -6,14 +6,15 @@ an audit of every historical ZoomToken/BA-FDR/DUCA/ET-TRC worktree.
 
 ## Verdict
 
-The previous claim of implementation completeness was premature. Two execution
-blockers and one parameter-reporting error are confirmed and corrected in this
-change. No model-equation, physical-skip, or PA feature-flow error was confirmed
+The previous claim of implementation completeness was premature. Three launch/
+evaluation errors and one parameter-reporting error are confirmed and corrected.
+No model-equation, physical-skip, or PA feature-flow error was confirmed
 in the active training implementation. That is a bounded conclusion, not proof
 that all possible inputs or the full GPU evaluation are correct.
 
 Training source: `21aa2945b934a0dba469a517c224efe9b30d3967`.
 Failed evaluation source: `1f600f8fa9c696c0d476970b353a05f7e004a05f`.
+Active diagnostic source: `d34d51d29900532a399c5a1edc0f2563c5b3641c`.
 All original checkpoints and receipts remain untouched. No training resumes.
 
 ## Confirmed Findings
@@ -29,8 +30,8 @@ were cancelled without starting. No prediction or metric was produced.
 Correction: explicitly source `/usr/share/modules/init/bash` before `module
 load`. The same non-login-shell sequence was then exercised successfully on
 N16R4, loading CUDA 11.8, Miniforge 24.11, and the OpenTAD environment. Add a
-regression assertion for initialization-before-module-load. A fresh GPU PRECHECK
-is still required for the complete entry.
+regression assertion for initialization-before-module-load. Replacement GPU
+PRECHECK jobs 1280197/1280199 have now completed successfully.
 
 Remote error files:
 - `/data/run01/sczc063/yuzibo/projects/d2s_user_stop_diagnostic_20260908_1f600f8f_r1/logs/precheck-1280173.err`
@@ -54,6 +55,21 @@ both predictions and GT overlaps. Both examples are regression-tested against
 the actual official function. Do not weaken the parity tolerance, perturb scores,
 change NMS, or change the official evaluator. The separately frozen UID ordering
 for short-action recall and boundary diagnostics remains unchanged.
+
+### P1: Formal matrix CLI passes a payload digest to a file-digest check
+
+`tools/bata/continuous_roi_s2_v3_full200_compute_eval.py:1188` selected the seal's
+internal `seal_sha256`, but `begin_single_gt_open` at line 1122 compares the digest
+of the entire serialized file. These are different for a valid prediction seal.
+The original nine-cell `evaluate-matrix` command therefore fails with
+`prediction seal hash mismatch` before opening metric GT.
+
+Correction: pass the existing whole-file digest expected by the callee. Extend
+the real nine-bundle seal test to exercise the CLI, stopping before GT loading.
+The test failed with the original exception before the fix and passes afterward;
+the one-shot marker still rejects a second open. This is a later shared formal-CLI
+fix, not part of d34d51d2. The active diagnostic has its own opening entry and
+does not call this CLI, so it does not need cancellation or resubmission.
 
 ### P2: Trainable-parameter count was collected before backbone freezing
 
@@ -141,20 +157,43 @@ parameters than D2S are not supported by this implementation.
 
 D2S has two complete matched seeds and PA-TAD one. These selected complete-data
 weights do not complete either original three-seed nine-cell experiment. No new
-accuracy result exists yet. GPU PRECHECK and complete diagnostic evaluation must
-still finish before results can be reported.
+accuracy result was available at the 18:23 Asia/Shanghai status check. GPU
+PRECHECK has passed; full diagnostic evaluation still has to finish.
 
 ## Verification And Review Limits
 
 - Local shared/diagnostic/C3 tests: 50 passed.
 - D2S-context tests: 27 passed; PA-context tests: 23 passed (overlapping suites).
 - Remote D2S/PA architecture tests: 8 passed on CPU.
+- Remote d34d51d2 diagnostic/statistics tests: 24 passed on CPU. After the
+  additional formal-CLI fix, the corresponding local suite has 25 passing tests.
 - Nine actual checkpoint states inspected; three production model classes
-  constructed and strict-loaded on CPU. No canonical metric GT opened.
+  constructed and strict-loaded on CPU. These checks did not open metric GT.
 - Three fresh default-role read-only reviewers were used. Review is same-family
   and provisional; their initial claims were checked against code or execution.
   The confirmed execution errors above come from concrete reproduction/logs,
   not an unverified reviewer verdict.
+
+## Deployment Snapshot: 2026-09-08 18:23 Asia/Shanghai
+
+| Route | GPU PRECHECK | Complete-population diagnostic |
+| --- | --- | --- |
+| D2S, six selected cells | 1280197 COMPLETED 0:0, 1m29s | 1280198 RUNNING on g0006 |
+| PA-TAD, three selected cells | 1280199 COMPLETED 0:0, 1m10s | 1280200 RUNNING on g0050 |
+
+Both PRECHECK logs record completion and publish `control/diagnostic_plan.json`.
+They verify all selected real checkpoint states, strict EMA loading, complete
+loader size and one real label-free GPU forward per cell. This is not yet
+all-window evaluation completion or a final accuracy result.
+
+The immutable active source is
+`/data/run01/sczc063/yuzibo/projects/zoomtoken_stopped_matrix_eval_d34d51d2_src`.
+Output roots are
+`/data/run01/sczc063/yuzibo/projects/d2s_user_stop_diagnostic_20260908_d34d51d2_r2`
+and
+`/data/run01/sczc063/yuzibo/projects/patad_user_stop_diagnostic_20260908_d34d51d2_r2`.
+Model/config trees still match the original training commit exactly. The
+30-minute monitor is bound to these jobs and must not restart cancelled training.
 
 Local source: `E:/DeskTop/TAD/zoomtoken_stopped_matrix_eval_20260908`.
 GitHub branch: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/codex/zoomtoken-stopped-matrix-eval-20260908
