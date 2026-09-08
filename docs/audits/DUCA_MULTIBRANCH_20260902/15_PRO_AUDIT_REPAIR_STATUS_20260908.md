@@ -263,3 +263,15 @@ job1245842 的 Slurm 记录为 COMPLETED(0:0)。原 source 为 `/data/run01/sczc
 13:43公共可调度25节点CfgTRES200、AllocTRES174，未分配26/200 GPU；账户展开队列8 RUNNING/1 PENDING，本任务CT占2项。1278774是其他未登记任务的JobHeldUser，未操作。实验盘195G可用、97%已用，公共余量不保证个人配额。分钟回执年龄28秒，dispatcher仍plan/BLOCKED、entries为空，只读轮询正常，不是自动提交正常。
 
 本轮没有新增运行失败、最终性能、模型修改、Slurm提交、取消、重复准入、大权重加载或Pro咨询；仅更新监控证据与目录。历史BAFDR1267920/1267921未操作，所有未完成事项继续保留。证据：[24_HEARTBEAT_EVIDENCE_20260908_1341.json](24_HEARTBEAT_EVIDENCE_20260908_1341.json)。
+
+## 14:28 用户进度查询与终态评测部署
+
+本次为用户询问运行时长后的定向查询与已有部署计划衔接，不补记为完整六路线心跳。远端采样14:28至14:32，其他路线科学状态仍沿用各行原时间戳。
+
+- CT坐标修复fe1c53db的G0训练1278011从02:53:59至14:20:05，耗时11:26:06；G1训练1278012从02:54:29至13:58:46，耗时11:04:17，均COMPLETED(0:0)。终轮stdout/stderr已读，Training Over已出现。
+- 14:29分别读取两份新epoch59 EMA，07383274现有checkpoint_counts确认各337个Adam参数状态均step6000，optimizer/scheduler/EMA各6000，AMP skip均3且已重放。训练与评测checkout均exact/clean，模型及配置diff为空。Slurm完成、真实更新验证与独立最终性能明确分开。
+- 复用已通过的1278042，没有重跑任何训练准入或PRECHECK。14:30:07在全新formal输出提交独立正式评测1279211_0/1，两项14:30:35均获得GPU；14:32观察到两臂CTDP_EVAL_CHECKPOINT_OK和EMA加载。G0已28批，G1进度刚初始化；无独立metrics，不把训练日志64.27/61.67%作为本次最终结果。
+- 预计15:00-15:30取得这两臂独立评测结果，前提是推理和收据生成正常。这不是六路线全部完成的时间：其他待修机制、未部署训练和缺少独立评测的实验尚无可靠总工期。
+- 14:31可调度25节点CfgTRES200/AllocTRES183，未分配17；账户7 RUNNING/1 PENDING。实验盘186G可用、97%已用。分钟dispatcher仍plan/BLOCKED；本次两项评测由监督任务提交，不是分钟脚本自动提交。没有取消、远端热改、模型修改或Pro咨询；历史BAFDR1267920/1267921未操作。
+
+证据：[25_RUNTIME_AND_CT_EVAL_DEPLOYMENT_20260908_1430.json](25_RUNTIME_AND_CT_EVAL_DEPLOYMENT_20260908_1430.json)。

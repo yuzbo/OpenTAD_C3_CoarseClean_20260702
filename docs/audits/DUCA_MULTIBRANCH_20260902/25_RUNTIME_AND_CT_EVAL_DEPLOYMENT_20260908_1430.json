@@ -1,0 +1,163 @@
+{
+  "observation_type": "USER_RUNTIME_QUERY_AND_CT_TERMINAL_EVAL_DEPLOYMENT",
+  "observation_window_cst": "2026-09-08 14:28:08 to 14:32:14",
+  "scope": "Targeted runtime query plus completion of the authorized CT evaluator handoff. This is not a newly completed six-route heartbeat or a new implementation audit. Other routes retain their previously dated scientific findings.",
+  "training_source": {
+    "sha": "fe1c53db1b2a7e467a6af2eccfe8b7636f667a81",
+    "remote": "/data/run01/sczc063/yuzibo/projects/ctdp_coordinate_fe1c53db",
+    "clean_tree": true
+  },
+  "evaluator_source": {
+    "sha": "073832744dd171dee4119dc29d1bb12a057e84f4",
+    "remote": "/data/run01/sczc063/yuzibo/projects/ctdp_coordinate_eval_07383274",
+    "clean_tree": true,
+    "source_identity": "opentad/configs unchanged from training SHA; existing source_identity passed14:29"
+  },
+  "training": {
+    "G0": {
+      "job": "1278011",
+      "state": "COMPLETED",
+      "exit_code": "0:0",
+      "start_cst": "2026-09-08 02:53:59",
+      "end_cst": "2026-09-08 14:20:05",
+      "elapsed": "11:26:06",
+      "checkpoint": "/data/run01/sczc063/yuzibo/experiments/ctdp_coordinate_fe1c53db/formal/duca_ctdp_geometry_g0_seed3407/gpu1_id0/checkpoint/epoch_59.pth",
+      "checkpoint_size_bytes": 623822543,
+      "counts": {
+        "checkpoint_epoch": 59,
+        "checkpoint_state_key": "state_dict_ema",
+        "successful_optimizer_updates": 6000,
+        "scheduler_updates": 6000,
+        "ema_updates": 6000,
+        "optimizer_state_count": 337
+      },
+      "optimizer_attempts": 6003,
+      "amp_skipped_attempts": 3,
+      "stdout": "/data/run01/sczc063/yuzibo/slurm_logs/ctdp-g0-fe1c53db_1278011.out",
+      "stderr": "/data/run01/sczc063/yuzibo/slurm_logs/ctdp-g0-fe1c53db_1278011.err"
+    },
+    "G1": {
+      "job": "1278012",
+      "state": "COMPLETED",
+      "exit_code": "0:0",
+      "start_cst": "2026-09-08 02:54:29",
+      "end_cst": "2026-09-08 13:58:46",
+      "elapsed": "11:04:17",
+      "checkpoint": "/data/run01/sczc063/yuzibo/experiments/ctdp_coordinate_fe1c53db/formal/duca_ctdp_geometry_g1_seed3407/gpu1_id0/checkpoint/epoch_59.pth",
+      "checkpoint_size_bytes": 623822543,
+      "counts": {
+        "checkpoint_epoch": 59,
+        "checkpoint_state_key": "state_dict_ema",
+        "successful_optimizer_updates": 6000,
+        "scheduler_updates": 6000,
+        "ema_updates": 6000,
+        "optimizer_state_count": 337
+      },
+      "optimizer_attempts": 6003,
+      "amp_skipped_attempts": 3,
+      "stdout": "/data/run01/sczc063/yuzibo/slurm_logs/ctdp-g1-fe1c53db_1278012.out",
+      "stderr": "/data/run01/sczc063/yuzibo/slurm_logs/ctdp-g1-fe1c53db_1278012.err"
+    }
+  },
+  "terminal_validation": {
+    "checked_at_cst": "2026-09-08 14:29:14 to14:29:39",
+    "validator": "tools/bata/ctdp_terminal_receipt.py:checkpoint_counts",
+    "method": "Read each newly completed CPU checkpoint once; source/seed/config arm/epoch/EMA/contract checks and actual optimizer steps, not just self-reported audit counters.",
+    "result": "PASS G0/G1, all337 optimizer states per arm have step6000"
+  },
+  "evaluation": {
+    "prerequisite_job": "1278042",
+    "prerequisite_state": "COMPLETED(0:0), ended08:14:51 CST; existing successful GPU PRECHECK reused",
+    "submitted_at_cst": "2026-09-08 14:30:07",
+    "array_job": "1279211",
+    "array": "0,1%2",
+    "jobs": {
+      "G0": "1279211_0",
+      "G1": "1279211_1"
+    },
+    "states": {
+      "G0": "RUNNING",
+      "G1": "RUNNING"
+    },
+    "slurm_start_cst": "2026-09-08 14:30:35",
+    "observed_at_cst": "2026-09-08 14:32:14",
+    "elapsed_at_observation": "00:01:38",
+    "launch": {
+      "script": "/data/run01/sczc063/yuzibo/projects/ctdp_coordinate_eval_07383274/scripts/run_ctdp_terminal_eval_n16r4.sbatch",
+      "PRECHECK_ONLY": "0",
+      "CTDP_EVAL_REPO": "/data/run01/sczc063/yuzibo/projects/ctdp_coordinate_eval_07383274",
+      "CTDP_EVAL_COMMIT": "073832744dd171dee4119dc29d1bb12a057e84f4",
+      "CTDP_TRAIN_ROOT": "/data/run01/sczc063/yuzibo/experiments/ctdp_coordinate_fe1c53db/formal",
+      "CTDP_EVAL_ROOT": "/data/run01/sczc063/yuzibo/experiments/ctdp_coordinate_eval_07383274/formal",
+      "dependency": "none; training and existing admission already completed and checked",
+      "gpus_per_task": 1
+    },
+    "stdout_pattern": "/data/run01/sczc063/yuzibo/experiments/ctdp_coordinate_eval_07383274/slurm_logs/formal_1279211_%a.out",
+    "stderr_pattern": "/data/run01/sczc063/yuzibo/experiments/ctdp_coordinate_eval_07383274/slurm_logs/formal_1279211_%a.err",
+    "expected_metrics": {
+      "G0": "/data/run01/sczc063/yuzibo/experiments/ctdp_coordinate_eval_07383274/formal/g0/gpu1_id0/official_eval/metrics.json",
+      "G1": "/data/run01/sczc063/yuzibo/experiments/ctdp_coordinate_eval_07383274/formal/g1/gpu1_id0/official_eval/metrics.json"
+    },
+    "latest_progress": {
+      "G0": "CTDP_EVAL_CHECKPOINT_OK; Using Model EMA;28 batches",
+      "G1": "CTDP_EVAL_CHECKPOINT_OK; Using Model EMA; inference progress initialized"
+    },
+    "final_receipts_present": {
+      "G0": false,
+      "G1": false
+    },
+    "estimated_completion_cst": "2026-09-08 15:00-15:30, based on recent complete evaluations; contingent on healthy inference and receipt generation, not a promise",
+    "timestamp_basis": "Start/end/runtime estimates use Slurm accounting and login-host query time; compute-node log timestamps are preserved, not assumed perfectly synchronized."
+  },
+  "resource_observation": {
+    "observed_at_cst": "2026-09-08 14:31",
+    "eligible_gpu_nodes": 25,
+    "configured_gpus": 200,
+    "allocated_gpus": 183,
+    "unallocated_gpus": 17,
+    "user_running_jobs": 7,
+    "user_pending_jobs": 1,
+    "disk_available": "186G",
+    "disk_used": "97%",
+    "qualification": "Public resources do not prove personal quota; both new evaluation tasks have actually been allocated GPUs."
+  },
+  "minute_supervisor": {
+    "checked_at_utc": "2026-09-08T06:30:34+00:00",
+    "dispatcher_mode": "plan",
+    "dispatcher_status": "BLOCKED",
+    "scope": "Read-only polling; this agent submitted the evaluators, not the minute dispatcher."
+  },
+  "other_registered_job_snapshot": {
+    "checked_at_cst": "2026-09-08 14:28",
+    "completed": [
+      "1277406_2",
+      "1277407_7",
+      "1277768_1",
+      "1277953_2",
+      "1276842",
+      "1276843",
+      "1277954",
+      "1277955"
+    ],
+    "qualification": "Slurm completion only rechecked here; other-route receipts and mechanism findings retain earlier validation timestamps. FULL1277955 is PRECHECK, not formal training."
+  },
+  "training_loop_diagnostic_only": {
+    "G0_average_mAP_percent": 64.27,
+    "G1_average_mAP_percent": 61.67,
+    "qualification": "Terminal training stdout telemetry, not the pending independent evaluator result. Not added to official_terminal_results."
+  },
+  "actions": {
+    "new_slurm_jobs": [
+      "1279211_0",
+      "1279211_1"
+    ],
+    "model_edits": 0,
+    "remote_hot_edits": 0,
+    "training_repeats": 0,
+    "precheck_repeats": 0,
+    "cancelled_jobs": [],
+    "new_terminal_checkpoints_loaded": 2,
+    "pro_consultations": 0,
+    "historical_bafdr_jobs_touched": []
+  }
+}
