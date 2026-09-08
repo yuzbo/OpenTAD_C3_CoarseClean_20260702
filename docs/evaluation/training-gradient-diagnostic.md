@@ -19,3 +19,9 @@ python -m pytest tests/test_sci3_training_gradients.py -q
 ```
 
 测试使用真实的小规模 VideoMAE/TIA/ActionFormer 与合成输入，覆盖 A/B/C、空GT、奇数有效尾部、真实 acquisition、动态 pending cost、暖启动、actionness、microbatch、恢复和普通总损失 backward 的一致性。通过这些检查只表示数据生产器正确性；真实 checkpoint/batch 的分量结果与生产 GPU 验证仍待采集，不能据此宣称已定位 B 的梯度主因。
+
+## 2026-09-08 18:57 验证记录
+
+实际代码 `18281bacd7695f49a22c00a6ba6c01905d235ef0` 已在独立、干净的远端 CPU checkout `/data/run01/sczc063/yuzibo/geosparse_official_20260908/sci3_evidence_18281bac/repo` 通过全部10项 focused 检查（pytest 48.63秒，进程返回0）。操作员保存完整日志于 `official_adatad_audit/sci3_verification_18281bac/remote.stdout.txt`。没有提交训练或 GPU 诊断。
+
+独立源码复核提出非整除 microbatch 与生产训练器不一致；已加入相同拒绝规则并验证。其余已审阅范围没有发现具体错误。此前8项检查通过的 `5d616a2d` 留作实现轨迹，实际采用上述最终版本；不重复测试未改动的原124项生产检查。
