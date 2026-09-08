@@ -1,0 +1,279 @@
+{
+  "automation_id": "opentad-c3-duca",
+  "heartbeat_trigger_utc": "2026-09-08T07:08:05.401Z",
+  "heartbeat_trigger_cst": "2026-09-08 15:08:05.401",
+  "remote_sampling_window_cst": "2026-09-08 15:10:16 to15:12:20",
+  "scope": "Current six-route identities/status/logs/receipts/resources monitored; two new CT independent terminal results certified. This does not certify unresolved mechanisms or backfill unexecuted heartbeats.",
+  "ct_training": {
+    "G0": {
+      "job": "1278011",
+      "state": "COMPLETED",
+      "exit_code": "0:0",
+      "start_cst": "2026-09-08 02:53:59",
+      "end_cst": "2026-09-08 14:20:05",
+      "elapsed": "11:26:06",
+      "checkpoint": "/data/run01/sczc063/yuzibo/experiments/ctdp_coordinate_fe1c53db/formal/duca_ctdp_geometry_g0_seed3407/gpu1_id0/checkpoint/epoch_59.pth",
+      "checkpoint_size_bytes": 623822543,
+      "counts": {
+        "checkpoint_epoch": 59,
+        "checkpoint_state_key": "state_dict_ema",
+        "successful_optimizer_updates": 6000,
+        "scheduler_updates": 6000,
+        "ema_updates": 6000,
+        "optimizer_state_count": 337
+      },
+      "optimizer_attempts": 6003,
+      "amp_skipped_attempts": 3,
+      "stdout": "/data/run01/sczc063/yuzibo/slurm_logs/ctdp-g0-fe1c53db_1278011.out",
+      "stderr": "/data/run01/sczc063/yuzibo/slurm_logs/ctdp-g0-fe1c53db_1278011.err"
+    },
+    "G1": {
+      "job": "1278012",
+      "state": "COMPLETED",
+      "exit_code": "0:0",
+      "start_cst": "2026-09-08 02:54:29",
+      "end_cst": "2026-09-08 13:58:46",
+      "elapsed": "11:04:17",
+      "checkpoint": "/data/run01/sczc063/yuzibo/experiments/ctdp_coordinate_fe1c53db/formal/duca_ctdp_geometry_g1_seed3407/gpu1_id0/checkpoint/epoch_59.pth",
+      "checkpoint_size_bytes": 623822543,
+      "counts": {
+        "checkpoint_epoch": 59,
+        "checkpoint_state_key": "state_dict_ema",
+        "successful_optimizer_updates": 6000,
+        "scheduler_updates": 6000,
+        "ema_updates": 6000,
+        "optimizer_state_count": 337
+      },
+      "optimizer_attempts": 6003,
+      "amp_skipped_attempts": 3,
+      "stdout": "/data/run01/sczc063/yuzibo/slurm_logs/ctdp-g1-fe1c53db_1278012.out",
+      "stderr": "/data/run01/sczc063/yuzibo/slurm_logs/ctdp-g1-fe1c53db_1278012.err"
+    },
+    "artifact_observation_cst": "2026-09-08 15:10 CST",
+    "actual_checkpoint_validation_reused": {
+      "checked_at_cst": "2026-09-08 14:29:14 to14:29:39",
+      "validator": "tools/bata/ctdp_terminal_receipt.py:checkpoint_counts",
+      "method": "Read each newly completed CPU checkpoint once; source/seed/config arm/epoch/EMA/contract checks and actual optimizer steps, not just self-reported audit counters.",
+      "result": "PASS G0/G1, all337 optimizer states per arm have step6000"
+    },
+    "checkpoint_stat_unchanged": true,
+    "new_large_checkpoint_loads": 0
+  },
+  "coordinate_evaluator": {
+    "training_sha": "fe1c53db1b2a7e467a6af2eccfe8b7636f667a81",
+    "evaluator_sha": "073832744dd171dee4119dc29d1bb12a057e84f4",
+    "remote_training_clean_tree": true,
+    "remote_evaluator_clean_tree": true,
+    "checked_at_cst": "2026-09-08 15:10 CST",
+    "jobs": {
+      "G0": {
+        "job": "1279211_0",
+        "state": "COMPLETED",
+        "exit_code": "0:0",
+        "start_cst": "2026-09-08 14:30:35",
+        "end_cst": "2026-09-08 14:49:56",
+        "elapsed": "00:19:21"
+      },
+      "G1": {
+        "job": "1279211_1",
+        "state": "COMPLETED",
+        "exit_code": "0:0",
+        "start_cst": "2026-09-08 14:30:35",
+        "end_cst": "2026-09-08 14:50:58",
+        "elapsed": "00:20:23"
+      }
+    },
+    "receipts": {
+      "G0": {
+        "checkpoint_sha256": "d5696b4f182232aa2cbe3395b628ef88bd380a5c7afdbed17da23e63fb32f413",
+        "prediction_sha256": "c58ed4d2e7dd2e5da3b4690e007ec6135466077ed16f2d0cec89878db8d42424",
+        "config_sha256": "6a84ae23c2ad95249e7c8f4225fa4708524a75c553b140f0d679a9728ddc9b0d",
+        "receipt_sha256": "140e78dd2f0f23a977c5f55051e4c1510d04f576966ffcc9951edbc64be2d962",
+        "receipt_mtime_cst": "2026-09-08T14:49:20.392380+08:00",
+        "receipt": "/data/run01/sczc063/yuzibo/experiments/ctdp_coordinate_eval_07383274/formal/g0/gpu1_id0/official_eval/metrics.json",
+        "metrics": {
+          "average_mAP": 0.6427200272571093,
+          "mAP@0.3": 0.8007885484368389,
+          "mAP@0.4": 0.7460867056195133,
+          "mAP@0.5": 0.6741285579333751,
+          "mAP@0.6": 0.5657943413687253,
+          "mAP@0.7": 0.42680198292709387
+        },
+        "annotation_sha256": "ee526d55aa4315a8adc68c501d0331f96a56ce16fa960f1d2ea182b9381ab9ad",
+        "class_map_sha256": "a158b7c4c130ce74375a9b114160e2faae7a0221e605a0464a556fe082644f31",
+        "evaluator_sha256": "e855e70d41d087d039a90ecdb8f3cc3efece209130417320edf35062b8503fd4",
+        "observed_video_count": 211,
+        "receipt_self_hash_verified": true,
+        "production_metrics_equal": true
+      },
+      "G1": {
+        "checkpoint_sha256": "9c5fe4d9a2201a41fbbceaea64af85e4a963641ca34aff0dd6e4db7a1f464802",
+        "prediction_sha256": "275a2f5473b66142ae5924613a3c19ab5729f5e4f8c51594870ebb32a14fe8fd",
+        "config_sha256": "7e7a521291eaac542ade6d7d06784270f15181b5cdcb488836545ac3cbe9a892",
+        "receipt_sha256": "15782f03c350358f32f20639952b6676892047d2213388a43a2d00535783b7bc",
+        "receipt_mtime_cst": "2026-09-08T14:51:54.634430+08:00",
+        "receipt": "/data/run01/sczc063/yuzibo/experiments/ctdp_coordinate_eval_07383274/formal/g1/gpu1_id0/official_eval/metrics.json",
+        "metrics": {
+          "average_mAP": 0.6167397028285398,
+          "mAP@0.3": 0.7861633235376628,
+          "mAP@0.4": 0.7285757322889715,
+          "mAP@0.5": 0.6347676761532852,
+          "mAP@0.6": 0.5350382081934079,
+          "mAP@0.7": 0.39915357396937123
+        },
+        "annotation_sha256": "ee526d55aa4315a8adc68c501d0331f96a56ce16fa960f1d2ea182b9381ab9ad",
+        "class_map_sha256": "a158b7c4c130ce74375a9b114160e2faae7a0221e605a0464a556fe082644f31",
+        "evaluator_sha256": "e855e70d41d087d039a90ecdb8f3cc3efece209130417320edf35062b8503fd4",
+        "observed_video_count": 211,
+        "receipt_self_hash_verified": true,
+        "production_metrics_equal": true
+      }
+    },
+    "metric_scale": "fraction_0_to_1",
+    "paired_delta_pp": {
+      "average_mAP": -2.5980324428569457,
+      "mAP@0.7": -2.764840895772264
+    },
+    "verification": "Read actual new metrics JSON, recomputed each receipt self hash, checked exact training/evaluator SHA, clean flag, arm, seed3407, epoch59 EMA,6000 optimizer/scheduler/EMA,337 optimizer states,211 unique videos, checkpoint path and metrics equality with production evaluation_metrics.json. Both stdout/stderr complete normally. Actual checkpoint states verified14:29 are reused; current sizes/mtimes unchanged.",
+    "verification_limits": "Did not reload large checkpoint or independently rehash all large artifacts; retained hashes are emitted by the unchanged exact-SHA evaluator and protected by the verified receipt self hash. Model/config identity was checked at14:29 and current HEAD/clean states match.",
+    "interpretation": "G1 underperforms matched G0 by2.5980324429pp Avg-mAP and2.7648408958pp mAP@0.7 in this seed. No claim that all dynamic methods fail. Not the unmodified official AdaTAD baseline and not a B-AMoD experiment. Existing78cde1be G2/G3 remain separate results."
+  },
+  "current_cycle": {
+    "H65_PRO_ACTIVE": "2026-09-08 15:10 CST：六份F臂小收据mtime与数值未变，最高64.2265%；本地aac9df0f仍clean。复用既有自哈希及终态验证，不重复大权重/推理。F01-F06仍phase-off，TIA与匹配控制未修；官方原始1245842的68.73%仍为此前原始日志值，来源补证及独立复评未完成，不能用修改REF补位",
+    "CT_DP_BAMOD_ACTIVE": "2026-09-08 15:10-15:12 CST：07383274独立评测1279211_0/1均COMPLETED(0:0)，分别14:49:56/14:50:58结束，耗时19:21/20:23。两份新自哈希receipt核验通过，绑定fe1c53db、seed3407、epoch59 EMA、真实6000/337个Adam状态、211视频；官方独立Avg-mAP为G0均匀64.2720%、G1动态61.6740%，mAP@0.7为42.6802%/39.9154%。动态相对均匀低2.5980pp，单种子不支持提升，不等于所有动态路线无效。G2/G3仍是78cde1be旧身份结果，geometry四臂均B-AMoD关闭；本轮未新增作业或重复大权重/准入",
+    "DUCA_UNIFIED_ACTIVE": "2026-09-08 15:08心跳：实时本地HEAD仍793c4f9c且clean，无新增机制实现；真实Taylor P0/P1训练接线、合法one-swap与H65 retention/transition仍未完成。保持BLOCKED_UNIMPLEMENTED，不将缺失机制归因于GPU排队，不重复全源码审查或占位配置准入",
+    "BAFDR_ACTIVE": "2026-09-08 15:10-15:12 CST：U16/LATE/NOKD与FULL PRECHECK1277955仍COMPLETED(0:0)，前三份stdout终行均保存epoch59/update6000，stderr无新fatal；复用04:28真实权重计数验证。710ce8a6输出metrics.json仍0份，FULL无正式训练。padding/screen问题尚未修复，不能开启新FULL或21-cell；历史1267920/1267921未操作",
+    "ET_TRC_ACTIVE": "2026-09-08 15:10 CST：OFF/ON两份小收据mtime及指标未变，仍62.0768%/54.8096%；本地67d7079d仍clean，复用原74473c27训练和67d7079d评测终态认证，不重复大权重或推理。anchor correction及实际精度核对未完成，保留该低秩残差代理版本的负结果，不称已落地event gate或exact JVP",
+    "EVIDENCE_ACTIVE": "2026-09-08 15:10 CST：A1/A6/F训练及A1评测均COMPLETED(0:0)，stdout/stderr终段已读，无新增运行失败。A1小收据mtime未变，metrics.average_mAP仍0.5159681679375281；A6/F仍无独立metrics。复用04:30终态/跨SHA恢复验证；e0c88c9a本地clean但只是初始化修复，utility/robust/cycle未接线，旧checkpoint不是完整修复版，不补提已知缺陷的A3/A4/A5"
+  },
+  "local_identity": {
+    "scope": "All six active local HEAD/clean states checked live during this heartbeat; no new model commits. Catalog generator refreshes each registered local directory again before publication.",
+    "H65": {
+      "head": "aac9df0fd896edf9bf440a123e0424bb641df012",
+      "clean_tree": true
+    },
+    "Evidence": {
+      "head": "e0c88c9a9e2582878c88bb2c728891ea5413bc77",
+      "clean_tree": true
+    },
+    "BAFDR": {
+      "head": "710ce8a6246c471742c83bf7c180d9ab87c36fac",
+      "clean_tree": true
+    },
+    "ET": {
+      "head": "67d7079d0d1c33e129d31cd3a45aaf93a67db252",
+      "clean_tree": true
+    },
+    "Unified": {
+      "head": "793c4f9cdf7dac4f224bc73012aff8bc93949f87",
+      "clean_tree": true
+    },
+    "CT": {
+      "head": "fe1c53db1b2a7e467a6af2eccfe8b7636f667a81",
+      "clean_tree": true
+    },
+    "checked_at_cst": "2026-09-08 15:11 CST"
+  },
+  "unchanged_terminal_metrics": {
+    "checked_at_cst": "2026-09-08 15:10 CST",
+    "verification": "Small receipt values and mtimes unchanged; existing complete terminal/self-hash certifications reused without repeated large loads or inference.",
+    "H65_phase_off_F01_to_F06": [
+      0.6338540623028592,
+      0.6422653640360945,
+      0.6036478160171815,
+      0.6070129227677766,
+      0.640886229714488,
+      0.6381814163848895
+    ],
+    "ET_OFF": 0.6207677503328417,
+    "ET_ON": 0.5480958031537403,
+    "Evidence_A1": 0.5159681679375281,
+    "Evidence_A1_field": "metrics.average_mAP",
+    "Evidence_C0_A2": "No new inference; prior terminal results59.2292%/54.2756% retain246058f2 identity."
+  },
+  "evidence_recovery": {
+    "completed_jobs": [
+      "1277406_2",
+      "1277407_7",
+      "1277768_1",
+      "1277953_2"
+    ],
+    "new_failure": false,
+    "A6_independent_receipt_present": false,
+    "F_independent_receipt_present": false,
+    "terminal_validation_reused_from": "2026-09-08 04:30 CST",
+    "unresolved": "utility MLP learning path, real robust/cycle objectives; e0c88c9a fixes initialization only, cannot convert old trained double-zero checkpoint to new implementation"
+  },
+  "bafdr": {
+    "completed_jobs": [
+      "1276842",
+      "1276843",
+      "1277954",
+      "1277955"
+    ],
+    "last_train_stdout": {
+      "U16": "Saved epoch_59.pth at update6000,00:17:26",
+      "LATE": "Saved epoch_59.pth at update6000,00:14:25",
+      "NOKD": "Saved epoch_59.pth at update6000,03:28:06"
+    },
+    "terminal_validation_reused_from": "2026-09-08 04:28 CST",
+    "new_metrics_json_count": 0,
+    "FULL": "PRECHECK only, no formal training",
+    "unresolved": "padding routing and true terminal screen gate",
+    "historical_1267920_1267921": "Read-only; no cancel/edit/retry"
+  },
+  "unified": {
+    "status": "BLOCKED_UNIMPLEMENTED",
+    "unresolved": "realP0/P1 training linkage, legalone-swap, H65 retention/transition; not resource waiting"
+  },
+  "resources": {
+    "checked_at_cst": "2026-09-08 15:10 CST",
+    "eligible_nodes": 25,
+    "configured_gpus": 200,
+    "allocated_gpus": 200,
+    "unallocated_gpus": 0,
+    "user_running_jobs": 9,
+    "user_pending_jobs": 2,
+    "user_queue_job_ids": [
+      "1279307",
+      "1278774",
+      "1279369",
+      "1279370",
+      "1279367",
+      "1279368",
+      "1279274",
+      "1279203",
+      "1276621",
+      "1276622",
+      "1274508"
+    ],
+    "pending_reasons": {
+      "1278774": "JobHeldUser",
+      "1279307": "Priority"
+    },
+    "disk_available": "182G",
+    "disk_use": "97%",
+    "qualification": "Visible eligible-node capacity only; not personal quota. Existing other jobs not adopted into six-route registry or cancelled."
+  },
+  "minute_supervisor": {
+    "checked_at_utc": "2026-09-08T07:10:05+00:00",
+    "age_seconds": 17,
+    "status": "ACTIVE",
+    "dispatcher_mode": "plan",
+    "dispatcher_status": "BLOCKED",
+    "qualification": "Healthy read-only polling, not automatic submission of current repair jobs"
+  },
+  "baseline_note": "Original official recipe job1245842/01c58b9f log68.73 remains separate and awaits provenance plus independent reevaluation. New CT G064.272 is not a substitute. Do not impose later strict6000 on original recipe.",
+  "actions": {
+    "new_slurm_jobs": [],
+    "new_model_commits": [],
+    "cancelled_jobs": [],
+    "remote_hot_edits": 0,
+    "repeated_admissions": 0,
+    "repeated_prechecks": 0,
+    "new_large_checkpoint_loads": 0,
+    "new_official_terminal_receipts": 2,
+    "pro_consultations": 0
+  },
+  "next_action": "Preserve new negative result and unresolved defects; no blind rerun or automatic expansion of known broken matrices. Any further Pro consultation uses authorized ixBrowser Computer Use only."
+}

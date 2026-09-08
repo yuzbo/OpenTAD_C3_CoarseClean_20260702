@@ -275,3 +275,18 @@ job1245842 的 Slurm 记录为 COMPLETED(0:0)。原 source 为 `/data/run01/sczc
 - 14:31可调度25节点CfgTRES200/AllocTRES183，未分配17；账户7 RUNNING/1 PENDING。实验盘186G可用、97%已用。分钟dispatcher仍plan/BLOCKED；本次两项评测由监督任务提交，不是分钟脚本自动提交。没有取消、远端热改、模型修改或Pro咨询；历史BAFDR1267920/1267921未操作。
 
 证据：[25_RUNTIME_AND_CT_EVAL_DEPLOYMENT_20260908_1430.json](25_RUNTIME_AND_CT_EVAL_DEPLOYMENT_20260908_1430.json)。
+
+## 15:08 心跳补充
+
+本轮真实触发2026-09-08 15:08:05.401 CST，实时远端采样15:10:16至15:12:20。六个active本地HEAD与clean状态已检查，均无新模型提交；不补记未执行的触发。
+
+- 新CT独立评测1279211_0/1均COMPLETED(0:0)，分别14:49:56/14:50:58结束，实际用时19:21/20:23。比此前15:00-15:30估计提前完成；这里只以本轮真实核查时间15:10报告，不冒称14:50已经核查。
+- 两份新receipt自哈希重算一致，绑定fe1c53db训练与07383274评测、seed3407、epoch59 EMA、optimizer/scheduler/EMA各6000及211个唯一视频。官方metrics与evaluation_metrics.json逐项相同。337个真实Adam状态的14:29验证复用，当前checkpoint大小/mtime未变，本轮没有重复加载大权重或准入。
+- 均匀G0官方Avg-mAP64.272003%，mAP@0.3/0.4/0.5/0.6/0.7为80.078855/74.608671/67.412856/56.579434/42.680198%；动态G1为61.673970%，对应78.616332/72.857573/63.476768/53.503821/39.915357%。G1相对G0 Avg-mAP -2.598032pp、mAP@0.7 -2.764841pp。该单种子结果不支持当前动态选择带来提升，但不证明所有动态路线失败。
+- G2/G3的56.5234%/57.8489%保留原78cde1be/11ced13a身份，不能迁移为新SHA结果。geometry四臂均B-AMoD关闭；新G0不是原始官方AdaTAD的复现替代品。官方原配方68.73仍待来源补证和独立复评。
+- H65六份旧收据mtime/指标未变，最高64.2265%；F01-F06仍phase-off，TIA/匹配控制未修。ET关闭/开启仍62.0768%/54.8096%，anchor correction及实际精度核对未完成。
+- Evidence A1/A6/F训练及A1评测已完成，A1的metrics.average_mAP仍0.5159681679375281，A6/F没有独立收据。utility/robust/cycle缺失仍未修；BAFDR U16/LATE/NOKD实际终态验证复用，stdout末行6000，新metrics仍0份，FULL只有PRECHECK，padding/screen尚未修。Unified793c4f9c仍缺运行时P0/P1、合法one-swap及H65保留/转换。
+
+15:10可见可调度25节点CfgTRES200/AllocTRES200，未分配GPU0/200；账户9 RUNNING/2 PENDING，其他任务1279307为Priority、1278774为JobHeldUser，未操作或纳入六路线。实验盘182G可用、97%已用。分钟回执17秒新鲜，dispatcher仍plan/BLOCKED，只能称只读轮询正常。
+
+本轮完成两份新独立结果认证、六路线监控与目录刷新；没有新模型修复、Slurm提交、取消、重复PRECHECK或Pro咨询。已知实现欠账并未因评测成功而获得验收，历史BAFDR1267920/1267921仍不操作。证据：[26_HEARTBEAT_EVIDENCE_20260908_1508.json](26_HEARTBEAT_EVIDENCE_20260908_1508.json)。
