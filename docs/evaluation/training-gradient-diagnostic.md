@@ -25,3 +25,22 @@ python -m pytest tests/test_sci3_training_gradients.py -q
 实际代码 `18281bacd7695f49a22c00a6ba6c01905d235ef0` 已在独立、干净的远端 CPU checkout `/data/run01/sczc063/yuzibo/geosparse_official_20260908/sci3_evidence_18281bac/repo` 通过全部10项 focused 检查（pytest 48.63秒，进程返回0）。操作员保存完整日志于 `official_adatad_audit/sci3_verification_18281bac/remote.stdout.txt`。没有提交训练或 GPU 诊断。
 
 独立源码复核提出非整除 microbatch 与生产训练器不一致；已加入相同拒绝规则并验证。其余已审阅范围没有发现具体错误。此前8项检查通过的 `5d616a2d` 留作实现轨迹，实际采用上述最终版本；不重复测试未改动的原124项生产检查。
+
+## 普通检查点到真实训练 batch 的独立入口
+
+新增 `geosparse_research/training_gradient_diagnostic.py`，必须作为文件执行。它先读取训练目录 bindings，再从其中冻结的模型 snapshot 导入 geosparse_ext；诊断代码可来自独立研究分支。两者源码身份分别记录，不加载新修复分支的模型冒充 M。
+
+```bash
+python /ABS/RESEARCH/geosparse_research/training_gradient_diagnostic.py \
+  --training-run /ABS/TRAINING_RUN \
+  --completed-epochs 20 \
+  --output /ABS/NEW_DIAGNOSTIC_DIRECTORY
+```
+
+入口读取不可变 `epoch_19.pth` 的普通 state_dict，恢复其 loss_normalizer buffer、minibatch、CPU/CUDA/Python/NumPy RNG和GradScaler scale，按原种子与epoch20建立原训练加载器的首个batch（第21轮第一批）。有效batch、microbatch、workers、AMP、数据增强和模型选择规则不修改；只允许全200训练池，不使用测试视频。训练本身不必已经完成60轮。
+
+本诊断不重现任意历史中间batch，而是测量该检查点状态的原下一步输入。只测一个真实batch，若该次探索没有actor或没有触发acquisition，按实际缺项记录，不改counter或重新抽计划来制造完整分量。输出不是全训练总体或失败原因的确定结论。
+
+同一batch先进行分量测量，再用原普通总损失backward复核总梯度范数。状态和RNG在两次之间恢复；不执行optimizer、scheduler、EMA或dual更新。FP16非有限结果单列，不能当正常clip/cosine。测量目录包含measurement.json、gradients.json、result.json或failure.json，记录普通权重身份、GPU UUID、输入视频、有效长度、GT数量及下一步上下文；不复制视频或训练检查点。
+
+新增入口检查：`python -m pytest tests/test_sci3_training_gradient_diagnostic.py -q`。部署状态和精确提交测试凭证记录于外部执行包；没有GPU作业或真实输出前不称已经完成梯度诊断。
