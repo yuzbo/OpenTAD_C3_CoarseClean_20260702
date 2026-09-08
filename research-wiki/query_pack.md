@@ -1549,6 +1549,16 @@ max_chars: 8000
 
 ## Pointers
 
+- PA-TAD selected single-seed diagnostic completed on 2026-09-09: job 1280311
+  COMPLETED 0:0; all three 4407 cells use full 200-video/60-epoch/6000-update
+  weights and matched 211-video/792-window evaluation. Average mAP percentages
+  are D160 61.472989, G96 51.207531, PA-TAD 50.779315. Candidate deltas are
+  -10.693674 pp versus D160 and -0.428216 pp versus G96; mAP@0.7 also falls.
+  This is one-seed negative point evidence, not a complete original three-seed
+  result or an execution failure that authorizes rescue. Preserve the raw terminal
+  JSON and full table in `experiments/2026-09-08-stopped-matrix-diagnostic.md` and
+  its `audits/2026-09-08-stopped-matrix/patad_diagnostic_results_seed4407.json`.
+  D2S 1280309 continues with 5/6 prediction bundles as of 01:52; no final mAP yet.
 - Later September 8 terminal evidence supersedes the 18:23 snapshot below:
   diagnostics 1280198/1280200 failed at first D160 seed-4407 prediction packaging,
   before metric GT opening or candidate evaluation. Official clipping/rounding

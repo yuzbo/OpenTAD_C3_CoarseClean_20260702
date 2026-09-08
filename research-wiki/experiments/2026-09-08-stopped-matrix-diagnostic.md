@@ -196,3 +196,133 @@ to finish all 211 videos/792 windows and publish the diagnostic result file.
 Post-submission Slurm snapshot: PRECHECK 1280308/1280310 are PENDING (Priority);
 evaluations 1280309/1280311 are PENDING (Dependency). No replacement GPU PRECHECK
 or evaluation has started at this snapshot. Queueing is not submission failure.
+
+## Monitor Snapshot, 2026-09-08 20:49 Asia/Shanghai
+
+Slurm still lists PRECHECK 1280308/1280310 as PENDING (Priority), and evaluations
+1280309/1280311 as PENDING (Dependency). None has started or been allocated a
+node. Both replacement output roots have no log, admission plan or result file
+yet, consistent with the queue state. No new failure, final metric, source change,
+repair or resubmission occurred. Keep the existing jobs and 30-minute monitor.
+
+21:21 Asia/Shanghai recheck: unchanged. PRECHECK 1280308/1280310 remain PENDING
+(Priority), evaluations 1280309/1280311 remain PENDING (Dependency), with no node
+allocation or files in either replacement output root. No failure or final
+result was observed; no job/source modification or duplicate submission was made.
+
+21:52 Asia/Shanghai recheck: the same two PRECHECK jobs remain PENDING (Priority)
+and both evaluations remain PENDING (Dependency). Output roots still contain no
+files. No new failure, result or required intervention; no jobs were changed.
+
+## Extended GPU PRECHECK Passed, 2026-09-08 22:23 Asia/Shanghai
+
+| Route | Extended PRECHECK | Complete-population evaluation |
+| --- | --- | --- |
+| Feature-change-driven dual-resolution refresh (D2S) | 1280308 COMPLETED 0:0 at 21:59:46, 1m30s | 1280309 RUNNING on g0006 since 22:00:16 |
+| Global-only coarse pyramid with local fine-scale residuals (PA-TAD) | 1280310 COMPLETED 0:0 at 21:59:23, 1m07s | 1280311 RUNNING on g0005 since 21:59:46 |
+
+Both published plans bind execution commit 2a8639b6 and the exact frozen six/three
+matched cells. All nine rows verify strict EMA load, one real GPU window, the
+792-window dataset, `post_nms_serialization_checked: true`, and no metric GT open.
+Real one-window post-NMS outputs include finite zero-duration detections: D2S
+plan counts are D160 4407/4408 = 39/60, G96 4407/4408 = 17/0, candidate 4407/4408
+= 19/34; PA plan counts are D160/G96/candidate 4407 = 38/0/55. The repaired path
+retained and validated them. These are new PRECHECK observations, not recovered
+rows from the old failed run or full-population performance statistics.
+
+Both evaluation stderr tails show only successful environment module loading.
+No prediction bundle, diagnostic GT-open marker or final result file exists yet.
+The full tests have run about 23 minutes; no exact window progress or accuracy
+is inferred. No source, job or training change was made. Continue the existing
+30-minute monitor; GPU admission does not imply full evaluation completion.
+
+## Monitor Snapshot, 2026-09-08 22:56 Asia/Shanghai
+
+D2S 1280309 and PA-TAD 1280311 remain RUNNING (elapsed 56m01s/56m31s).
+Each route has published its first D160 seed-4407 prediction bundle: 1/6 D2S
+cells and 1/3 PA-TAD cells. Both bundles contain all 211 unique video identities
+and 422,000 predictions; the declared counts match the actual JSON contents.
+The previous first-cell serialization failure has not recurred at this stage.
+Neither route has opened diagnostic GT or produced a final result file. Current
+stderr shows only successful module loading. No mAP is available yet, and no
+repair, source change, resubmission or training restart was performed.
+
+23:28 Asia/Shanghai recheck: both evaluations remain RUNNING, elapsed
+1h28m03s (D2S) and 1h28m33s (PA-TAD). Published bundles remain 1/6 and 1/3,
+respectively, with only D160 seed 4407 complete in each root. No additional
+prediction bundle, GT-open marker or final result is present; stderr still only
+records successful environment loading. No new error or intervention occurred.
+
+## Monitor Snapshot, 2026-09-09 00:00 Asia/Shanghai
+
+Both evaluations remain RUNNING: D2S 1280309 elapsed 2h00m05s, PA-TAD 1280311
+elapsed 2h00m35s. D2S now has 2/6 published cells (D160 seeds 4407/4408);
+PA-TAD has 2/3 (D160 and G96 seed 4407). Both newly published bundles cover 211
+unique videos and contain 422,000 predictions, with declared and actual counts
+matching. Neither route has a diagnostic GT-open marker or final result file.
+Stderr contains no new error. No mAP is available and no job, source or training
+change was made. Continue the existing 30-minute monitor.
+
+## PA-TAD Single-Seed Diagnostic Complete, 2026-09-09 00:31 Asia/Shanghai
+
+PA-TAD job 1280311 COMPLETED 0:0 on g0005 at 00:26:21 after 2h26m35s.
+All three seed-4407 cells finished, using 200-video/60-epoch/6000-update final
+EMA weights and the complete matched 211-video/792-window evaluation population.
+The final summary matches all three individual metric files. Its plan and GT-open
+barrier bind the same execution source and exactly these three cells. All three
+prediction bundles cover the complete video population. This completes the
+selected diagnostic, not the original nine-cell/three-seed experiment.
+
+Official mAP values below are percentages, converted from the raw 0-to-1 fields.
+Average mAP is over tIoU 0.3/0.4/0.5/0.6/0.7. These are one-seed point estimates,
+not seed means with confidence intervals.
+
+| Method, seed 4407 | Average mAP | @0.3 | @0.4 | @0.5 | @0.6 | @0.7 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Dense 160-pixel full-video reference (D160) | 61.472989 | 76.667318 | 72.152463 | 63.998941 | 54.113724 | 40.432497 |
+| Low-resolution 96-pixel global carrier (G96) | 51.207531 | 65.165438 | 60.213692 | 53.806096 | 44.349519 | 32.502909 |
+| Global-only coarse pyramid with local fine-scale residuals (PA-TAD) | 50.779315 | 64.963465 | 60.144213 | 53.585975 | 43.578482 | 31.624440 |
+
+| Method | Short-action recall (%) | Normalized start-error median | Normalized end-error median |
+| --- | ---: | ---: | ---: |
+| D160 | 39.368999 | 0.107692308 | 0.088784067 |
+| G96 | 31.961591 | 0.119512195 | 0.093596311 |
+| PA-TAD | 32.784636 | 0.112987013 | 0.100000000 |
+
+Observed paired differences: PA-TAD minus D160 is -10.693674 pp Average mAP
+(-17.395728% relative), -8.808058 pp mAP@0.7 and -6.584362 pp short recall;
+start/end error ratios are 1.049165/1.126328 (lower is better). PA-TAD minus G96
+is -0.428216 pp Average mAP (-0.836236% relative) and -0.878469 pp mAP@0.7.
+Versus G96, short recall improves by 0.823045 pp and the start-error ratio is
+0.945402, but the end-error ratio worsens to 1.068418. There is no uniform benefit.
+
+This point comparison is negative accuracy evidence, not an execution failure
+to rescue. The relevant issue is the matched baseline deficit, not an arbitrary
+60% cutoff. Most of the D160-relative loss is already present in G96, and the
+local residual path did not recover it in this run; that observation alone does
+not identify a causal implementation defect. Do not infer significance from one
+seed, replace this run's D160 value with historical 68.51%, claim a full three-seed
+result, or launch a model/threshold change after GT opening. No submission-facing
+result-to-claim decision or new experiment is made by this monitoring update.
+
+Original terminal JSON, copied without editing:
+`audits/2026-09-08-stopped-matrix/patad_diagnostic_results_seed4407.json`.
+Remote terminal file:
+`/data/run01/sczc063/yuzibo/projects/patad_user_stop_diagnostic_20260908_2a8639b6_r3/diagnostic_results.json`.
+
+D2S 1280309 remains RUNNING on g0006, with 3/6 bundles published (D160 4407/4408
+and G96 4407). The new G96 bundle covers 211 videos and 422,000 predictions.
+D2S metric GT is still closed and its final result file is absent. Both stderr
+tails contain only successful environment loading. Continue monitoring only the
+remaining D2S work; retain PA-TAD results and do not rerun completed PA-TAD.
+
+## Monitor Snapshot, 2026-09-09 01:52 Asia/Shanghai
+
+D2S 1280309 remains RUNNING on g0006, elapsed 3h52m17s. It now has 5/6 published
+prediction bundles: D160 4407/4408, G96 4407/4408 and D2S-U128-B128 4407. The
+new G96-4408 and candidate-4407 bundles each cover 211 unique videos and contain
+422,000 predictions; declared and actual counts agree. Only candidate seed 4408
+remains unpublished. D2S has no metric GT-open marker or final result file, and
+stderr still contains only successful module loading. No D2S mAP is available.
+PA-TAD remains terminal with the results above. The same active monitor now
+follows only the remaining D2S job and retains PA-TAD as read-only evidence.

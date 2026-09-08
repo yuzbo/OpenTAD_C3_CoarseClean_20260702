@@ -229,3 +229,32 @@ remote worktree. Production postprocessing, diagnostic and statistics tests pass
 PA-TAD 1280310/1280311, with afterok dependencies and fresh 2a8639b6_r3 output
 roots. The existing 30-minute monitor now follows these jobs. Their submission
 does not constitute completed GPU admission or full-population metric evidence.
+
+At 22:23 Asia/Shanghai, replacement GPU PRECHECK jobs 1280308/1280310 are
+COMPLETED 0:0. Their plans verify all nine exact matched cells, strict EMA load,
+one real window per cell and successful NMS/serialization, against the complete
+792-window dataset. Actual PRECHECK outputs contain finite zero-duration
+predictions that the repaired path retains. This confirms the repair on real
+GPU model outputs, without claiming the old failing row was recovered.
+Evaluations 1280309/1280311 are RUNNING; no complete prediction bundle, metric
+GT-open marker or final accuracy file exists yet. Full evaluation remains pending.
+
+## PA-TAD Terminal Evidence, 2026-09-09
+
+PA-TAD 1280311 COMPLETED 0:0 at 00:26:21. All three selected seed-4407 cells
+finished the complete 211-video/792-window evaluation using their already
+verified complete-training final EMA weights. The terminal summary matches all
+three per-cell metric files and the same plan/three-cell GT-opening barrier.
+The raw terminal JSON is retained as `patad_diagnostic_results_seed4407.json`.
+
+Official Average mAP percentages are D160 61.47298860515845, G96
+51.207530944675405 and PA-TAD 50.779315001687884. The paired differences are
+-10.693673603470566 pp versus D160 and -0.42821594298751986 pp versus G96.
+This is one-seed negative point evidence, not a statistical-significance claim,
+complete original three-seed matrix, or a failed execution to rerun. No
+submission-facing claim decision is made. Full metric vectors and boundary/
+short-action diagnostics are in the parent experiment record.
+
+At 01:52, D2S 1280309 remains RUNNING with 5/6 complete prediction bundles;
+its GT is still closed and no final mAP exists. No additional model, evaluation
+definition or source change was made after either result was opened.

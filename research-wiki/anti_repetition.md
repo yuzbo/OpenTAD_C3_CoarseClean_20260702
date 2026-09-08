@@ -1465,3 +1465,11 @@ Keep failed namespaces and retry only the corrected evaluation in new roots.
 The submitted replacement is 2a8639b6: D2S 1280308/1280309 and PA-TAD
 1280310/1280311, in separate 2a8639b6_r3 roots. The 34 remote regressions passed;
 do not duplicate these jobs or infer accuracy from PRECHECK/submission alone.
+
+PA-TAD 1280311 completed its selected single-seed diagnostic on 2026-09-09.
+Average mAP is 50.779315%, versus matched D160 61.472989% and G96 51.207531%.
+Do not discard this negative point evidence, substitute historical 68.51% as its
+matched baseline, infer statistical significance from one seed, or rerun after GT
+opening because performance is poor. It is not an execution failure or completed
+three-seed matrix. Preserve the raw result file and keep monitoring only ongoing
+D2S work; original user-cancelled training remains stopped.
