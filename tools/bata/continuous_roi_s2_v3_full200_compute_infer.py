@@ -383,10 +383,6 @@ def run_bound_cell_inference(
                 post_cfg=post_config,
                 ext_cls=external_classifier,
             )
-        if precheck_only:
-            return {"ema_loaded_strictly": True, "forward_windows": 1,
-                    "dataset_windows": len(dataset.data_list),
-                    "metric_gt_opened": False}
         for video_id, rows in window_results.items():
             if video_id not in raw:
                 raise ValueError("model emitted an out-of-population video")
@@ -406,6 +402,8 @@ def run_bound_cell_inference(
                         ],
                     }
                 )
+        if precheck_only:
+            break
     results = post_nms_with_prediction_uids(
         raw,
         nms_config=post_config.nms,
@@ -419,6 +417,16 @@ def run_bound_cell_inference(
         results=results,
         class_map=manifest["class_map"]["classes"],
     )
+    if precheck_only:
+        return {"ema_loaded_strictly": True, "forward_windows": 1,
+                "dataset_windows": len(dataset.data_list),
+                "post_nms_serialization_checked": True,
+                "prediction_count": payload["prediction_count"],
+                "zero_duration_predictions": sum(
+                    row["segment"][0] == row["segment"][1]
+                    for rows in results.values() for row in rows
+                ),
+                "metric_gt_opened": False}
     atomic_publish_json(args.output, payload)
     return payload
 

@@ -1452,3 +1452,12 @@ resubmit them or restart training merely because full metrics are pending.
 The formal nine-cell CLI also confused the seal payload digest with a file digest;
 its focused fix must preserve the one-shot GT barrier. This separate CLI is not
 called by the active diagnostics and does not require cancelling those jobs.
+
+Later 1280198/1280200 terminal failures expose an additional task-local contract
+error: the unchanged official clipping/rounding/NMS path can emit zero-duration
+predictions, which must remain false positives rather than being filtered out.
+Accept only finite nonnegative-duration predictions; retain reversed/nonfinite
+rejection and report their UID/values. PRECHECK must cover post-NMS serialization,
+not return immediately after model forward. No predictions or metric GT were
+opened by the failed first D160 seed-4407 cells; no method accuracy exists yet.
+Keep failed namespaces and retry only the corrected evaluation in new roots.

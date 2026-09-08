@@ -83,13 +83,17 @@ class Prediction:
     end: float
 
     def __post_init__(self) -> None:
+        # Official clipping/rounding can collapse a detection; retain it as an FP.
         if (
             not math.isfinite(self.score)
             or not math.isfinite(self.start)
             or not math.isfinite(self.end)
-            or self.end <= self.start
+            or self.end < self.start
         ):
-            raise ValueError("prediction must have finite score and positive duration")
+            raise ValueError(
+                "prediction must have finite score and nonnegative duration: "
+                f"uid={self.uid}, score={self.score}, segment=({self.start}, {self.end})"
+            )
 
     @property
     def uid(self) -> tuple[str, int, int, int]:

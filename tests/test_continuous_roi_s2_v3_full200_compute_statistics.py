@@ -255,8 +255,10 @@ def test_checkpoint_seal_requires_nine_complete_full_training_receipts(tmp_path)
 @pytest.mark.parametrize("gt_segments,prediction_rows,expected_ap", [
     ([(0.0, 1.0)], [(0.0, 1.0, 0.5), (2.0, 3.0, 0.5)], 50.0),
     ([(0.0, 2.0), (1.0, 3.0)], [(0.0, 3.0, 0.9), (0.0, 2.0, 0.8)], 100.0),
+    ([(0.0, 1.0)], [(0.0, 0.0, 0.9), (0.0, 1.0, 0.8)], 50.0),
+    ([(0.0, 1.0)], [(10.0, 10.0, 0.9), (0.0, 1.0, 0.8)], 50.0),
 ])
-def test_map_matches_official_score_and_gt_iou_ties(gt_segments, prediction_rows, expected_ap):
+def test_map_matches_official_ties_and_zero_duration_false_positives(gt_segments, prediction_rows, expected_ap):
     import pandas as pd
     from opentad.evaluations.mAP import compute_average_precision_detection
 
@@ -276,3 +278,17 @@ def test_map_matches_official_score_and_gt_iou_ties(gt_segments, prediction_rows
     )
     assert local[0] == pytest.approx(expected_ap, abs=1e-12)
     assert local[0] == pytest.approx(100.0 * official[0], abs=1e-12)
+
+
+@pytest.mark.parametrize("values", [
+    {"score": math.nan}, {"score": math.inf}, {"start": math.nan},
+    {"end": math.inf}, {"start": 2.0, "end": 1.0},
+])
+def test_nonfinite_or_reversed_predictions_still_fail_with_identity(values):
+    with pytest.raises(ValueError, match="uid=.*v0"):
+        _prediction(**values)
+
+
+def test_zero_duration_ground_truth_remains_invalid():
+    with pytest.raises(ValueError, match="positive duration"):
+        GroundTruth("v0", 0, 0, 1.0, 1.0)

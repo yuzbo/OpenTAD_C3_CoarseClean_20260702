@@ -117,3 +117,56 @@ handoff. That separate entry is not called by these running diagnostics; the
 immutable d34d51d2 runtime need not be replaced for this fix. Full findings,
 reproductions, model/data-flow analysis, corrected parameter counts and remaining
 limits are in `audits/2026-09-08-stopped-matrix/EXPERIMENT_AUDIT.md`.
+
+## Monitor Snapshot, 2026-09-08 19:00 Asia/Shanghai
+
+| Route | PRECHECK | Evaluation | Observed elapsed |
+| --- | --- | --- | --- |
+| Feature-change-driven dual-resolution temporal refresh (D2S) | 1280197 COMPLETED 0:0 | 1280198 RUNNING, g0006 | 41m12s |
+| Global-only coarse pyramid with local fine-scale residuals (PA-TAD) | 1280199 COMPLETED 0:0 | 1280200 RUNNING, g0050 | 41m12s |
+
+Both diagnostic roots contain their admission plans but no published final
+`diagnostic_results.json`. Evaluation stderr contains only successful environment
+module loads. The stdout tail contains the initial Kinetics-pretraining
+classification-head/adapter-key warning and dependency deprecation warnings,
+not a failure of strict final EMA loading. The inference loop publishes results
+after a complete cell and does not print per-window progress. No exact current
+window count can be inferred from these logs. Slurm batch accounting reports
+nonzero CPU work (1h56m42s / 1h55m18s) and about 21.6 GB peak RSS per job; these
+are operational observations, not benchmark claims or evidence of completion.
+No new failure or actionable state change was found. No repair, resubmission,
+training restart, metric-GT opening or source modification was performed.
+
+## Prediction Serialization Failure, 2026-09-08
+
+The preceding healthy-running snapshot is superseded by terminal evidence:
+D2S evaluation 1280198 FAILED 1:0 at 19:05:31 after 46m51s; PA-TAD evaluation
+1280200 FAILED 1:0 at 19:04:21 after 45m41s (Asia/Shanghai). Both reached
+`build_prediction_bundle_payload` after the first D160 seed-4407 inference/NMS
+pass, then raised `prediction must have finite score and positive duration`.
+Neither published a prediction bundle, metric result, or diagnostic GT-open
+marker. The candidate methods were not reached; no accuracy conclusion follows.
+
+The old exception did not include the offending values, so its exact runtime
+row cannot be recovered from these logs. A bounded CPU reproduction with the
+unchanged real SingleStageDetector clipping/rounding and official Soft-NMS
+produces finite zero-duration detections and the same serializer exception.
+Official clipping can map both endpoints to 0 or video duration; rounding to
+0.01 s can also collapse short intervals. The official evaluator retains these
+as false positives. The task-local positive-duration check was incompatible.
+
+Correction: retain finite zero-duration predictions unchanged, while continuing
+to reject reversed intervals and nonfinite values, now with the prediction UID
+and numeric values in the error. No filtering, score changes, model/config/NMS
+changes or official-evaluator changes are made. PRECHECK now executes the same
+post-NMS and in-memory bundle validation for its one real input window before
+returning success; it does not publish that partial-window bundle as a complete
+prediction artifact. The previous forward-only PRECHECK missed this stage.
+
+Local evaluator/diagnostic/C3 tests: 53 passed. Regression cases show an early
+zero-duration false positive lowers AP to 50%, matching the official evaluator;
+discarding it would incorrectly yield 100%. A production CPU postprocessing
+test preserves all four synthetic predictions, including three collapsed ones.
+The monitor is temporarily paused during repair to prevent duplicate submission.
+Original failed outputs and full-training weights remain untouched. Replacement
+GPU PRECHECK and diagnostic jobs must use a new immutable source/output root.

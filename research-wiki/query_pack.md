@@ -1549,6 +1549,15 @@ max_chars: 8000
 
 ## Pointers
 
+- Later September 8 terminal evidence supersedes the 18:23 snapshot below:
+  diagnostics 1280198/1280200 failed at first D160 seed-4407 prediction packaging,
+  before metric GT opening or candidate evaluation. Official clipping/rounding
+  and NMS reproduce finite zero-duration detections rejected by the task-local
+  serializer. Preserve these detections as official false positives, not filtered
+  successes. The repair retains reversed/nonfinite rejection and adds NMS/bundle
+  validation to the one-window PRECHECK. No final accuracy exists; evaluation-only
+  repair uses fresh namespaces, never a training restart. See the same audit and
+  `experiments/2026-09-08-stopped-matrix-diagnostic.md` for terminal/replacement records.
 - Correctness audit on 2026-09-08 found and fixed the diagnostic Slurm module
   initialization failure, task-local AP tie-order mismatch with the official
   evaluator, the original formal CLI's digest handoff, and inflated trainable-parameter reporting. Real selected checkpoint

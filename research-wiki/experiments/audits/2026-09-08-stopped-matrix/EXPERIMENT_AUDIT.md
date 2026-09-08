@@ -6,7 +6,7 @@ an audit of every historical ZoomToken/BA-FDR/DUCA/ET-TRC worktree.
 
 ## Verdict
 
-The previous claim of implementation completeness was premature. Three launch/
+The previous claim of implementation completeness was premature. Four launch/
 evaluation errors and one parameter-reporting error are confirmed and corrected.
 No model-equation, physical-skip, or PA feature-flow error was confirmed
 in the active training implementation. That is a bounded conclusion, not proof
@@ -197,3 +197,27 @@ Model/config trees still match the original training commit exactly. The
 
 Local source: `E:/DeskTop/TAD/zoomtoken_stopped_matrix_eval_20260908`.
 GitHub branch: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/codex/zoomtoken-stopped-matrix-eval-20260908
+
+## Follow-up P1: Official Zero-Duration Predictions Rejected By The Bundle
+
+The 18:23 running snapshot above is superseded: evaluation jobs 1280198/1280200
+both FAILED 1:0 around 19:05, after the first D160 seed-4407 full inference/NMS
+pass but before publishing predictions or opening metric GT. The exception at
+`continuous_roi_s2_v3_full200_compute_eval.py:92` rejected finite/positive-duration
+validation without printing the failing values. No final accuracy exists.
+
+Actual production CPU clipping, two-decimal segment rounding and unchanged NMS
+reproduce the exception with finite zero-duration predictions. Their endpoints
+collapse at video boundaries or through rounding; the official evaluator keeps
+them as false positives. The exact old runtime row is unavailable because the
+failed bundle was not published, so this reproduction is not presented as a
+recovered original prediction.
+
+The repair accepts finite zero-duration detections unchanged, still rejects
+reversed/nonfinite values, and includes UID/values in any remaining error. It
+also moves PRECHECK's early return after the real NMS/serializer path. One-window
+PRECHECK remains engineering evidence and never publishes a full-population
+prediction file. This closes a real verification gap in the previous PRECHECK.
+Local diagnostic/statistics/C3 regressions: 53 passed. New tests compare zero-
+duration false-positive AP against the unchanged official function. Preserve
+all old artifacts; only evaluation repair/redeployment is authorized.
