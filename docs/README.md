@@ -17,6 +17,7 @@ out_of_scope: 远端实时状态、原始结果、官方 OpenTAD 文档替换
 - [机器可读设计清单](evaluation/mod-tia-proposals.json)：7 个设计标签，不是可执行 job manifest，不改变原 1545 项任务计数。
 - [B/C/LITE 比较及四张新图](evaluation/bc-lite-comparison-plan.md)：同 evidence 控制、强合并/价值代理、数据生产缺项；属于设计，不是已提交任务。
 - [四张证据图规格](evaluation/localization-value-figures.md)：需要什么数据、画什么、能够支持什么结论。
+- [动态预算执行核查](evaluation/dynamic-budget-audit.md)：已有软成本损失、验证argmax缺口、冻结EMA逐窗预算测量与结果解释边界。
 - [Pro 严格复审 Prompt](project/pro-review-localization-value.md)：供后续授权讨论使用；生成 Prompt 不代表已经咨询。
 - [训练协议与 I01–I15 修订](GEOSPARSE_AUDIT_REPAIR.zh.md)及[原审计复核 Prompt](PRO_REVIEW_AUDIT_REPAIR_PROMPT.zh.md)。
 - [外部执行代码说明](../review/audit_repair_execution/README.zh.md)。

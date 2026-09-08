@@ -27,6 +27,7 @@ out_of_scope: 自动外发、已获得 Pro 意见、用审查替代实验
 12. MSViT、ToMeSD、TokenFuser、ALGM、CubistMerge、StructSAM、VidToMe 具体覆盖了什么？ToMeSD 的 attention-only 与 attention＋MLP 机会是否公平；迁移是否保留 residual、恢复布局与 TIA？
 13. LITE 的 Grad-CAM/ReLU代理、MLP预测、置信度预算及AVA迁移是否得到充分比较？同TAD风险重训的LITE-inspired控制是否能解释当前收益？禁止只以“任务不同”判断创新，也不能把有符号实际操作差与类别正代理混为同一标签。
 14. B空洞错误和C模式切换伪边界是否只是待证假设？固定视频/权重、同成本计划干预是否实际实现；匹配误差与漏检是否都统计？没有证据时是否不必要地新增平滑或双通路模块？
+15. 阅读 docs/evaluation/dynamic-budget-audit.md 及外部真实逐窗结果。当前 PG+dual 控制的是训练随机策略的平均成本，但验证对预算 logits 取argmax；如何解释A/C在被核查检查点的全选？不能误报成本损失未实现，也不能把训练cost EMA或预算概率均值当验证成本。最小修订应怎样明确预算作用范围并保持训练/推理一致；哪些同权重推理对照可以先做、哪些改变目标后才需重训？不能按测试mAP调λ或把“限制每窗≤.5”静默替换为原本允许难窗高预算的动态分配。
 
 用户协议是全200训练、全211测试/792窗口、768×160、seed0、60轮；Geo 每5轮全测试 EMA best 已明确授权。保留此规则并披露选择偏差，另报固定60和共同50/60节点；不要擅自恢复holdout。官方原版、released权重复测、统一dense control 分开。A/B/C主方法动态与固定.5、两服务器并行优先，实验不设成绩门槛，不重复既有任务。
 

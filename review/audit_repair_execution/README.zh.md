@@ -47,3 +47,5 @@ A100四项独立预检在一个allocation中执行，是提交名额的合并，
 11:08进度检查发现A100补充coordinator心跳落后约29分钟；随后在其记录的ln302核对PID228851已不存在，coordinator.log明确记录squeue的Socket timeout导致未捕获CalledProcessError。正式Slurm作业、主coordinator和官方训练仍存在。修复只在依赖刷新所需的这次只读查询处捕获失败/超时，失败轮写入WAITING_SLURM_QUERY及原错误、保留原状态，不提交或放行任何任务，60秒后重试；查询恢复后按现有计划继续。非查询错误及模糊sbatch响应不吞掉，也不盲重试。
 
 该修复的激活标识为backfill-1h-held-controls-v3-query-retry；本次只对A100补充coordinator部署，N16补充仍为v3，两个primary仍为v1。activate_submitted_controls.py默认使用修复标识；不要运行它的双服务器main来完成单服务器恢复。具体PID、激活结果和任务连续性以操作员执行包audit_slurm_query_recovery_activation.json及最新audit_status.json为准。模型M和所有训练配置未改变。
+
+动态预算专项见 [方法与测量边界](../../docs/evaluation/dynamic-budget-audit.md)。本目录新增 `inspect_dynamic_budget.py`、`replay_validation_budgets.py`、`collect_budget_replay.py`、`build_dynamic_budget_report.py` 及当次启动/worker续跑脚本的审查副本。它们仍在操作员执行包目录运行并复用该处SSH入口与bindings，生成数据留在外部。启动/续跑脚本记录的是当次已发生操作，不是新的待提交训练命令；不得重复取消其中的历史step或以旧allocation再启动任务。通用复放入口只加载冻结EMA Scout和原plan builder，完整读取211视频/792窗口；不执行Heavy或optimizer，不制造新的mAP。该专项未实现或部署新的预算控制器，也不是原117项注册诊断已经完成。

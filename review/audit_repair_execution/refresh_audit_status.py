@@ -134,6 +134,21 @@ def main():
     page+='<section><b>主方法优先</b><p>A/B/C固定50%与动态预算，共六项完整方法，只推进seed0。4090侧分配A，A100侧分配B/C。各配置通过自身GPU预检即排队训练，不以其他路线的mAP或Oracle为条件。补充控制使用较低优先级，在主方法部署后排队。</p></section>'
     page+='<section><b>训练和选点协议</b><p>全200视频训练，全211测试视频/792窗口验证；768帧、160px、global batch2、warm-up5、cosine100、训练60轮。GeoSparse每5轮全量EMA验证并选best；官方保持42/44/…/60轮验证。另报告固定60轮和共同50/60轮best。选点机会不同；统一dense control不称官方训练等价。</p></section>'
     page+='<section>'+table+'</section>'
+    budget_path=HERE/'dynamic_budget_analysis_20260908/summary.json'
+    if budget_path.exists():
+        budget=json.loads(budget_path.read_text(encoding='utf-8'))
+        cells=[]
+        for row in budget['rows']:
+            if row['mode']!='dynamic':
+                continue
+            histogram='；'.join(f"q={float(q):g}: {n}窗" for q,n in row['budget_hist'].items())
+            score='NA' if row['mAP_percent'] is None else f"{row['mAP_percent']:.4f}%"
+            cells.append([row['label'],f"{row['windows']}/792",histogram,
+                          f"{100*row['heavy_valid_weighted']:.2f}%",score])
+        budget_table='<table><tr>'+''.join('<th>'+x+'</th>' for x in ['固定EMA检查点','已核查窗口','实际选档','有效全量Heavy比例','同一检查点mAP'])+'</tr>'
+        budget_table+=''.join('<tr>'+''.join('<td>'+html.escape(str(x))+'</td>' for x in row)+'</tr>' for row in cells)+'</table>'
+        completeness='全量792窗口核查完成' if budget['status']=='completed_budget_analysis' else '核查仍在进行，成本分布目前仅覆盖表中窗口'
+        page+='<section class="note"><b>动态预算成本核查：训练目标50%不等于验证实际50%</b><p>'+completeness+'。下表绑定指定完成轮数的EMA，不将成本自动配给更新后的best。选满的成绩不能解释为相同50%计算下的动态收益。Heavy是QKV/attention/MLP解析MAC，不是总模型FLOPs或延迟。</p>'+budget_table+'<p><a href="../../official_adatad_audit/dynamic_budget_analysis_20260908/index.html">预算分布、准确率—成本图与原始证据</a></p></section>'
     page+='<section class="note"><b>旧运行保留为审计轨迹</b><p>902fa05的A固定50%停于完成10轮，动态A停于完成4轮。真实生产数据回放发现有效125帧被扩大为126检测位置，因此新协议从识别预训练初始化，不把旧权重升级为修正目标下的60轮结果。B/C此前未开始训练；官方原版任务未停止。旧成本归一化和未配对计时不进入新主表。</p></section>'
     page+='<section><b>验证与结果边界</b><p>124项CPU回归已通过；生产GPU预检及训练进度以本表和原始凭证为准。71.1387948970%属于官方发布EMA权重复测，不能借作GeoSparse精度。1545项是登记总量，117项诊断仍未实现；没有完整配对的硬件加速结论。</p><p><a href="../../official_adatad_audit/AUDIT_REPAIR_STATUS.zh.md">审计修复与运行记录</a> · <a href="../../official_adatad_audit/audit_status.json">本次原始状态</a></p></section></html>'
     (VIS/'current').mkdir(exist_ok=True)
