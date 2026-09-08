@@ -1,0 +1,218 @@
+{
+  "heartbeat_id": "opentad-c3-duca",
+  "triggered_at_utc": "2026-09-07T23:57:27.791Z",
+  "actual_monitoring_at_cst": [
+    "2026-09-08 07:59:06",
+    "2026-09-08 07:59:32",
+    "2026-09-08 08:00:58-08:01:08"
+  ],
+  "scope": "Fresh Slurm, local/CT remote identity, latest logs and small receipts. Existing authenticated terminal weights and unchanged receipt hashes were not loaded or recomputed again. No new formal performance result.",
+  "local_active_clean_heads": {
+    "H65": "aac9df0fd896edf9bf440a123e0424bb641df012",
+    "CTDP": "fe1c53db1b2a7e467a6af2eccfe8b7636f667a81",
+    "Unified": "793c4f9cdf7dac4f224bc73012aff8bc93949f87",
+    "BAFDR": "710ce8a6246c471742c83bf7c180d9ab87c36fac",
+    "ETTRC": "67d7079d0d1c33e129d31cd3a45aaf93a67db252",
+    "Evidence": "e0c88c9a9e2582878c88bb2c728891ea5413bc77"
+  },
+  "ct_training": {
+    "training_sha": "fe1c53db1b2a7e467a6af2eccfe8b7636f667a81",
+    "remote_source": "/data/run01/sczc063/yuzibo/projects/ctdp_coordinate_fe1c53db",
+    "clean_tree": true,
+    "observed_at_cst": "2026-09-08 08:01",
+    "G0": {
+      "job_id": "1278011",
+      "state": "RUNNING",
+      "persisted_epoch": 40,
+      "successful_optimizer_updates": 4100,
+      "scheduler_updates": 4100,
+      "ema_updates": 4100,
+      "amp_skipped_attempts": 3,
+      "last_train_epoch": 41,
+      "last_train_batch": 99,
+      "last_train_loss": 0.4476,
+      "last_train_log_at_cst": "2026-09-08 07:51:28",
+      "in_training_evaluation_batches_seen": 161,
+      "epoch59_exists": false
+    },
+    "G1": {
+      "job_id": "1278012",
+      "state": "RUNNING",
+      "persisted_epoch": 40,
+      "successful_optimizer_updates": 4100,
+      "scheduler_updates": 4100,
+      "ema_updates": 4100,
+      "amp_skipped_attempts": 3,
+      "last_train_epoch": 41,
+      "last_train_batch": 99,
+      "last_train_loss": 0.4852,
+      "last_train_log_at_cst": "2026-09-08 07:37:40",
+      "in_training_evaluation_batches_seen": 374,
+      "epoch59_exists": false
+    },
+    "log_root": "/data/run01/sczc063/yuzibo/slurm_logs",
+    "stdout_patterns": [
+      "ctdp-g0-fe1c53db_1278011.out",
+      "ctdp-g1-fe1c53db_1278012.out"
+    ],
+    "audit_root": "/data/run01/sczc063/yuzibo/experiments/ctdp_coordinate_fe1c53db/formal",
+    "apparent_stall_resolution": "stderr tqdm kept advancing. tools/train.py invokes eval_one_epoch at lines371-384 before audit write at385-396. Persisted4100 is not proof of a hang or terminal4200; do not invent a newer count.",
+    "new_fatal_errors_observed": false
+  },
+  "preserved_ct_g2_g3_results": {
+    "verification_reused_from": "17_HEARTBEAT_EVIDENCE_20260908_0634.json",
+    "training_sha": "78cde1be1cb8b3acc7d750afc92ea740f2a03d06",
+    "evaluator_sha": "11ced13ac6b72091d26405c5d6f152f09914c22d",
+    "metric_scale": "fraction_0_to_1",
+    "G2_average_mAP": 0.5652337312036566,
+    "G3_average_mAP": 0.5784886648457458,
+    "not_new_coordinate_results": true
+  },
+  "other_routes": {
+    "observed_at_cst": "2026-09-08 07:59:32",
+    "H65": {
+      "receipt_count": 6,
+      "mtime_and_metrics_unchanged": true,
+      "average_mAP": [
+        0.6338540623028592,
+        0.6422653640360945,
+        0.6036478160171815,
+        0.6070129227677766,
+        0.640886229714488,
+        0.6381814163848895
+      ],
+      "remaining": "All six phase-off; TIA and matched optimizer controls not repaired."
+    },
+    "Evidence": {
+      "completed_jobs": [
+        "1277406_2",
+        "1277407_7",
+        "1277768_1",
+        "1277953_2"
+      ],
+      "exit_codes": "0:0",
+      "A1_average_mAP": 0.5159681679375281,
+      "A1_receipt_mtime_cst": "2026-09-08 00:42:09",
+      "missing_independent_receipts": [
+        "A6",
+        "F"
+      ],
+      "terminal_weight_verification_reused_at_cst": "2026-09-08 04:30",
+      "remaining": "Utility learning and actual robust/cycle paths still missing. Refiner init repair not transferred to old checkpoints. A3/A4/A5 not resubmitted."
+    },
+    "BAFDR": {
+      "completed_jobs": [
+        "1276842",
+        "1276843",
+        "1277954",
+        "1277955"
+      ],
+      "exit_codes": "0:0",
+      "terminal_save_log_updates": 6000,
+      "terminal_weight_verification_reused_at_cst": "2026-09-08 04:28",
+      "new_official_results": [],
+      "remaining": "Padding and genuine terminal screen validation pending; FULL has PRECHECK only, no formal run. Old539 results remain protocol-invalid."
+    },
+    "ETTRC": {
+      "receipt_count": 2,
+      "mtime_and_metrics_unchanged": true,
+      "OFF_average_mAP": 0.6207677503328417,
+      "ON_average_mAP": 0.5480958031537403,
+      "remaining": "Anchor correction and precision comparison unresolved; fixed-stride learned low-rank proxy, not exact JVP/event gate."
+    },
+    "Unified": {
+      "status": "BLOCKED_UNIMPLEMENTED",
+      "remaining": "Runtime P0/P1, legal one-swap and H65 retention/transition are not implemented."
+    },
+    "no_new_fatal_errors_observed": true
+  },
+  "resources": {
+    "observed_at_cst": "2026-09-08 08:01",
+    "eligible_gpu_nodes": 25,
+    "CfgTRES_gpu": 200,
+    "AllocTRES_gpu": 132,
+    "public_unallocated_gpu": 68,
+    "expanded_user_queue": {
+      "running": 7,
+      "pending": 0
+    },
+    "queue_job_ids": [
+      "1278039",
+      "1278038",
+      "1278012",
+      "1278011",
+      "1276621",
+      "1276622",
+      "1274508"
+    ],
+    "disk_at_cst": "2026-09-08 08:11:23",
+    "disk_available": "263G",
+    "disk_used_percent": 96,
+    "qualification": "Public unallocated GPUs and free filesystem space do not guarantee account allocation or user quota. Queue sample predates new1278042 submission."
+  },
+  "supervisor": {
+    "root": "/data/run01/sczc063/yuzibo/projects/duca_multibranch_supervisor_recovery_20260907",
+    "sampled_checked_at_utc": "2026-09-07T23:59:21+00:00",
+    "dispatcher_mode": "plan",
+    "dispatcher_status": "BLOCKED",
+    "entries": [],
+    "qualification": "Read-only minute polling, not an automatic submitter for the current repair queue. Catalog generator obtains a fresh checked_at and age."
+  },
+  "coordinate_evaluator": {
+    "branch": "codex/duca-ctdp-coordinate-terminal-eval-20260908",
+    "sha": "073832744dd171dee4119dc29d1bb12a057e84f4",
+    "training_sha": "fe1c53db1b2a7e467a6af2eccfe8b7636f667a81",
+    "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/073832744dd171dee4119dc29d1bb12a057e84f4",
+    "local_directory": "E:/DeskTop/TAD/_duca_fix_worktrees/ctdp_coordinate_eval",
+    "remote_source": "/data/run01/sczc063/yuzibo/projects/ctdp_coordinate_eval_07383274",
+    "local_validation": "45 passed, 1 CUDA skipped; coordinate collection blocked by Windows Torch c10.dll; py_compile and bash -n PASS",
+    "remote_validation": "07383274 exact-SHA clean Linux 50 passed/1 CUDA skipped, including real coordinate regression; py_compile PASS; opentad/configs diff from fe1c53db empty; completed 2026-09-08 08:09 CST",
+    "status": "GPU_PRECHECK_LAST_SEEN_RUNNING; TERMINAL_QUERY_UNAVAILABLE",
+    "precheck_train_root": "/data/run01/sczc063/yuzibo/experiments/ctdp_coordinate_fe1c53db/precheck",
+    "precheck_eval_root": "/data/run01/sczc063/yuzibo/experiments/ctdp_coordinate_eval_07383274/precheck",
+    "formal_train_root": "/data/run01/sczc063/yuzibo/experiments/ctdp_coordinate_fe1c53db/formal",
+    "formal_eval_root": "/data/run01/sczc063/yuzibo/experiments/ctdp_coordinate_eval_07383274/formal",
+    "scope": "No model/config changes from fe1c53db; rejects old78 checkpoints; inference PRECHECK consumes existing1278007 checkpoints, not repeat training admission; formal evaluation awaits terminal epoch59/6000",
+    "precheck_job": "1278042",
+    "precheck_state": "RUNNING at 2026-09-08 08:13:01 CST; started08:11:29; subsequent terminal query timed out, no full PASS claimed",
+    "precheck_stdout": "/data/run01/sczc063/yuzibo/experiments/ctdp_coordinate_eval_07383274/slurm_logs/precheck_1278042.out",
+    "precheck_stderr": "/data/run01/sczc063/yuzibo/experiments/ctdp_coordinate_eval_07383274/slurm_logs/precheck_1278042.err",
+    "precheck_launch": {
+      "script": "scripts/run_ctdp_terminal_eval_n16r4.sbatch",
+      "PRECHECK_ONLY": "1",
+      "CTDP_EVAL_REPO": "/data/run01/sczc063/yuzibo/projects/ctdp_coordinate_eval_07383274",
+      "CTDP_EVAL_COMMIT": "073832744dd171dee4119dc29d1bb12a057e84f4",
+      "CTDP_TRAIN_ROOT": "/data/run01/sczc063/yuzibo/experiments/ctdp_coordinate_fe1c53db/precheck",
+      "CTDP_EVAL_ROOT": "/data/run01/sczc063/yuzibo/experiments/ctdp_coordinate_eval_07383274/precheck",
+      "gres": "gpu:1"
+    },
+    "formal_evaluation_jobs": [],
+    "setup_issue": "Initial synchronous SSH command timed out after checkout completed; no CPU PASS assumed. Reused completed clean checkout; separate bounded validation finished successfully, FastCtx job j-1ywacm.",
+    "precheck_observed_validation": "31 GPU tests passed and G0 checkpoint/EMA/actual6-update binding plus one-batch inference passed. G1-G3 completion not yet observed.",
+    "precheck_verified_arms": [
+      "G0"
+    ],
+    "terminal_query_issue": "120-second SSH query returned no output; one read-only reconnect also returned no output and was stopped locally. No Slurm resubmission or cancellation."
+  },
+  "actions": {
+    "new_code_sha": "073832744dd171dee4119dc29d1bb12a057e84f4",
+    "new_slurm_jobs": [
+      "1278042"
+    ],
+    "new_job_scope": "One GPU, four existing PRECHECK checkpoints, one inference batch each, no metrics; not new training.",
+    "new_formal_training_jobs": [],
+    "new_formal_evaluation_jobs": [],
+    "cancelled_jobs": [],
+    "historical_bafdr_1267920_1267921_modified": false,
+    "pro_consultation_performed": false,
+    "prior_0720_heartbeat": "Partial read-only observations were not catalog-published; this turn does not retroactively mark that heartbeat complete."
+  },
+  "post_monitor_access": {
+    "last_successful_new_job_query_cst": "2026-09-08 08:13:01",
+    "terminal_query_outcome": "SSH command timed out at120s with no output; read-only reconnect also gave no output and was stopped locally at08:20.",
+    "scientific_interpretation": "Remote access is temporarily unconfirmed, not evidence that the Slurm job failed. No duplicate submission.",
+    "catalog_recovery": "Receipt SSH call now has a45s total timeout and returns UNAVAILABLE rather than waiting indefinitely; regression covers this observed failure.",
+    "catalog_query_outcome": "UNAVAILABLE after45s; catalog generated at2026-09-08T00:22:24+00:00, not a new successful remote sample.",
+    "catalog_focused_validation": "32 passed; required train/probe and changed generator/test py_compile passed."
+  }
+}

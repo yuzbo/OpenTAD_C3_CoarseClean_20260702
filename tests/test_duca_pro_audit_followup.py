@@ -65,3 +65,18 @@ def test_ct_terminal_metrics_keep_training_identity_and_fraction_scale():
         assert result[arm]["receipt_sha256"] == observed[arm]["receipt_sha256"]
         assert "COMPLETED" in entry["new_evaluation_states"][arm]
     assert evidence["actions"]["new_slurm_jobs"] == []
+
+
+def test_coordinate_evaluator_does_not_reassign_old_terminal_results(monkeypatch):
+    monkeypatch.setattr(catalog, "git_head", lambda path: "local-head")
+    monkeypatch.setattr(catalog, "clean_tree", lambda path: True)
+    monkeypatch.setattr(catalog, "remote_receipt", lambda: dict(status="NOT_QUERIED"))
+    payload = catalog.catalog()
+    entry = next(row for row in payload["entries"] if row["internal_id"] == "CT_DP_BAMOD_ACTIVE")
+    evaluator = entry["coordinate_evaluator"]
+    assert evaluator["training_sha"] == entry["latest_repair"]["sha"]
+    assert evaluator["training_sha"] != entry["official_terminal_results"]["training_sha"]
+    assert evaluator["sha"] != entry["official_terminal_results"]["evaluator_sha"]
+    assert evaluator["precheck_launch"]["PRECHECK_ONLY"] == "1"
+    assert evaluator["precheck_launch"]["CTDP_TRAIN_ROOT"].endswith("ctdp_coordinate_fe1c53db/precheck")
+    assert evaluator["github_commit"] in catalog.md_text(payload)

@@ -25,3 +25,16 @@ def test_receipt_without_timestamp_cannot_claim_activity(monkeypatch):
     monkeypatch.setattr(catalog.subprocess, "run", lambda *a, **kw: SimpleNamespace(
         returncode=0, stdout="{}", stderr=""))
     assert catalog.remote_receipt()["status"] == "INVALID_RECEIPT"
+
+
+def test_hung_receipt_query_is_bounded_and_not_reported_active(monkeypatch):
+    monkeypatch.delenv("DUCA_CATALOG_DISABLE_REMOTE", raising=False)
+
+    def timed_out(*args, **kwargs):
+        assert kwargs["timeout"] == 45
+        raise catalog.subprocess.TimeoutExpired(cmd=["ssh"], timeout=45)
+
+    monkeypatch.setattr(catalog.subprocess, "run", timed_out)
+    result = catalog.remote_receipt()
+    assert result["status"] == "UNAVAILABLE"
+    assert "45" in result["reason"]

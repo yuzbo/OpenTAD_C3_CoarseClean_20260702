@@ -158,3 +158,18 @@ job1245842 的 Slurm 记录为 COMPLETED(0:0)。原 source 为 `/data/run01/sczc
 06:38公共可调度25节点CfgTRES200、AllocTRES141，即59/200 GPU未分配；本账户展开队列7 RUNNING/0 PENDING，其中本任务CT占2项。实验挂载可用286G、使用率95%，不代表个人配额保证。分钟轮询回执距采样48秒，读取正常，但dispatcher=plan/BLOCKED、entries为空，仍不是当前修复队列的自动提交器。
 
 本轮完成监控、G2/G3官方结果入册及目录刷新；未新增模型修改、GPU准入、训练或评测作业，也未取消任何作业。新坐标版兼容独立evaluator及其PRECHECK仍未完成，不能声称已部署；后续仍按上面的最小工作顺序推进。历史BAFDR1267920/1267921未操作。结构化证据：[17_HEARTBEAT_EVIDENCE_20260908_0634.json](17_HEARTBEAT_EVIDENCE_20260908_0634.json)。
+
+## 07:57 心跳补充
+
+本轮触发为2026-09-08 07:57:27 CST，六路线实际监控采样为07:59至08:01。此前07:20只完成部分只读检查，未完成目录推送；本节不将其补记为已完成心跳。
+
+- CT新G0/G1仍RUNNING，08:01落盘audit均为epoch40、optimizer/scheduler/EMA各4100，AMP skip均3。两个作业的epoch41最后训练批次已结束，loss分别0.4476/0.4852；stderr评测分别到161/374批且持续增长。训练器在评测后刷新audit，因此不是训练挂起，也不能把尚未落盘的更新数当已验证计数。没有epoch59或新最终性能。
+- H65六份、ET两份及Evidence A1小收据的mtime/数值未变，复用此前身份与自哈希验证，不重复加载大权重。Evidence A1/A6/F及A1评测、BAFDR U16/LATE/NOKD及FULL PRECHECK均COMPLETED(0:0)，没有新fatal。A6/F和BAFDR仍缺新的独立性能收据；剩余机制问题保持原裁决，Unified仍BLOCKED_UNIMPLEMENTED。
+- 已完成新坐标兼容评测入口，分支`codex/duca-ctdp-coordinate-terminal-eval-20260908`，完整SHA为[073832744dd171dee4119dc29d1bb12a057e84f4](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/073832744dd171dee4119dc29d1bb12a057e84f4)。基于fe1c53db，`opentad/`与`configs/`差异为空，拒绝旧78cde1be checkpoint；旧G2/G3及11ced13a身份不改写。没有修改正在训练的源码。
+- 本地轻量测试45 passed/1 CUDA skipped；坐标测试收集因已知Windows Torch c10.dll错误失败，已保留记录。远端独立clean checkout `/data/run01/sczc063/yuzibo/projects/ctdp_coordinate_eval_07383274` 于08:09完成50 passed/1 CUDA skipped，包含真实坐标回归，编译通过。首个同步命令在checkout完成后120秒超时，未冒称测试通过；后续复用该clean checkout单独验证成功，没有重建或热改源码。
+- 08:11:23提交唯一单GPU推理PRECHECK `1278042`，复用1278007已有四臂epoch1/6-update checkpoint，每臂只推理一批、不开指标、不重复训练准入。08:13:01确认RUNNING，31个GPU测试及G0 checkpoint/EMA/真实6更新绑定、单批推理均已通过。之后终态查询120秒无输出，只读重连也未返回；截至本节不能确认其余三臂完成，不能称全PRECHECK通过。旧作业、日志、checkpoint均保留，不重提该作业。
+- 新评测日志：`/data/run01/sczc063/yuzibo/experiments/ctdp_coordinate_eval_07383274/slurm_logs/precheck_1278042.out`及`.err`。后续先收取同job终态；成功后等待新G0/G1 epoch59/6000真实更新，再按07383274和新命名空间提交独立正式评测，不使用旧11ced13a。
+
+08:01公共25个可调度节点CfgTRES200/AllocTRES132，未分配68GPU；本账户7 RUNNING/0 PENDING，此样本早于新增1278042。08:11磁盘263G可用、96%使用，公共空间与GPU余量不保证本账户配额。07:59分钟轮询仍plan/BLOCKED且entries为空，只能称只读轮询；后续SSH不可达不推导监督器或Slurm已退出。目录查询已加45秒总超时，将真实超时标UNAVAILABLE，避免心跳无限等待。
+
+本轮没有新正式训练、正式性能评测、作业取消或Pro咨询；仅新增兼容评测代码与一次推理PRECHECK。六路线未修复机制不因这项接线获得验收，历史BAFDR1267920/1267921未操作。证据见[18_HEARTBEAT_EVIDENCE_20260908_0757.json](18_HEARTBEAT_EVIDENCE_20260908_0757.json)。
