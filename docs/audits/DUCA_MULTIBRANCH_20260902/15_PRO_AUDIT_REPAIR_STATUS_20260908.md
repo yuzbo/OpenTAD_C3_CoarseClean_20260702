@@ -205,3 +205,18 @@ job1245842 的 Slurm 记录为 COMPLETED(0:0)。原 source 为 `/data/run01/sczc
 10:16公共可调度25节点CfgTRES200/AllocTRES159，未分配41/200 GPU；本用户7 RUNNING/0 PENDING，本任务CT占2项。磁盘238G可用、96%已用。10:18:59分钟回执年龄47秒，只读轮询正常，但dispatcher=plan/BLOCKED、entries为空，不是自动提交正常。
 
 本轮只执行监控及目录刷新，没有新训练、评测、取消或重复准入。下一步仍是等待CT终态后提交兼容独立评测，并按原设计逐项补齐剩余实现，而不是降低验收口径。结构化证据：[20_HEARTBEAT_EVIDENCE_20260908_1015.json](20_HEARTBEAT_EVIDENCE_20260908_1015.json)。
+
+## 11:43 心跳补充
+
+本轮触发为2026-09-08 11:43:31.103 CST，实际远端采样11:45:07至11:48:56。11:04曾进行部分只读检查，11:12答复了实际运行时间，但未完成目录推送；本节不将其补记为已完成的完整心跳。没有新最终性能或新的运行失败。
+
+- CT新G0/G1均RUNNING，11:47的运行时长分别08:53:51/08:53:21。落盘audit为epoch51/52，optimizer/scheduler/EMA分别5200/5300，AMP skip均3、max retry均1。G0到epoch52 batch50、loss0.3984；G1结束epoch53 batch99、loss0.4362，stderr评测到224批。均无epoch59；不把中期分数或评测后的audit落盘间隔当作终态/挂起。
+- 近期每轮训练约6-7分钟、每两轮评测约26分钟，合计每两轮39-40分钟；不能把含评测的33分钟错误套到每一轮。条件估计G0于14:10-14:45、G1于13:50-14:20结束训练，独立评测另需30-60分钟及排队，不承诺固定截止时间。
+- fe1c53db训练与07383274评测远端HEAD仍exact/clean。既有1278007和1278042通过证据复用，不重复准入；按臂等待epoch59 EMA及真实6000后，再提交07383274独立终态评测。旧G2/G3沿用78cde1be/11ced13a的56.5234%/57.8489%结果，本轮未重新推理。
+- H65六份与ET两份小收据mtime、数值未变。H65最高64.2265%，F01-F06仍phase-off、TIA及匹配控制未修；ET关闭/开启62.0768%/54.8096%，anchor correction与实际精度核对未完成。复用已有自哈希与大checkpoint认证。
+- Evidence A1/A6/F及A1评测均COMPLETED(0:0)，本轮读取真实stdout/stderr终段；A1直接读取metrics.average_mAP为0.5159681679375281，A6/F仍无独立metrics。BAFDR U16/LATE/NOKD及FULL PRECHECK均COMPLETED(0:0)，前三终轮日志确为epoch59/update6000，新根仍无metrics。实际权重验证复用04:30/04:28；utility/真实robust-cycle和padding/screen缺陷继续阻止有缺陷矩阵扩展。
+- 六条active源码身份由目录生成器刷新；其余五路线只读HEAD核查均为登记版本且clean。Unified仍BLOCKED_UNIMPLEMENTED，无新P0/P1或H65保留/转换实现。官方原配方68.73%仍为此前已读原始日志，来源绑定及独立复评待补，不用修改REF67.58%补位。
+
+11:45公共可调度25节点CfgTRES200、AllocTRES173，未分配27/200 GPU；磁盘217G可用、97%已用。11:47展开账户队列为11 RUNNING/1 PENDING，其中本任务CT占2项；1278774为其他未登记任务的JobHeldUser，未解除其hold，不当成本路线的提交失败。公共余量不保证个人配额。11:48:56分钟回执年龄33秒，dispatcher嵌套字段为plan/BLOCKED、entries为空，只读轮询正常不等于自动提交正常。
+
+本轮完成状态/日志/小收据核查和目录更新，没有新模型修复、Slurm提交、取消、重复准入、大权重加载或Pro咨询。历史BAFDR1267920/1267921未操作；所有剩余实现问题继续逐项跟踪。证据：[21_HEARTBEAT_EVIDENCE_20260908_1143.json](21_HEARTBEAT_EVIDENCE_20260908_1143.json)。
