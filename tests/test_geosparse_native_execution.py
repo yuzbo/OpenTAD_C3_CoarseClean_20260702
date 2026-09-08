@@ -285,7 +285,8 @@ def test_evidence_slots_pool_only_observed_members_on_odd_patch_grid():
     selected = torch.zeros(1, 1, 7, 7, dtype=torch.bool)
     selected[0, 0, 0, 0] = selected[0, 0, 2, 2] = selected[0, 0, 3, 3] = True
     layout = SimpleNamespace(source_support=torch.tensor([[[[0., 1.], [2., 3.]]]]),
-                             support_valid=torch.ones(1, 1, 2, dtype=torch.bool), parent_tubelets=8)
+                             support_valid=torch.ones(1, 1, 2, dtype=torch.bool), parent_tubelets=8,
+                             valid=torch.ones_like(selected))
     e = spatial_slots(x, selected, layout, 4)
     torch.testing.assert_close(e.features.flatten(), torch.tensor([8., 24.]))
     assert e.valid.all() and e.source_support.shape == (1, 2, 2, 2)
