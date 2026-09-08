@@ -335,3 +335,17 @@ job1245842 的 Slurm 记录为 COMPLETED(0:0)。原 source 为 `/data/run01/sczc
   此次5项启动不是六路线整体验收。其他任务与历史BAFDR1267920/1267921未操作，未进行Pro咨询。
 
 详见[29_TEST_GUIDED_EVAL5_DEPLOYMENT_20260908.md](29_TEST_GUIDED_EVAL5_DEPLOYMENT_20260908.md)及同名JSON。
+
+## 18:25 新协议真实中期成绩与最佳 EMA
+
+五项新作业仍 RUNNING，尚无 epoch59 终态。ET-TRC ON/OFF 第5轮 Avg-mAP 为
+5.7073%/4.2952%，第10轮升至32.0496%/33.7828%，最佳EMA已自动更新到第10轮。
+H65 均匀/相位关/四相开第5轮分别为5.2404%/5.4013%/4.9665%。
+五份真实最佳EMA权重有限，内部SHA/seed/epoch/指标与对应轮次收据一致，现有收据自哈希通过。
+H65三组第5轮optimizer/scheduler/EMA/DUCA schedule均500，初始AMP skip已replay、没有耗尽。
+
+这些是测试集参与选模的中期结果，不是终态性能。没有因初期低分重启健康训练，没有新超参数尝试。
+其他四路线的既有结果和缺失机制未变化；CT G0/G1为64.2720%/61.6740%，BAFDR新结果、
+Evidence F/A6独立收据以及Unified缺失机制仍未补齐。历史BAFDR1267920/1267921未操作。
+
+详见[30_TEST_GUIDED_EVAL5_PROGRESS_20260908_1825.md](30_TEST_GUIDED_EVAL5_PROGRESS_20260908_1825.md)及同名JSON。
