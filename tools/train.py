@@ -40,6 +40,7 @@ from opentad.utils.training_guard import (
     assert_safe_cfg_options_for_gated_config,
 )
 from opentad.utils.train_schedule import should_eval_epoch
+from opentad.utils.test_guided_eval import TestGuidedEvaluation
 
 
 def should_save_training_checkpoint(*, epoch, max_epoch, workflow):
@@ -784,6 +785,7 @@ def main():
 
     # train the detector
     logger.info("Training Starts...\n")
+    test_guided = TestGuidedEvaluation(cfg, args, test_loader) if cfg.get("test_guided_exploratory", False) else None
     val_loss_best = 1e6
     val_start_epoch = cfg.workflow.get("val_start_epoch", 0)
     disable_checkpoint = cfg.workflow.get("disable_checkpoint", False)
@@ -1036,6 +1038,9 @@ def main():
         # eval for one epoch
         if epoch >= val_start_epoch:
             if should_eval_epoch(epoch, cfg.workflow):
+                if test_guided is not None:
+                    test_guided.run(epoch, successful_updates, model, model_ema, logger, use_amp, eval_one_epoch)
+                    continue
                 eval_one_epoch(
                     test_loader,
                     model,

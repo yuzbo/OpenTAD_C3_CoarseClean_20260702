@@ -1,5 +1,18 @@
 @RTK.md
 
+## Six-route test-guided amendment (2026-09-08)
+
+For the user-authorized OpenTAD six-route successor experiments, evaluate the
+complete THUMOS14 test population after epochs 5, 10, ..., 60. Select the best
+EMA checkpoint by official Avg-mAP (ties keep the earlier epoch). Test-guided
+hyperparameter tuning is authorized by the user. Label these new runs
+`TEST_GUIDED_EXPLORATORY_EVAL5`, disclose test-based selection, and never call
+their scores unseen-test generalization or a fair official-paper comparison.
+Also retain epoch-59 EMA and its score. This amendment overrides the older
+one-shot/best-checkpoint restrictions for these successors only; historical
+experiments, unrelated ZoomToken routes, source/data integrity and failure
+repair rules remain unchanged. Inference must still not consume test GT.
+
 # Repository Instructions
 
 这是 ZoomToken 面向离线时序动作检测（TAD）的论文实验仓库。保持仓库可运行：不要加入旧 tracker、服务器日志、生成图、检查点、数据集、压缩包或与当前科学决策无关的旧路线报告。当前 `research-wiki/` 是必须维护的研究记忆，不属于应删除的历史负担。

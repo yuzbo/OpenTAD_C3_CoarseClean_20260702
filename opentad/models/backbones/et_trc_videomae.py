@@ -41,7 +41,7 @@ class TemporalLowRankJVP(BaseModule):
         )
         self.up = nn.Linear(rank, embed_dims, bias=False)
 
-        # Initialize with identity-preserving scaling
+        # A trainable low-rank proxy, not an identity or exact Jacobian.
         nn.init.orthogonal_(self.down.weight)
         nn.init.zeros_(self.temporal.weight)
         if kernel_size >= 3:
@@ -367,6 +367,10 @@ class TaylorResidualBlock(BaseModule):
         
         # Vectorized 1st-Order Temporal Low-Rank JVP approximation
         taylor_correction = self.jacobian_approx(delta_h)  # (B, T, S, C)
+        # Neighboring temporal taps must not alter the exact anchor residuals.
+        anchor_mask = torch.zeros(tubelet_count, dtype=torch.bool, device=x.device)
+        anchor_mask[anchor_indices] = True
+        taylor_correction = taylor_correction.masked_fill(anchor_mask[None, :, None, None], 0)
         
         # 100% Dense Residual Update
         delta_all = delta_expanded + taylor_correction
