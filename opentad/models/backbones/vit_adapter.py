@@ -980,10 +980,8 @@ class VisionTransformerAdapter(BaseModule):
                     init_cfg=init_cfg,
                     use_adapter=i in adapter_index,
                     adapter_mlp_ratio=adapter_mlp_ratio,
-                    # The backbone is fed packed 16-frame clips.  Attention and
-                    # adapters therefore see 8 tubelets per clip, not the
-                    # 384-tubelet full window.
-                    temporal_size=num_frames // tubelet_size,
+                    # Attention is clip-local; TIA joins all clips of one video.
+                    temporal_size=total_frames // tubelet_size,
                     use_relative_physical_time=(i == 0),
                 )
                 for i in range(depth)

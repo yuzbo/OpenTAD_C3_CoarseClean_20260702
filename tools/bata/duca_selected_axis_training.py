@@ -142,6 +142,9 @@ H65_PRO_VARIANT_CONFIGS = {
     "h65_pro_c1": "h65_pro_c1.py",
     "h65_pro_c2": "h65_pro_c2.py",
     "h65_pro_c3": "h65_pro_c3.py",
+    "h65_pro_eval5_uniform": "h65_pro_eval5_uniform.py",
+    "h65_pro_eval5_phaseoff": "h65_pro_eval5_phaseoff.py",
+    "h65_pro_eval5_phaseon": "h65_pro_eval5_phaseon.py",
 }
 H65_PRO_VARIANT_CONFIGS.update(
     {f"h65_pro_f{index:02d}": f"h65_pro_f{index:02d}.py" for index in range(1, 17)}

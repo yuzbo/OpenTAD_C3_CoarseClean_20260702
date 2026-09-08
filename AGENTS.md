@@ -1,5 +1,15 @@
 @RTK.md
 
+## Six-route protocol amendment (2026-09-08)
+
+The user explicitly authorizes full THUMOS14 test evaluation every five completed
+epochs, best EMA checkpoint selection by unrounded official Avg-mAP (earliest on
+ties), and test-guided hyperparameter tuning for the six OpenTAD routes. New runs
+must be labeled TEST_GUIDED_EXPLORATORY_EVAL5, retain epoch-59 EMA and its separate
+terminal score, and disclose test reuse. Do not claim unseen-test generalization
+or protocol-matched official-paper reproduction. Keep 6000 successful updates,
+label-free inference, original artifacts, and exact-source deployment rules.
+
 # Repository Instructions
 
 这是当前 C3 粗分类路线的纯净 OpenTAD 仓库。保持仓库小而可运行：不要加入历史 `research-wiki/`、旧 tracker、服务器日志、生成图、检查点、数据集、压缩包或旧路线报告。

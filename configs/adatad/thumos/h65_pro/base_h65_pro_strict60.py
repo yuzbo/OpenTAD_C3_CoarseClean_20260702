@@ -64,7 +64,7 @@ model = dict(
     ),
     backbone=dict(
         backbone=dict(
-            total_frames=dense_window_size,
+            total_frames=window_size,
             num_frames=16,
             tubelet_size=2,
             relative_physical_time_residual=True,
