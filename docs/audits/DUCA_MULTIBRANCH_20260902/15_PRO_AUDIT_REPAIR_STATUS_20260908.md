@@ -400,3 +400,21 @@ GPU7/200未分配，账户11R/4P，盘143.1GiB。分钟回执新鲜但仍plan/BL
 取消、模型修复、重复准入或Pro咨询；历史BAFDR1267920/1267921不操作。
 
 详见[33_HEARTBEAT_EVIDENCE_20260908_2215.md](33_HEARTBEAT_EVIDENCE_20260908_2215.md)及同名JSON。
+
+## 23:43 心跳：ET训练完成与终态边界
+
+本轮23:43触发，实际采样23:45、23:52和23:57。ET ON1280117于23:23:38完成，耗时6:02:07；
+12次全测试完整，最佳第40轮55.3617%，第60轮训练内EMA官方评测54.5976%。实际373个optimizer
+state均6000、scheduler6000、571项EMA有限；EMA次数依据FP32控制流推导而非独立落盘计数。
+新SHA独立terminal evaluator receipt尚缺，不称独立封存完成，也不因缺计数存储就判训练失败。
+OFF仍RUNNING，第50轮62.3928%，最佳第35轮62.5093%，尚不能做终态配对裁决。
+
+H65第40轮均匀/相位关/四相开63.4838%/63.2568%/57.0365%，实际最佳EMA核验通过；
+23:52审计4000/4000/4200一致、AMP skip3/9/7、耗尽0。历史signed/control在epoch12、审计1200，
+第10轮日志60.52%/61.09%；链配置仍明确control，没有fulltia正式启动证据。
+四个related分支本地clean、GitHub未见发布；CT/Evidence旧成绩未变，BAFDR无新独立metrics，
+screen/eval5、utility/真实two-view/cycle、Taylor P0/P1/H65保留转换等缺项继续保留。
+GPU8/200未分配、账户10R/6P、盘133.6GiB；分钟轮询新鲜但仍plan/BLOCKED。
+无新模型修改、提交/取消、重复准入、调参或Pro咨询；历史BAFDR1267920/1267921不操作。
+
+详见[34_HEARTBEAT_EVIDENCE_20260908_2343.md](34_HEARTBEAT_EVIDENCE_20260908_2343.md)及同名JSON。
