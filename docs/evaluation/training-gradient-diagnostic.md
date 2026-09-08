@@ -44,3 +44,5 @@ python /ABS/RESEARCH/geosparse_research/training_gradient_diagnostic.py \
 同一batch先进行分量测量，再用原普通总损失backward复核总梯度范数。状态和RNG在两次之间恢复；不执行optimizer、scheduler、EMA或dual更新。FP16非有限结果单列，不能当正常clip/cosine。测量目录包含measurement.json、gradients.json、result.json或failure.json，记录普通权重身份、GPU UUID、输入视频、有效长度、GT数量及下一步上下文；不复制视频或训练检查点。
 
 新增入口检查：`python -m pytest tests/test_sci3_training_gradient_diagnostic.py -q`。部署状态和精确提交测试凭证记录于外部执行包；没有GPU作业或真实输出前不称已经完成梯度诊断。
+
+2026-09-08 20:59核验：实现 `6519073707db556c9dac1d5495289d374add3fe3` 在独立远端干净CPU checkout通过6项新增检查（pytest 56.05秒），外部凭证 `sci3_verification_65190737/remote.stdout.txt`。原10项核心梯度检查未重复；模型M没有修改。下一实际目标为B动态完成20轮普通检查点的第21轮首批梯度；该单批若没有acquisition/actor分量，保留缺项，不制造分支。
