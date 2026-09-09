@@ -1,0 +1,825 @@
+{
+  "automation_id": "opentad-c3-duca",
+  "trigger_at": "2026-09-09T13:35:11.075+08:00",
+  "actual_check_at": "2026-09-09T13:36:02.422653+08:00",
+  "previous_record": "47_HEARTBEAT_EVIDENCE_20260909_1255.json",
+  "previous_pushed_commit": "cdbc21e5924563f0ed7d788fe30aaf7b2847f6aa",
+  "cadence": {
+    "previous_trigger_at": "2026-09-09T12:55:10.357+08:00",
+    "interval_seconds": 2400.718,
+    "required_interval_seconds": 1800,
+    "met": false,
+    "no_fabricated_execution": "No13:25 check is claimed."
+  },
+  "protocol": "TEST_GUIDED_EXPLORATORY_EVAL5: full THUMOS14 test evaluation after completed epochs 5/10/.../60; unrounded Avg-mAP selects earliest best EMA on ties. Test-guided hyperparameter tuning authorized; no new trials this cycle. Terminal epoch59 EMA separately retained. Not unseen-test generalization or fair official-paper reproduction.",
+  "jobs": {
+    "code": 0,
+    "stdout": "1280117|COMPLETED|0:0|2026-09-08T17:21:31|2026-09-08T23:23:38\n1280118|COMPLETED|0:0|2026-09-08T17:21:31|2026-09-09T01:17:13\n1280127|COMPLETED|0:0|2026-09-08T17:26:01|2026-09-09T03:16:51\n1280128|COMPLETED|0:0|2026-09-08T17:26:01|2026-09-09T03:03:33\n1280129|COMPLETED|0:0|2026-09-08T17:26:01|2026-09-09T02:45:42\n1280314|FAILED|1:0|2026-09-08T22:01:16|2026-09-09T00:31:08\n1280316|FAILED|1:0|2026-09-08T22:01:16|2026-09-09T00:29:10\n1281049_0|COMPLETED|0:0|2026-09-09T05:13:04|2026-09-09T05:29:34\n1281049_1|COMPLETED|0:0|2026-09-09T05:13:04|2026-09-09T05:30:53\n1281175_0|COMPLETED|0:0|2026-09-09T07:25:29|2026-09-09T07:44:08\n1281175_1|COMPLETED|0:0|2026-09-09T07:25:29|2026-09-09T07:44:58\n1281175_2|COMPLETED|0:0|2026-09-09T07:25:29|2026-09-09T07:44:04",
+    "stderr": ""
+  },
+  "sources": {
+    "h65_tia_eval5_629162cd": {
+      "sha": {
+        "code": 0,
+        "stdout": "629162cdddbe490d896899a067e9803e237df467",
+        "stderr": ""
+      },
+      "tree": {
+        "code": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    "h65_eval5_terminal_4af4ad96": {
+      "sha": {
+        "code": 0,
+        "stdout": "4af4ad96e0a9688488246b2632fad55926ffc4c8",
+        "stderr": ""
+      },
+      "tree": {
+        "code": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    "ettrc_anchor_eval5_9a346f0d": {
+      "sha": {
+        "code": 0,
+        "stdout": "9a346f0d71e8870ad499bb0a58b9f1824b8904c0",
+        "stderr": ""
+      },
+      "tree": {
+        "code": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    "ettrc_eval5_terminal_edfbd7e5": {
+      "sha": {
+        "code": 0,
+        "stdout": "edfbd7e580bbd903db543e1be67169eff6d9125f",
+        "stderr": ""
+      },
+      "tree": {
+        "code": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    "h65_matched_96e5b3a5": {
+      "sha": {
+        "code": 0,
+        "stdout": "96e5b3a5e9d77d65b7a0afca86277261dd63295b",
+        "stderr": ""
+      },
+      "tree": {
+        "code": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    }
+  },
+  "validation": {
+    "training": {
+      "H65_UNIFORM": {
+        "all_hashes": true,
+        "same_curve_receipts": true,
+        "same_best": true,
+        "same_protocol": true,
+        "same_checkpoint_stat": true,
+        "same_best_checkpoint_stat": true,
+        "best_correct": true,
+        "full_curve": true,
+        "population_and_protocol": true,
+        "same_update_audit": true
+      },
+      "H65_PHASEOFF": {
+        "all_hashes": true,
+        "same_curve_receipts": true,
+        "same_best": true,
+        "same_protocol": true,
+        "same_checkpoint_stat": true,
+        "same_best_checkpoint_stat": true,
+        "best_correct": true,
+        "full_curve": true,
+        "population_and_protocol": true,
+        "same_update_audit": true
+      },
+      "H65_PHASEON": {
+        "all_hashes": true,
+        "same_curve_receipts": true,
+        "same_best": true,
+        "same_protocol": true,
+        "same_checkpoint_stat": true,
+        "same_best_checkpoint_stat": true,
+        "best_correct": true,
+        "full_curve": true,
+        "population_and_protocol": true,
+        "same_update_audit": true
+      },
+      "ET_OFF": {
+        "all_hashes": true,
+        "same_curve_receipts": true,
+        "same_best": true,
+        "same_protocol": true,
+        "same_checkpoint_stat": true,
+        "same_best_checkpoint_stat": true,
+        "best_correct": true,
+        "full_curve": true,
+        "population_and_protocol": true
+      },
+      "ET_ON": {
+        "all_hashes": true,
+        "same_curve_receipts": true,
+        "same_best": true,
+        "same_protocol": true,
+        "same_checkpoint_stat": true,
+        "same_best_checkpoint_stat": true,
+        "best_correct": true,
+        "full_curve": true,
+        "population_and_protocol": true
+      }
+    },
+    "other": {
+      "H65_uniform": {
+        "exists": true,
+        "self_hash_valid": true,
+        "same_receipt": true,
+        "metrics": {
+          "average_mAP": 0.6385960328705559,
+          "mAP@0.3": 0.7935350385548517,
+          "mAP@0.4": 0.7464148365941539,
+          "mAP@0.5": 0.6701490234246361,
+          "mAP@0.6": 0.562251173817678,
+          "mAP@0.7": 0.42063009196146
+        }
+      },
+      "H65_phaseoff": {
+        "exists": true,
+        "self_hash_valid": true,
+        "same_receipt": true,
+        "metrics": {
+          "average_mAP": 0.6426315623747969,
+          "mAP@0.3": 0.792891801911866,
+          "mAP@0.4": 0.7487636857868946,
+          "mAP@0.5": 0.6678133534546719,
+          "mAP@0.6": 0.5728039640055396,
+          "mAP@0.7": 0.4308850067150124
+        }
+      },
+      "H65_phaseon": {
+        "exists": true,
+        "self_hash_valid": true,
+        "same_receipt": true,
+        "metrics": {
+          "average_mAP": 0.5748571138495565,
+          "mAP@0.3": 0.7546030730546012,
+          "mAP@0.4": 0.6892288265359143,
+          "mAP@0.5": 0.6059761785620756,
+          "mAP@0.6": 0.48219281843732453,
+          "mAP@0.7": 0.34228467265786716
+        }
+      },
+      "ET_off": {
+        "exists": true,
+        "self_hash_valid": true,
+        "same_receipt": true,
+        "metrics": {
+          "average_mAP": 0.6175874882566784,
+          "mAP@0.3": 0.7623048911190157,
+          "mAP@0.4": 0.71413789321811,
+          "mAP@0.5": 0.6361779571303118,
+          "mAP@0.6": 0.548231550263453,
+          "mAP@0.7": 0.427085149552502
+        }
+      },
+      "ET_on": {
+        "exists": true,
+        "self_hash_valid": true,
+        "same_receipt": true,
+        "metrics": {
+          "average_mAP": 0.5459757523556376,
+          "mAP@0.3": 0.7014817893427924,
+          "mAP@0.4": 0.6551665037610698,
+          "mAP@0.5": 0.5723676303167357,
+          "mAP@0.6": 0.4664689311820583,
+          "mAP@0.7": 0.3343939071755316
+        }
+      },
+      "CT_g0": {
+        "exists": true,
+        "self_hash_valid": true,
+        "same_receipt": true,
+        "metrics": {
+          "average_mAP": 0.6427200272571093,
+          "mAP@0.3": 0.8007885484368389,
+          "mAP@0.4": 0.7460867056195133,
+          "mAP@0.5": 0.6741285579333751,
+          "mAP@0.6": 0.5657943413687253,
+          "mAP@0.7": 0.42680198292709387
+        }
+      },
+      "CT_g1": {
+        "exists": true,
+        "self_hash_valid": true,
+        "same_receipt": true,
+        "metrics": {
+          "average_mAP": 0.6167397028285398,
+          "mAP@0.3": 0.7861633235376628,
+          "mAP@0.4": 0.7285757322889715,
+          "mAP@0.5": 0.6347676761532852,
+          "mAP@0.6": 0.5350382081934079,
+          "mAP@0.7": 0.39915357396937123
+        }
+      },
+      "Evidence_A1": {
+        "exists": true,
+        "self_hash_valid": true,
+        "same_receipt": true,
+        "metrics": {
+          "average_mAP": 0.5159681679375281,
+          "mAP@0.3": 0.6996763679956545,
+          "mAP@0.4": 0.6390762093566129,
+          "mAP@0.5": 0.5405654235751765,
+          "mAP@0.6": 0.4221696475089728,
+          "mAP@0.7": 0.278353191251224
+        }
+      },
+      "Evidence_A6": {
+        "exists": false,
+        "same_receipt": true
+      },
+      "Evidence_F": {
+        "exists": false,
+        "same_receipt": true
+      },
+      "BAFDR": {
+        "metrics_count": 0,
+        "same_terminals": true
+      }
+    },
+    "jobs_unchanged": true,
+    "sources_unchanged": true,
+    "healthy_training_logs_no_fatal": true,
+    "evaluation_logs_no_fatal": true,
+    "failure_logs_unchanged": true,
+    "independent_terminal_matches": {
+      "H65_UNIFORM": true,
+      "H65_PHASEOFF": true,
+      "H65_PHASEON": true,
+      "ET_OFF": true,
+      "ET_ON": true
+    }
+  },
+  "training_summary": {
+    "H65_UNIFORM": {
+      "name": "H65均匀384帧",
+      "root": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-UNIFORM_seed3407/gpu1_id0",
+      "source_sha": "629162cdddbe490d896899a067e9803e237df467",
+      "seed": 3407,
+      "best_epoch": 50,
+      "best_metrics": {
+        "average_mAP": 0.6396455685649018,
+        "mAP@0.3": 0.7948939971051802,
+        "mAP@0.4": 0.7488034623060478,
+        "mAP@0.5": 0.6736666593119824,
+        "mAP@0.6": 0.5633916494434204,
+        "mAP@0.7": 0.4174720746578788
+      },
+      "terminal_metrics": {
+        "average_mAP": 0.6385960328705559,
+        "mAP@0.3": 0.7935350385548517,
+        "mAP@0.4": 0.7464148365941539,
+        "mAP@0.5": 0.6701490234246361,
+        "mAP@0.6": 0.562251173817678,
+        "mAP@0.7": 0.42063009196146
+      },
+      "terminal_receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_eval5_terminal_4af4ad96/formal/uniform/gpu1_id0/official_eval/metrics.json",
+      "terminal_receipt_sha256": "4f8c82a2402242d0da8012d4055df5ca8546018ab70420e2c94ac3bd6dd93a29",
+      "successful_updates": 6000,
+      "curve_count": 12,
+      "checkpoint_stat": {
+        "exists": true,
+        "size": 626580695,
+        "mtime_ns": "1788893482912174578"
+      },
+      "best_checkpoint_stat": {
+        "exists": true,
+        "size": 202321757,
+        "mtime_ns": "1788888491949189807"
+      },
+      "update_audit": {
+        "amp_skipped_attempts": 4,
+        "attempted_batches": 6000,
+        "duca_schedule_updates": 6000,
+        "ema_updates": 6000,
+        "forced_amp_overflow_attempts": 0,
+        "max_amp_retries_observed": 1,
+        "optimizer_attempts": 6004,
+        "replay_exhaustions": 0,
+        "replayed_batches": 4,
+        "scheduler_updates": 6000,
+        "successful_optimizer_updates": 6000
+      }
+    },
+    "H65_PHASEOFF": {
+      "name": "H65动态选帧、四相关闭",
+      "root": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-PHASEOFF_seed3407/gpu1_id0",
+      "source_sha": "629162cdddbe490d896899a067e9803e237df467",
+      "seed": 3407,
+      "best_epoch": 60,
+      "best_metrics": {
+        "average_mAP": 0.6426315623747969,
+        "mAP@0.3": 0.792891801911866,
+        "mAP@0.4": 0.7487636857868946,
+        "mAP@0.5": 0.6678133534546719,
+        "mAP@0.6": 0.5728039640055396,
+        "mAP@0.7": 0.4308850067150124
+      },
+      "terminal_metrics": {
+        "average_mAP": 0.6426315623747969,
+        "mAP@0.3": 0.792891801911866,
+        "mAP@0.4": 0.7487636857868946,
+        "mAP@0.5": 0.6678133534546719,
+        "mAP@0.6": 0.5728039640055396,
+        "mAP@0.7": 0.4308850067150124
+      },
+      "terminal_receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_eval5_terminal_4af4ad96/formal/phaseoff/gpu1_id0/official_eval/metrics.json",
+      "terminal_receipt_sha256": "c794cfddbeaaea6ad308a126c6b6fea0d3e892f60a318ef8080a24668938b964",
+      "successful_updates": 6000,
+      "curve_count": 12,
+      "checkpoint_stat": {
+        "exists": true,
+        "size": 629299779,
+        "mtime_ns": "1788892812671043204"
+      },
+      "best_checkpoint_stat": {
+        "exists": true,
+        "size": 202321757,
+        "mtime_ns": "1788893960069521396"
+      },
+      "update_audit": {
+        "amp_skipped_attempts": 9,
+        "attempted_batches": 6000,
+        "duca_schedule_updates": 6000,
+        "ema_updates": 6000,
+        "forced_amp_overflow_attempts": 0,
+        "max_amp_retries_observed": 4,
+        "optimizer_attempts": 6009,
+        "replay_exhaustions": 0,
+        "replayed_batches": 6,
+        "scheduler_updates": 6000,
+        "successful_optimizer_updates": 6000
+      }
+    },
+    "H65_PHASEON": {
+      "name": "H65四相128+64+64+128",
+      "root": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-PHASEON_seed3407/gpu1_id0",
+      "source_sha": "629162cdddbe490d896899a067e9803e237df467",
+      "seed": 3407,
+      "best_epoch": 55,
+      "best_metrics": {
+        "average_mAP": 0.5750812196328071,
+        "mAP@0.3": 0.75660678447763,
+        "mAP@0.4": 0.6915206548582796,
+        "mAP@0.5": 0.6036281542375806,
+        "mAP@0.6": 0.48272632669732307,
+        "mAP@0.7": 0.340924177893222
+      },
+      "terminal_metrics": {
+        "average_mAP": 0.5748571138495565,
+        "mAP@0.3": 0.7546030730546012,
+        "mAP@0.4": 0.6892288265359143,
+        "mAP@0.5": 0.6059761785620756,
+        "mAP@0.6": 0.48219281843732453,
+        "mAP@0.7": 0.34228467265786716
+      },
+      "terminal_receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_eval5_terminal_4af4ad96/formal/phaseon/gpu1_id0/official_eval/metrics.json",
+      "terminal_receipt_sha256": "93f837bfcd99d60e38356c517859bf6cceaf095ffda164e61c9fd6c6dd38d968",
+      "successful_updates": 6000,
+      "curve_count": 12,
+      "checkpoint_stat": {
+        "exists": true,
+        "size": 629298091,
+        "mtime_ns": "1788892015108320227"
+      },
+      "best_checkpoint_stat": {
+        "exists": true,
+        "size": 202321757,
+        "mtime_ns": "1788890332189307191"
+      },
+      "update_audit": {
+        "amp_skipped_attempts": 9,
+        "attempted_batches": 6000,
+        "duca_schedule_updates": 6000,
+        "ema_updates": 6000,
+        "forced_amp_overflow_attempts": 0,
+        "max_amp_retries_observed": 1,
+        "optimizer_attempts": 6009,
+        "replay_exhaustions": 0,
+        "replayed_batches": 9,
+        "scheduler_updates": 6000,
+        "successful_optimizer_updates": 6000
+      }
+    },
+    "ET_OFF": {
+      "name": "完整Transformer对照",
+      "root": "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal/off/gpu2_id0",
+      "source_sha": "9a346f0d71e8870ad499bb0a58b9f1824b8904c0",
+      "seed": 4407,
+      "best_epoch": 35,
+      "best_metrics": {
+        "average_mAP": 0.6250928583468067,
+        "mAP@0.3": 0.7794447492356198,
+        "mAP@0.4": 0.7323571662461678,
+        "mAP@0.5": 0.6488339613958451,
+        "mAP@0.6": 0.5535783927281407,
+        "mAP@0.7": 0.41125002212826056
+      },
+      "terminal_metrics": {
+        "average_mAP": 0.6175874882566784,
+        "mAP@0.3": 0.7623048911190157,
+        "mAP@0.4": 0.71413789321811,
+        "mAP@0.5": 0.6361779571303118,
+        "mAP@0.6": 0.548231550263453,
+        "mAP@0.7": 0.427085149552502
+      },
+      "terminal_receipt_path": "/data/run01/sczc063/yuzibo/experiments/ettrc_eval5_terminal_edfbd7e5/formal/off/gpu2_id0/official_eval/metrics.json",
+      "successful_updates": 6000,
+      "curve_count": 12,
+      "checkpoint_stat": {
+        "exists": true,
+        "size": 626294771,
+        "mtime_ns": "1788886617039115065"
+      },
+      "best_checkpoint_stat": {
+        "exists": true,
+        "size": 202190445,
+        "mtime_ns": "1788874017721847520"
+      }
+    },
+    "ET_ON": {
+      "name": "Transformer共享低秩残差近似",
+      "root": "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal/on/gpu2_id0",
+      "source_sha": "9a346f0d71e8870ad499bb0a58b9f1824b8904c0",
+      "seed": 4407,
+      "best_epoch": 40,
+      "best_metrics": {
+        "average_mAP": 0.5536169738568958,
+        "mAP@0.3": 0.7159378799858159,
+        "mAP@0.4": 0.6591746139896045,
+        "mAP@0.5": 0.5839129599109326,
+        "mAP@0.6": 0.4727397320911512,
+        "mAP@0.7": 0.33631968330697526
+      },
+      "terminal_metrics": {
+        "average_mAP": 0.5459757523556376,
+        "mAP@0.3": 0.7014817893427924,
+        "mAP@0.4": 0.6551665037610698,
+        "mAP@0.5": 0.5723676303167357,
+        "mAP@0.6": 0.4664689311820583,
+        "mAP@0.7": 0.3343939071755316
+      },
+      "terminal_receipt_path": "/data/run01/sczc063/yuzibo/experiments/ettrc_eval5_terminal_edfbd7e5/formal/on/gpu2_id0/official_eval/metrics.json",
+      "successful_updates": 6000,
+      "curve_count": 12,
+      "checkpoint_stat": {
+        "exists": true,
+        "size": 631063251,
+        "mtime_ns": "1788880132269442623"
+      },
+      "best_checkpoint_stat": {
+        "exists": true,
+        "size": 202190445,
+        "mtime_ns": "1788873809409427664"
+      }
+    }
+  },
+  "independent_receipts": {
+    "H65_uniform": {
+      "path": "/data/run01/sczc063/yuzibo/experiments/h65_eval5_terminal_4af4ad96/formal/uniform/gpu1_id0/official_eval/metrics.json",
+      "exists": true,
+      "self_hash_valid": true,
+      "metrics": {
+        "average_mAP": 0.6385960328705559,
+        "mAP@0.3": 0.7935350385548517,
+        "mAP@0.4": 0.7464148365941539,
+        "mAP@0.5": 0.6701490234246361,
+        "mAP@0.6": 0.562251173817678,
+        "mAP@0.7": 0.42063009196146
+      },
+      "unchanged": true
+    },
+    "H65_phaseoff": {
+      "path": "/data/run01/sczc063/yuzibo/experiments/h65_eval5_terminal_4af4ad96/formal/phaseoff/gpu1_id0/official_eval/metrics.json",
+      "exists": true,
+      "self_hash_valid": true,
+      "metrics": {
+        "average_mAP": 0.6426315623747969,
+        "mAP@0.3": 0.792891801911866,
+        "mAP@0.4": 0.7487636857868946,
+        "mAP@0.5": 0.6678133534546719,
+        "mAP@0.6": 0.5728039640055396,
+        "mAP@0.7": 0.4308850067150124
+      },
+      "unchanged": true
+    },
+    "H65_phaseon": {
+      "path": "/data/run01/sczc063/yuzibo/experiments/h65_eval5_terminal_4af4ad96/formal/phaseon/gpu1_id0/official_eval/metrics.json",
+      "exists": true,
+      "self_hash_valid": true,
+      "metrics": {
+        "average_mAP": 0.5748571138495565,
+        "mAP@0.3": 0.7546030730546012,
+        "mAP@0.4": 0.6892288265359143,
+        "mAP@0.5": 0.6059761785620756,
+        "mAP@0.6": 0.48219281843732453,
+        "mAP@0.7": 0.34228467265786716
+      },
+      "unchanged": true
+    },
+    "ET_off": {
+      "path": "/data/run01/sczc063/yuzibo/experiments/ettrc_eval5_terminal_edfbd7e5/formal/off/gpu2_id0/official_eval/metrics.json",
+      "exists": true,
+      "self_hash_valid": true,
+      "metrics": {
+        "average_mAP": 0.6175874882566784,
+        "mAP@0.3": 0.7623048911190157,
+        "mAP@0.4": 0.71413789321811,
+        "mAP@0.5": 0.6361779571303118,
+        "mAP@0.6": 0.548231550263453,
+        "mAP@0.7": 0.427085149552502
+      },
+      "unchanged": true
+    },
+    "ET_on": {
+      "path": "/data/run01/sczc063/yuzibo/experiments/ettrc_eval5_terminal_edfbd7e5/formal/on/gpu2_id0/official_eval/metrics.json",
+      "exists": true,
+      "self_hash_valid": true,
+      "metrics": {
+        "average_mAP": 0.5459757523556376,
+        "mAP@0.3": 0.7014817893427924,
+        "mAP@0.4": 0.6551665037610698,
+        "mAP@0.5": 0.5723676303167357,
+        "mAP@0.6": 0.4664689311820583,
+        "mAP@0.7": 0.3343939071755316
+      },
+      "unchanged": true
+    },
+    "CT_g0": {
+      "path": "/data/run01/sczc063/yuzibo/experiments/ctdp_coordinate_eval_07383274/formal/g0/gpu1_id0/official_eval/metrics.json",
+      "exists": true,
+      "self_hash_valid": true,
+      "metrics": {
+        "average_mAP": 0.6427200272571093,
+        "mAP@0.3": 0.8007885484368389,
+        "mAP@0.4": 0.7460867056195133,
+        "mAP@0.5": 0.6741285579333751,
+        "mAP@0.6": 0.5657943413687253,
+        "mAP@0.7": 0.42680198292709387
+      },
+      "unchanged": true
+    },
+    "CT_g1": {
+      "path": "/data/run01/sczc063/yuzibo/experiments/ctdp_coordinate_eval_07383274/formal/g1/gpu1_id0/official_eval/metrics.json",
+      "exists": true,
+      "self_hash_valid": true,
+      "metrics": {
+        "average_mAP": 0.6167397028285398,
+        "mAP@0.3": 0.7861633235376628,
+        "mAP@0.4": 0.7285757322889715,
+        "mAP@0.5": 0.6347676761532852,
+        "mAP@0.6": 0.5350382081934079,
+        "mAP@0.7": 0.39915357396937123
+      },
+      "unchanged": true
+    },
+    "Evidence_A1": {
+      "path": "/data/run01/sczc063/yuzibo/experiments/duca_evidence_storage_resume_ce767b4d/evaluation/A1/seed_8261/gpu1_id0/official_eval/metrics.json",
+      "exists": true,
+      "self_hash_valid": true,
+      "metrics": {
+        "average_mAP": 0.5159681679375281,
+        "mAP@0.3": 0.6996763679956545,
+        "mAP@0.4": 0.6390762093566129,
+        "mAP@0.5": 0.5405654235751765,
+        "mAP@0.6": 0.4221696475089728,
+        "mAP@0.7": 0.278353191251224
+      },
+      "unchanged": true
+    },
+    "Evidence_A6": {
+      "path": "/data/run01/sczc063/yuzibo/experiments/duca_evidence_storage_resume_ce767b4d/evaluation/A6/seed_8261/gpu1_id0/official_eval/metrics.json",
+      "exists": false,
+      "unchanged": true
+    },
+    "Evidence_F": {
+      "path": "/data/run01/sczc063/yuzibo/experiments/duca_evidence_storage_resume_ce767b4d/evaluation/F/seed_8261/gpu1_id0/official_eval/metrics.json",
+      "exists": false,
+      "unchanged": true
+    }
+  },
+  "log_verification": {
+    "all_training_logs_read": true,
+    "all_eval_logs_read": true,
+    "no_new_fatal": true,
+    "existing_failure_logs_unchanged": true,
+    "failure_paths": [
+      "/data/run01/sczc063/yuzibo/experiments/h65_matched_96e5b3a5_seed3407/logs/signed_1280314.out",
+      "/data/run01/sczc063/yuzibo/experiments/h65_matched_96e5b3a5_seed3407/logs/signed_1280314.err",
+      "/data/run01/sczc063/yuzibo/experiments/h65_matched_96e5b3a5_seed3407/logs/control_fulltia_1280316.out",
+      "/data/run01/sczc063/yuzibo/experiments/h65_matched_96e5b3a5_seed3407/logs/control_fulltia_1280316.err"
+    ],
+    "failure_message": "p_action calibration check received non-finite values",
+    "failure_jobs": [
+      "1280314",
+      "1280316"
+    ],
+    "owner_task": "01a08058-1402-7b21-8c17-ec6c1ad522f7",
+    "root_cause_status": "First numerical contamination source still unresolved; read-only registration, no takeover or blind resubmission."
+  },
+  "checkpoint_reuse_note": "All five new terminal and five best files have identical path/size/mtime to the previous validated observation. All five BAFDR terminal file stats likewise match by path; directory iteration order is ignored. No unchanged large checkpoint reloaded or inference repeated.",
+  "ema_count_limit": "ET actual optimizer states6000 and finite EMA certification reused. EMA call count is inferred from FP32 successful-update code path, not a separately stored counter; H65 global counters and conditional parameter steps remain distinct.",
+  "remaining_routes": {
+    "CT": "G0 64.2720/G1 61.6740 verified unchanged. Old G2/G3 56.5234/57.8489 retain 78cde1be identity. Geometry G0-G3 do not enable B-AMoD; separate mechanism matrix/eval5 still missing.",
+    "BAFDR": "710ce8a6 five terminal checkpoints unchanged; independent metrics count 0; FULL only PRECHECK. Old update-deficient scores remain diagnostics. b142 padding/ragged fixes are partial, not production-validated.",
+    "Evidence": "Existing A1 51.5968 receipt verified unchanged. F/A6 missing independent terminal metrics. C0 59.2292/A2 54.2756 historical values not re-certified in this check. New utility/two-view/cycle mechanisms incomplete.",
+    "Unified": "Time-axis repair registered, but Taylor P0/P1, legal one-swap and H65 retention/transition remain incomplete; no complete formal result.",
+    "official_AdaTAD": "Historical original log 68.73 percent is not REF-D768 67.58 percent. Source/pretrain/data provenance completion and independent certification remain separate unfinished work; do not substitute H65 uniform or ET OFF for original AdaTAD."
+  },
+  "bafdr": {
+    "metrics_paths": [],
+    "terminal_checkpoints": {
+      "/data/run01/sczc063/yuzibo/experiments/bafdr_successful_updates_710ce8a6/work_dirs/bafdr_k16_d160_seed4407/checkpoint/epoch_59.pth": {
+        "exists": true,
+        "size": 623826234,
+        "mtime_ns": "1788786113422890289"
+      },
+      "/data/run01/sczc063/yuzibo/experiments/bafdr_successful_updates_710ce8a6/work_dirs/bafdr_k16_g96_seed4407/checkpoint/epoch_59.pth": {
+        "exists": true,
+        "size": 623826234,
+        "mtime_ns": "1788786110187031956"
+      },
+      "/data/run01/sczc063/yuzibo/experiments/bafdr_successful_updates_710ce8a6/work_dirs/bafdr_k16_late_seed4407/checkpoint/epoch_59.pth": {
+        "exists": true,
+        "size": 630958277,
+        "mtime_ns": "1788797665536913323"
+      },
+      "/data/run01/sczc063/yuzibo/experiments/bafdr_successful_updates_710ce8a6/work_dirs/bafdr_k16_nokd_seed4407/checkpoint/epoch_59.pth": {
+        "exists": true,
+        "size": 643564041,
+        "mtime_ns": "1788809285053296908"
+      },
+      "/data/run01/sczc063/yuzibo/experiments/bafdr_successful_updates_710ce8a6/work_dirs/bafdr_k16_u16_uniform_a0_seed4407/checkpoint/epoch_59.pth": {
+        "exists": true,
+        "size": 643564041,
+        "mtime_ns": "1788797846661687380"
+      }
+    }
+  },
+  "related_fix_status": [
+    {
+      "internal_id": "H65_MATCHED90_RELATED",
+      "branch": "codex/h65-matched-controls-20260908",
+      "sha": "96e5b3a5e9d77d65b7a0afca86277261dd63295b",
+      "local_directory": "E:/DeskTop/TAD/_duca_fix_worktrees/h65_matched_controls",
+      "local_head": "96e5b3a5e9d77d65b7a0afca86277261dd63295b",
+      "local_clean_tree": true,
+      "github_branch_published": false,
+      "github_publication_evidence": "First query failed with TLS SSL_ERROR_SYSCALL; one retry of the same command succeeded with no four exact refs matched."
+    },
+    {
+      "internal_id": "EVIDENCE_WIRING_RELATED",
+      "branch": "codex/duca-evidence-wiring-repair-20260908",
+      "sha": "79aea08a32c7343af593e20227beaacb23ebb484",
+      "local_directory": "E:/DeskTop/TAD/_duca_fix_worktrees/evidence_wiring_repair",
+      "local_head": "79aea08a32c7343af593e20227beaacb23ebb484",
+      "local_clean_tree": true,
+      "github_branch_published": false,
+      "github_publication_evidence": "First query failed with TLS SSL_ERROR_SYSCALL; one retry of the same command succeeded with no four exact refs matched."
+    },
+    {
+      "internal_id": "BAFDR_PADDING_RELATED",
+      "branch": "codex/bafdr-padding-repair-20260908",
+      "sha": "b142bffa3c2352e9d2a35992dc13844259c5a06a",
+      "local_directory": "E:/DeskTop/TAD/_duca_fix_worktrees/bafdr_padding_repair",
+      "local_head": "b142bffa3c2352e9d2a35992dc13844259c5a06a",
+      "local_clean_tree": true,
+      "github_branch_published": false,
+      "github_publication_evidence": "First query failed with TLS SSL_ERROR_SYSCALL; one retry of the same command succeeded with no four exact refs matched."
+    },
+    {
+      "internal_id": "UNIFIED_WIRING_RELATED",
+      "branch": "codex/duca-unified-wiring-repair-20260908",
+      "sha": "0fcef0bf60fae8aa4560e082775e8ffca55418b4",
+      "local_directory": "E:/DeskTop/TAD/_duca_fix_worktrees/unified_wiring_repair",
+      "local_head": "0fcef0bf60fae8aa4560e082775e8ffca55418b4",
+      "local_clean_tree": true,
+      "github_branch_published": false,
+      "github_publication_evidence": "First query failed with TLS SSL_ERROR_SYSCALL; one retry of the same command succeeded with no four exact refs matched."
+    }
+  ],
+  "resources": {
+    "checked_at": "2026-09-09T13:36:02.422653+08:00",
+    "gpu": {
+      "command_returncode": 0,
+      "total": 200,
+      "allocated": 179,
+      "available": 21
+    },
+    "user_running": 7,
+    "user_pending": 1,
+    "user_allocated_gpu": 7,
+    "queue": {
+      "code": 0,
+      "stdout": "1278774|tr-786cf750fa74|PENDING|JobHeldUser|gres/gpu:1\n1281618|bcr_official_eval|RUNNING|None|gres/gpu:1\n1281614_0|xsrc-attack-pilot|RUNNING|None|N/A\n1281614_1|xsrc-attack-pilot|RUNNING|None|N/A\n1281614_2|xsrc-attack-pilot|RUNNING|None|N/A\n1281614_3|xsrc-attack-pilot|RUNNING|None|N/A\n1281582|dense-gt-gradients|RUNNING|None|gres/gpu:1\n1281445|input-gradient-69bccca2|RUNNING|None|gres/gpu:1",
+      "stderr": ""
+    },
+    "all_queued_jobs_other_projects": true,
+    "free_disk_gib": 48.178890228271484,
+    "previous_free_disk_gib": 70.79537200927734,
+    "drop_since_previous_gib": 22.61648178100586,
+    "drop_since_1138_gib": 60.82054901123047,
+    "filesystem_check": {
+      "checked_at": "2026-09-09T13:38:42.372828+08:00",
+      "code": 0,
+      "stdout": "Filesystem     Type          Size  Used Avail Use% Mounted on\nJuiceFS:jfs    fuse.juicefs  5.3T  5.3T   48G 100% /data",
+      "stderr": "",
+      "interpretation": "df shows whole-percent100 with48G still available, not zero free bytes. Personal quota remains unverified; previous12:23 lfs/quota query unavailable.",
+      "collection_log": "C:/Users/skywalker/.fastctx/jobs/j-fe9yt9/output.log"
+    },
+    "personal_quota_status": "Not obtained; prior12:23 query had no lfs and quota -s exited1 without output.",
+    "new_other_project_job": {
+      "job_id": "1281618",
+      "name": "bcr_official_eval",
+      "scope": "Observed Slurm queue metadata only in separate bcr_tad_v3_motivation output namespace; no code/performance verification, no takeover or inclusion as six-route deployment."
+    },
+    "action": "Notify persistent storage risk. df displays100 percent while48G remains; not zero free bytes or verified personal quota. No experiment artifacts deleted or other jobs canceled."
+  },
+  "remote_supervisor": {
+    "status": "ACTIVE",
+    "root": "/data/run01/sczc063/yuzibo/projects/duca_multibranch_supervisor_recovery_20260907",
+    "receipt_age_seconds": 2,
+    "checked_at": "2026-09-09T05:40:04+00:00",
+    "dispatcher_status": "BLOCKED",
+    "dispatcher_mode": "plan",
+    "entries": []
+  },
+  "automation_update_tool_available": false,
+  "thread_coordination_tool_available": false,
+  "pro_consultation": {
+    "attempted_this_cycle": false,
+    "last_attempt_record": "44_HEARTBEAT_EVIDENCE_20260909_1035.json",
+    "last_attempt_at_cst": "2026-09-09 10:40",
+    "status": "Previous kernel-assets initialization block unresolved; no ixBrowser entry, Pro model confirmation, material transfer or consultation claimed."
+  },
+  "model_changes": [],
+  "config_changes": [],
+  "hyperparameter_trials": [],
+  "submitted_jobs": [],
+  "cancelled_jobs": [],
+  "deleted_artifacts": [],
+  "readonly_jobs": [
+    "1267920",
+    "1267921"
+  ],
+  "collection_log": "C:/Users/skywalker/.fastctx/jobs/j-q8ecfq/output.log",
+  "local_validation": {
+    "focused_tests": "28 passed; one existing yapf/lib2to3 DeprecationWarning",
+    "focused_command": "python -m pytest tests/test_duca_catalog_heartbeat_freshness.py tests/test_c3_coarse_classifier_model_matrix.py tests/test_c3_asformer_delta_ledger_full_train.py -q",
+    "py_compile": "PASS: tools/bata/update_experiment_catalog.py, tools/train.py, tools/bata/train_lowres_action_probe.py",
+    "catalog": {
+      "entry_count": 22,
+      "unique_ids": 22,
+      "identities_results_trials_unchanged": true,
+      "new_and_related_exact_clean": true,
+      "periodic_results": 60,
+      "independent_terminal_verified": 5,
+      "remote_supervisor": {
+        "status": "ACTIVE",
+        "root": "/data/run01/sczc063/yuzibo/projects/duca_multibranch_supervisor_recovery_20260907",
+        "receipt_age_seconds": 2,
+        "checked_at": "2026-09-09T05:40:04+00:00",
+        "dispatcher_status": "BLOCKED",
+        "dispatcher_mode": "plan",
+        "entries": []
+      },
+      "catalog_updated_at": "2026-09-09T05:40:04+00:00"
+    }
+  },
+  "github_query_attempts": [
+    {
+      "operation": "git ls-remote four exact related refs",
+      "exit_code": 128,
+      "error": "OpenSSL SSL_connect: SSL_ERROR_SYSCALL in connection to github.com:443",
+      "ssl_verification_disabled": false
+    },
+    {
+      "operation": "One bounded retry, same git ls-remote command",
+      "exit_code": 0,
+      "stdout": "",
+      "related_exact_refs_found": 0,
+      "ssl_verification_disabled": false
+    }
+  ]
+}
