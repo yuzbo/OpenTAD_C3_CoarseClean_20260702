@@ -88,7 +88,8 @@ def _gradient_summary(gradients):
                         for name, values in groups.items()})
 
 
-def measure_training_gradients(model, batch, *, microbatch_size=None, amp=False, loss_scale=1., clip_norm=1.):
+def measure_training_gradients(model, batch, *, microbatch_size=None, amp=False, loss_scale=1., clip_norm=1.,
+                               total_gradient_sink=None):
     """Measure task/actor/critic/CF gradients from the same primary forwards.
 
     Keep epoch, minibatch and loaded scalar normalizer at their supplied values.
@@ -96,6 +97,8 @@ def measure_training_gradients(model, batch, *, microbatch_size=None, amp=False,
     source head's local-positive normalization. loss_scale is the run's current
     GradScaler scale when reproducing AMP; all reported gradients are unscaled.
     Reentrant activation checkpoints require backward(), not autograd.grad().
+    total_gradient_sink receives the existing unscaled CPU total vectors after
+    model state is restored, for the independent vector-parity diagnostic.
     """
     if model.geosparse.config["route"] not in {"A", "B", "C"}:
         raise ValueError("gradient diagnostic currently supports A/B/C")
@@ -176,6 +179,8 @@ def measure_training_gradients(model, batch, *, microbatch_size=None, amp=False,
     total_norm = summaries["total"]["norm"]
     finite = all(row["nonfinite_elements"] == 0 for row in summaries.values())
     coefficient = min(1., clip_norm / (total_norm + 1e-6)) if total_norm is not None else None
+    if total_gradient_sink is not None:
+        total_gradient_sink(total)
     return dict(measurement="training_loss_gradient_components", epoch=epoch, minibatch=first_minibatch,
                 effective_batch=size, microbatch_size=microbatch_size, amp=amp, loss_scale=loss_scale,
                 optimizer_step_performed=False, state_restored=True,

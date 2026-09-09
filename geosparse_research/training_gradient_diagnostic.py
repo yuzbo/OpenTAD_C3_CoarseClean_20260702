@@ -68,7 +68,8 @@ def ordinary_gradient_norm(model, batch, microbatch_size, amp, loss_scale):
     return math.sqrt(squares) if math.isfinite(squares) else None
 
 
-def run(args):
+def prepare_probe(args):
+    """Load the frozen source, ordinary checkpoint, and original next batch."""
     training = args.training_run.resolve()
     bindings = json.loads((training / "bindings.json").read_text())
     root = Path(bindings["repo_root"]).resolve()
@@ -123,7 +124,6 @@ def run(args):
     names = [meta["video_name"] for meta in batch["metas"]]
     if len(names) != effective or not set(names) <= set(split["training"]):
         raise ValueError("probe batch escaped the original training pool/batch size")
-    args.output.mkdir(parents=True, exist_ok=False)
     identity = dict(measurement="ordinary_checkpoint_next_training_batch_gradients", is_mock=False,
         model_source_commit=provenance["source_commit"], measurement_source_commit=measurement_commit,
         source_train_id=job["job_id"], training_provenance=provenance,
@@ -135,11 +135,21 @@ def run(args):
         gpu_identity=device_identity,
         new_training=False, optimizer_step_performed=False,
         interpretation="first next-epoch batch at saved ordinary weights/RNG; not an EMA probe or a population-wide gradient conclusion")
+    return model, batch, identity, cfg
+
+
+def run(args):
+    import torch
+    model, batch, identity, cfg = prepare_probe(args)
+    from geosparse_ext.records import save_json
+    from geosparse_research import training_gradients as gradient_module
+    micro = identity["microbatch"]
+    args.output.mkdir(parents=True, exist_ok=False)
     save_json(args.output / "measurement.json", identity)
     try:
         result = gradient_module.measure_training_gradients(model, batch, microbatch_size=micro,
-            amp=bool(cfg.solver.amp), loss_scale=context["loss_scale"], clip_norm=float(cfg.solver.clip_grad_norm))
-        plain = ordinary_gradient_norm(model, batch, micro, bool(cfg.solver.amp), context["loss_scale"])
+            amp=bool(cfg.solver.amp), loss_scale=identity["loss_scale"], clip_norm=float(cfg.solver.clip_grad_norm))
+        plain = ordinary_gradient_norm(model, batch, micro, bool(cfg.solver.amp), identity["loss_scale"])
         measured = result["gradients"]["total"]["norm"]
         if result["gradient_status"] == "FINITE":
             torch.testing.assert_close(measured, plain, rtol=1e-4, atol=1e-5)
