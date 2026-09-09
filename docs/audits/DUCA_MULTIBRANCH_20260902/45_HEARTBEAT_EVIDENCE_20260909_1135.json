@@ -1,0 +1,1212 @@
+{
+  "automation_id": "opentad-c3-duca",
+  "trigger_at": "2026-09-09T11:35:39.167+08:00",
+  "actual_check_at": "2026-09-09T11:38:19.889442+08:00",
+  "kind": "READ_ONLY_HEARTBEAT_REFRESH",
+  "previous_record": "44_HEARTBEAT_EVIDENCE_20260909_1035.json",
+  "previous_coordination_commit": "6c06aa441a62b88c2d5fbf5285d5d9b51e75dd0c",
+  "cadence_observation": {
+    "previous_trigger_at": "2026-09-09T10:35:38.312+08:00",
+    "interval_seconds": 3600.855,
+    "required_interval_seconds": 1800,
+    "met": false,
+    "missing_execution_not_fabricated": "No 11:05 heartbeat execution is claimed; automated scheduling metadata cannot be inspected or updated with the available tools."
+  },
+  "protocol": "TEST_GUIDED_EXPLORATORY_EVAL5: full THUMOS14 test evaluation after completed epochs 5/10/.../60; unrounded Avg-mAP selects earliest best EMA on ties. Test-guided hyperparameter tuning authorized; no new trials this cycle. Terminal epoch59 EMA separately retained. Not unseen-test generalization or fair official-paper reproduction.",
+  "jobs": {
+    "code": 0,
+    "stdout": "1280117|COMPLETED|0:0|2026-09-08T17:21:31|2026-09-08T23:23:38\n1280118|COMPLETED|0:0|2026-09-08T17:21:31|2026-09-09T01:17:13\n1280127|COMPLETED|0:0|2026-09-08T17:26:01|2026-09-09T03:16:51\n1280128|COMPLETED|0:0|2026-09-08T17:26:01|2026-09-09T03:03:33\n1280129|COMPLETED|0:0|2026-09-08T17:26:01|2026-09-09T02:45:42\n1280314|FAILED|1:0|2026-09-08T22:01:16|2026-09-09T00:31:08\n1280316|FAILED|1:0|2026-09-08T22:01:16|2026-09-09T00:29:10\n1281049_0|COMPLETED|0:0|2026-09-09T05:13:04|2026-09-09T05:29:34\n1281049_1|COMPLETED|0:0|2026-09-09T05:13:04|2026-09-09T05:30:53\n1281175_0|COMPLETED|0:0|2026-09-09T07:25:29|2026-09-09T07:44:08\n1281175_1|COMPLETED|0:0|2026-09-09T07:25:29|2026-09-09T07:44:58\n1281175_2|COMPLETED|0:0|2026-09-09T07:25:29|2026-09-09T07:44:04",
+    "stderr": ""
+  },
+  "training_summary": {
+    "H65_UNIFORM": {
+      "name": "H65均匀384帧：整窗时间适配器对照",
+      "root": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-UNIFORM_seed3407/gpu1_id0",
+      "source_sha": "629162cdddbe490d896899a067e9803e237df467",
+      "seed": 3407,
+      "best": {
+        "completed_epochs": 50,
+        "metrics": {
+          "average_mAP": 0.6396455685649018,
+          "mAP@0.3": 0.7948939971051802,
+          "mAP@0.4": 0.7488034623060478,
+          "mAP@0.5": 0.6736666593119824,
+          "mAP@0.6": 0.5633916494434204,
+          "mAP@0.7": 0.4174720746578788
+        },
+        "path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-UNIFORM_seed3407/gpu1_id0/test_guided/best_test_metrics.json",
+        "checkpoint_path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-UNIFORM_seed3407/gpu1_id0/test_guided/best_test.pth",
+        "receipt_sha256": "e49abe1184a242d6836fdb18ac6f24b510d04657ff51362ecfe9946f2c3b6ceb"
+      },
+      "terminal": {
+        "completed_epochs": 60,
+        "metrics": {
+          "average_mAP": 0.6385960328705559,
+          "mAP@0.3": 0.7935350385548517,
+          "mAP@0.4": 0.7464148365941539,
+          "mAP@0.5": 0.6701490234246361,
+          "mAP@0.6": 0.562251173817678,
+          "mAP@0.7": 0.42063009196146
+        },
+        "receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_eval5_terminal_4af4ad96/formal/uniform/gpu1_id0/official_eval/metrics.json",
+        "training_sha": "629162cdddbe490d896899a067e9803e237df467",
+        "evaluator_sha": "4af4ad96e0a9688488246b2632fad55926ffc4c8",
+        "successful_optimizer_updates": 6000,
+        "checkpoint_state_key": "state_dict_ema",
+        "checkpoint_epoch": 59
+      },
+      "curve_count": 12,
+      "curve_epochs": [
+        5,
+        10,
+        15,
+        20,
+        25,
+        30,
+        35,
+        40,
+        45,
+        50,
+        55,
+        60
+      ],
+      "test_video_count": 211,
+      "test_window_count": 792,
+      "checkpoint_stat": {
+        "exists": true,
+        "size": 626580695,
+        "mtime_ns": "1788893482912174578"
+      },
+      "best_checkpoint_stat": {
+        "exists": true,
+        "size": 202321757,
+        "mtime_ns": "1788888491949189807"
+      },
+      "update_audit": {
+        "amp_skipped_attempts": 4,
+        "attempted_batches": 6000,
+        "duca_schedule_updates": 6000,
+        "ema_updates": 6000,
+        "forced_amp_overflow_attempts": 0,
+        "max_amp_retries_observed": 1,
+        "optimizer_attempts": 6004,
+        "replay_exhaustions": 0,
+        "replayed_batches": 4,
+        "scheduler_updates": 6000,
+        "successful_optimizer_updates": 6000
+      },
+      "evidence_note": "Global successful-update audit reused; conditional parameter optimizer participation counts are separate."
+    },
+    "H65_PHASEOFF": {
+      "name": "H65动态选帧：关闭四相分配",
+      "root": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-PHASEOFF_seed3407/gpu1_id0",
+      "source_sha": "629162cdddbe490d896899a067e9803e237df467",
+      "seed": 3407,
+      "best": {
+        "completed_epochs": 60,
+        "metrics": {
+          "average_mAP": 0.6426315623747969,
+          "mAP@0.3": 0.792891801911866,
+          "mAP@0.4": 0.7487636857868946,
+          "mAP@0.5": 0.6678133534546719,
+          "mAP@0.6": 0.5728039640055396,
+          "mAP@0.7": 0.4308850067150124
+        },
+        "path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-PHASEOFF_seed3407/gpu1_id0/test_guided/best_test_metrics.json",
+        "checkpoint_path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-PHASEOFF_seed3407/gpu1_id0/test_guided/best_test.pth",
+        "receipt_sha256": "553fcc207121a7b1bd5499a248c566cfba3507369d573c3b1702f5b13135a0ea"
+      },
+      "terminal": {
+        "completed_epochs": 60,
+        "metrics": {
+          "average_mAP": 0.6426315623747969,
+          "mAP@0.3": 0.792891801911866,
+          "mAP@0.4": 0.7487636857868946,
+          "mAP@0.5": 0.6678133534546719,
+          "mAP@0.6": 0.5728039640055396,
+          "mAP@0.7": 0.4308850067150124
+        },
+        "receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_eval5_terminal_4af4ad96/formal/phaseoff/gpu1_id0/official_eval/metrics.json",
+        "training_sha": "629162cdddbe490d896899a067e9803e237df467",
+        "evaluator_sha": "4af4ad96e0a9688488246b2632fad55926ffc4c8",
+        "successful_optimizer_updates": 6000,
+        "checkpoint_state_key": "state_dict_ema",
+        "checkpoint_epoch": 59
+      },
+      "curve_count": 12,
+      "curve_epochs": [
+        5,
+        10,
+        15,
+        20,
+        25,
+        30,
+        35,
+        40,
+        45,
+        50,
+        55,
+        60
+      ],
+      "test_video_count": 211,
+      "test_window_count": 792,
+      "checkpoint_stat": {
+        "exists": true,
+        "size": 629299779,
+        "mtime_ns": "1788892812671043204"
+      },
+      "best_checkpoint_stat": {
+        "exists": true,
+        "size": 202321757,
+        "mtime_ns": "1788893960069521396"
+      },
+      "update_audit": {
+        "amp_skipped_attempts": 9,
+        "attempted_batches": 6000,
+        "duca_schedule_updates": 6000,
+        "ema_updates": 6000,
+        "forced_amp_overflow_attempts": 0,
+        "max_amp_retries_observed": 4,
+        "optimizer_attempts": 6009,
+        "replay_exhaustions": 0,
+        "replayed_batches": 6,
+        "scheduler_updates": 6000,
+        "successful_optimizer_updates": 6000
+      },
+      "evidence_note": "Global successful-update audit reused; conditional parameter optimizer participation counts are separate."
+    },
+    "H65_PHASEON": {
+      "name": "H65四相128+64+64+128帧",
+      "root": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-PHASEON_seed3407/gpu1_id0",
+      "source_sha": "629162cdddbe490d896899a067e9803e237df467",
+      "seed": 3407,
+      "best": {
+        "completed_epochs": 55,
+        "metrics": {
+          "average_mAP": 0.5750812196328071,
+          "mAP@0.3": 0.75660678447763,
+          "mAP@0.4": 0.6915206548582796,
+          "mAP@0.5": 0.6036281542375806,
+          "mAP@0.6": 0.48272632669732307,
+          "mAP@0.7": 0.340924177893222
+        },
+        "path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-PHASEON_seed3407/gpu1_id0/test_guided/best_test_metrics.json",
+        "checkpoint_path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-PHASEON_seed3407/gpu1_id0/test_guided/best_test.pth",
+        "receipt_sha256": "8054a4e5507ade36d05e227c151bae4c203a024edb28a2db6dabcd7ca47fbdbc"
+      },
+      "terminal": {
+        "completed_epochs": 60,
+        "metrics": {
+          "average_mAP": 0.5748571138495565,
+          "mAP@0.3": 0.7546030730546012,
+          "mAP@0.4": 0.6892288265359143,
+          "mAP@0.5": 0.6059761785620756,
+          "mAP@0.6": 0.48219281843732453,
+          "mAP@0.7": 0.34228467265786716
+        },
+        "receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_eval5_terminal_4af4ad96/formal/phaseon/gpu1_id0/official_eval/metrics.json",
+        "training_sha": "629162cdddbe490d896899a067e9803e237df467",
+        "evaluator_sha": "4af4ad96e0a9688488246b2632fad55926ffc4c8",
+        "successful_optimizer_updates": 6000,
+        "checkpoint_state_key": "state_dict_ema",
+        "checkpoint_epoch": 59
+      },
+      "curve_count": 12,
+      "curve_epochs": [
+        5,
+        10,
+        15,
+        20,
+        25,
+        30,
+        35,
+        40,
+        45,
+        50,
+        55,
+        60
+      ],
+      "test_video_count": 211,
+      "test_window_count": 792,
+      "checkpoint_stat": {
+        "exists": true,
+        "size": 629298091,
+        "mtime_ns": "1788892015108320227"
+      },
+      "best_checkpoint_stat": {
+        "exists": true,
+        "size": 202321757,
+        "mtime_ns": "1788890332189307191"
+      },
+      "update_audit": {
+        "amp_skipped_attempts": 9,
+        "attempted_batches": 6000,
+        "duca_schedule_updates": 6000,
+        "ema_updates": 6000,
+        "forced_amp_overflow_attempts": 0,
+        "max_amp_retries_observed": 1,
+        "optimizer_attempts": 6009,
+        "replay_exhaustions": 0,
+        "replayed_batches": 9,
+        "scheduler_updates": 6000,
+        "successful_optimizer_updates": 6000
+      },
+      "evidence_note": "Global successful-update audit reused; conditional parameter optimizer participation counts are separate."
+    },
+    "ET_OFF": {
+      "name": "完整Transformer：关闭低秩残差近似",
+      "root": "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal/off/gpu2_id0",
+      "source_sha": "9a346f0d71e8870ad499bb0a58b9f1824b8904c0",
+      "seed": 4407,
+      "best": {
+        "completed_epochs": 35,
+        "metrics": {
+          "average_mAP": 0.6250928583468067,
+          "mAP@0.3": 0.7794447492356198,
+          "mAP@0.4": 0.7323571662461678,
+          "mAP@0.5": 0.6488339613958451,
+          "mAP@0.6": 0.5535783927281407,
+          "mAP@0.7": 0.41125002212826056
+        },
+        "path": "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal/off/gpu2_id0/test_guided/best_test_metrics.json",
+        "checkpoint_path": "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal/off/gpu2_id0/test_guided/best_test.pth",
+        "receipt_sha256": "8ec22dfc60ce6d1c8dd2a0fe3bea0382a2500a73facede41d18eb4c9de2639ba"
+      },
+      "terminal": {
+        "completed_epochs": 60,
+        "metrics": {
+          "average_mAP": 0.6175874882566784,
+          "mAP@0.3": 0.7623048911190157,
+          "mAP@0.4": 0.71413789321811,
+          "mAP@0.5": 0.6361779571303118,
+          "mAP@0.6": 0.548231550263453,
+          "mAP@0.7": 0.427085149552502
+        },
+        "receipt_path": "/data/run01/sczc063/yuzibo/experiments/ettrc_eval5_terminal_edfbd7e5/formal/off/gpu2_id0/official_eval/metrics.json",
+        "training_sha": "9a346f0d71e8870ad499bb0a58b9f1824b8904c0",
+        "evaluator_sha": "edfbd7e580bbd903db543e1be67169eff6d9125f",
+        "successful_optimizer_updates": 6000,
+        "checkpoint_state_key": "state_dict_ema",
+        "checkpoint_epoch": 59
+      },
+      "curve_count": 12,
+      "curve_epochs": [
+        5,
+        10,
+        15,
+        20,
+        25,
+        30,
+        35,
+        40,
+        45,
+        50,
+        55,
+        60
+      ],
+      "test_video_count": 211,
+      "test_window_count": 792,
+      "checkpoint_stat": {
+        "exists": true,
+        "size": 626294771,
+        "mtime_ns": "1788886617039115065"
+      },
+      "best_checkpoint_stat": {
+        "exists": true,
+        "size": 202190445,
+        "mtime_ns": "1788874017721847520"
+      },
+      "evidence_note": "Stored actual optimizer states and finite EMA certification reused; 6000 EMA calls inferred from FP32 successful-update control flow, no independent stored EMA call counter."
+    },
+    "ET_ON": {
+      "name": "Transformer共享低秩残差近似",
+      "root": "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal/on/gpu2_id0",
+      "source_sha": "9a346f0d71e8870ad499bb0a58b9f1824b8904c0",
+      "seed": 4407,
+      "best": {
+        "completed_epochs": 40,
+        "metrics": {
+          "average_mAP": 0.5536169738568958,
+          "mAP@0.3": 0.7159378799858159,
+          "mAP@0.4": 0.6591746139896045,
+          "mAP@0.5": 0.5839129599109326,
+          "mAP@0.6": 0.4727397320911512,
+          "mAP@0.7": 0.33631968330697526
+        },
+        "path": "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal/on/gpu2_id0/test_guided/best_test_metrics.json",
+        "checkpoint_path": "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal/on/gpu2_id0/test_guided/best_test.pth",
+        "receipt_sha256": "dc42b0d7ae7c2a85576f5ed8e1980751ed43f79bb4236242d94a8a8582567f24"
+      },
+      "terminal": {
+        "completed_epochs": 60,
+        "metrics": {
+          "average_mAP": 0.5459757523556376,
+          "mAP@0.3": 0.7014817893427924,
+          "mAP@0.4": 0.6551665037610698,
+          "mAP@0.5": 0.5723676303167357,
+          "mAP@0.6": 0.4664689311820583,
+          "mAP@0.7": 0.3343939071755316
+        },
+        "receipt_path": "/data/run01/sczc063/yuzibo/experiments/ettrc_eval5_terminal_edfbd7e5/formal/on/gpu2_id0/official_eval/metrics.json",
+        "training_sha": "9a346f0d71e8870ad499bb0a58b9f1824b8904c0",
+        "evaluator_sha": "edfbd7e580bbd903db543e1be67169eff6d9125f",
+        "successful_optimizer_updates": 6000,
+        "checkpoint_state_key": "state_dict_ema",
+        "checkpoint_epoch": 59
+      },
+      "curve_count": 12,
+      "curve_epochs": [
+        5,
+        10,
+        15,
+        20,
+        25,
+        30,
+        35,
+        40,
+        45,
+        50,
+        55,
+        60
+      ],
+      "test_video_count": 211,
+      "test_window_count": 792,
+      "checkpoint_stat": {
+        "exists": true,
+        "size": 631063251,
+        "mtime_ns": "1788880132269442623"
+      },
+      "best_checkpoint_stat": {
+        "exists": true,
+        "size": 202190445,
+        "mtime_ns": "1788873809409427664"
+      },
+      "evidence_note": "Stored actual optimizer states and finite EMA certification reused; 6000 EMA calls inferred from FP32 successful-update control flow, no independent stored EMA call counter."
+    }
+  },
+  "validation": {
+    "training": {
+      "H65_UNIFORM": {
+        "all_hashes": true,
+        "same_curve_receipts": true,
+        "same_best": true,
+        "same_protocol": true,
+        "same_checkpoint_stat": true,
+        "same_best_checkpoint_stat": true,
+        "best_correct": true,
+        "full_curve": true,
+        "population_and_protocol": true,
+        "same_update_audit": true
+      },
+      "H65_PHASEOFF": {
+        "all_hashes": true,
+        "same_curve_receipts": true,
+        "same_best": true,
+        "same_protocol": true,
+        "same_checkpoint_stat": true,
+        "same_best_checkpoint_stat": true,
+        "best_correct": true,
+        "full_curve": true,
+        "population_and_protocol": true,
+        "same_update_audit": true
+      },
+      "H65_PHASEON": {
+        "all_hashes": true,
+        "same_curve_receipts": true,
+        "same_best": true,
+        "same_protocol": true,
+        "same_checkpoint_stat": true,
+        "same_best_checkpoint_stat": true,
+        "best_correct": true,
+        "full_curve": true,
+        "population_and_protocol": true,
+        "same_update_audit": true
+      },
+      "ET_OFF": {
+        "all_hashes": true,
+        "same_curve_receipts": true,
+        "same_best": true,
+        "same_protocol": true,
+        "same_checkpoint_stat": true,
+        "same_best_checkpoint_stat": true,
+        "best_correct": true,
+        "full_curve": true,
+        "population_and_protocol": true
+      },
+      "ET_ON": {
+        "all_hashes": true,
+        "same_curve_receipts": true,
+        "same_best": true,
+        "same_protocol": true,
+        "same_checkpoint_stat": true,
+        "same_best_checkpoint_stat": true,
+        "best_correct": true,
+        "full_curve": true,
+        "population_and_protocol": true
+      }
+    },
+    "other": {
+      "H65_uniform": {
+        "exists": true,
+        "self_hash_valid": true,
+        "same_receipt": true,
+        "metrics": {
+          "average_mAP": 0.6385960328705559,
+          "mAP@0.3": 0.7935350385548517,
+          "mAP@0.4": 0.7464148365941539,
+          "mAP@0.5": 0.6701490234246361,
+          "mAP@0.6": 0.562251173817678,
+          "mAP@0.7": 0.42063009196146
+        }
+      },
+      "H65_phaseoff": {
+        "exists": true,
+        "self_hash_valid": true,
+        "same_receipt": true,
+        "metrics": {
+          "average_mAP": 0.6426315623747969,
+          "mAP@0.3": 0.792891801911866,
+          "mAP@0.4": 0.7487636857868946,
+          "mAP@0.5": 0.6678133534546719,
+          "mAP@0.6": 0.5728039640055396,
+          "mAP@0.7": 0.4308850067150124
+        }
+      },
+      "H65_phaseon": {
+        "exists": true,
+        "self_hash_valid": true,
+        "same_receipt": true,
+        "metrics": {
+          "average_mAP": 0.5748571138495565,
+          "mAP@0.3": 0.7546030730546012,
+          "mAP@0.4": 0.6892288265359143,
+          "mAP@0.5": 0.6059761785620756,
+          "mAP@0.6": 0.48219281843732453,
+          "mAP@0.7": 0.34228467265786716
+        }
+      },
+      "ET_off": {
+        "exists": true,
+        "self_hash_valid": true,
+        "same_receipt": true,
+        "metrics": {
+          "average_mAP": 0.6175874882566784,
+          "mAP@0.3": 0.7623048911190157,
+          "mAP@0.4": 0.71413789321811,
+          "mAP@0.5": 0.6361779571303118,
+          "mAP@0.6": 0.548231550263453,
+          "mAP@0.7": 0.427085149552502
+        }
+      },
+      "ET_on": {
+        "exists": true,
+        "self_hash_valid": true,
+        "same_receipt": true,
+        "metrics": {
+          "average_mAP": 0.5459757523556376,
+          "mAP@0.3": 0.7014817893427924,
+          "mAP@0.4": 0.6551665037610698,
+          "mAP@0.5": 0.5723676303167357,
+          "mAP@0.6": 0.4664689311820583,
+          "mAP@0.7": 0.3343939071755316
+        }
+      },
+      "CT_g0": {
+        "exists": true,
+        "self_hash_valid": true,
+        "same_receipt": true,
+        "metrics": {
+          "average_mAP": 0.6427200272571093,
+          "mAP@0.3": 0.8007885484368389,
+          "mAP@0.4": 0.7460867056195133,
+          "mAP@0.5": 0.6741285579333751,
+          "mAP@0.6": 0.5657943413687253,
+          "mAP@0.7": 0.42680198292709387
+        }
+      },
+      "CT_g1": {
+        "exists": true,
+        "self_hash_valid": true,
+        "same_receipt": true,
+        "metrics": {
+          "average_mAP": 0.6167397028285398,
+          "mAP@0.3": 0.7861633235376628,
+          "mAP@0.4": 0.7285757322889715,
+          "mAP@0.5": 0.6347676761532852,
+          "mAP@0.6": 0.5350382081934079,
+          "mAP@0.7": 0.39915357396937123
+        }
+      },
+      "Evidence_A1": {
+        "exists": true,
+        "self_hash_valid": true,
+        "same_receipt": true,
+        "metrics": {
+          "average_mAP": 0.5159681679375281,
+          "mAP@0.3": 0.6996763679956545,
+          "mAP@0.4": 0.6390762093566129,
+          "mAP@0.5": 0.5405654235751765,
+          "mAP@0.6": 0.4221696475089728,
+          "mAP@0.7": 0.278353191251224
+        }
+      },
+      "Evidence_A6": {
+        "exists": false,
+        "same_receipt": true
+      },
+      "Evidence_F": {
+        "exists": false,
+        "same_receipt": true
+      },
+      "BAFDR": {
+        "metrics_count": 0,
+        "same_terminals": true,
+        "key_order_only": true
+      }
+    },
+    "jobs_unchanged": true,
+    "sources_unchanged": true,
+    "healthy_training_logs_no_fatal": true,
+    "evaluation_logs_no_fatal": true,
+    "failure_logs_unchanged": true,
+    "independent_terminal_matches": {
+      "H65_UNIFORM": true,
+      "H65_PHASEOFF": true,
+      "H65_PHASEON": true,
+      "ET_OFF": true,
+      "ET_ON": true
+    }
+  },
+  "independent_receipts": {
+    "H65_uniform": {
+      "path": "/data/run01/sczc063/yuzibo/experiments/h65_eval5_terminal_4af4ad96/formal/uniform/gpu1_id0/official_eval/metrics.json",
+      "exists": true,
+      "self_hash_valid": true,
+      "unchanged": true,
+      "metrics": {
+        "average_mAP": 0.6385960328705559,
+        "mAP@0.3": 0.7935350385548517,
+        "mAP@0.4": 0.7464148365941539,
+        "mAP@0.5": 0.6701490234246361,
+        "mAP@0.6": 0.562251173817678,
+        "mAP@0.7": 0.42063009196146
+      },
+      "evaluation_sha256": "4f8c82a2402242d0da8012d4055df5ca8546018ab70420e2c94ac3bd6dd93a29",
+      "training_sha": "629162cdddbe490d896899a067e9803e237df467",
+      "evaluator_sha": "4af4ad96e0a9688488246b2632fad55926ffc4c8",
+      "clean_tree": true
+    },
+    "H65_phaseoff": {
+      "path": "/data/run01/sczc063/yuzibo/experiments/h65_eval5_terminal_4af4ad96/formal/phaseoff/gpu1_id0/official_eval/metrics.json",
+      "exists": true,
+      "self_hash_valid": true,
+      "unchanged": true,
+      "metrics": {
+        "average_mAP": 0.6426315623747969,
+        "mAP@0.3": 0.792891801911866,
+        "mAP@0.4": 0.7487636857868946,
+        "mAP@0.5": 0.6678133534546719,
+        "mAP@0.6": 0.5728039640055396,
+        "mAP@0.7": 0.4308850067150124
+      },
+      "evaluation_sha256": "c794cfddbeaaea6ad308a126c6b6fea0d3e892f60a318ef8080a24668938b964",
+      "training_sha": "629162cdddbe490d896899a067e9803e237df467",
+      "evaluator_sha": "4af4ad96e0a9688488246b2632fad55926ffc4c8",
+      "clean_tree": true
+    },
+    "H65_phaseon": {
+      "path": "/data/run01/sczc063/yuzibo/experiments/h65_eval5_terminal_4af4ad96/formal/phaseon/gpu1_id0/official_eval/metrics.json",
+      "exists": true,
+      "self_hash_valid": true,
+      "unchanged": true,
+      "metrics": {
+        "average_mAP": 0.5748571138495565,
+        "mAP@0.3": 0.7546030730546012,
+        "mAP@0.4": 0.6892288265359143,
+        "mAP@0.5": 0.6059761785620756,
+        "mAP@0.6": 0.48219281843732453,
+        "mAP@0.7": 0.34228467265786716
+      },
+      "evaluation_sha256": "93f837bfcd99d60e38356c517859bf6cceaf095ffda164e61c9fd6c6dd38d968",
+      "training_sha": "629162cdddbe490d896899a067e9803e237df467",
+      "evaluator_sha": "4af4ad96e0a9688488246b2632fad55926ffc4c8",
+      "clean_tree": true
+    },
+    "ET_off": {
+      "path": "/data/run01/sczc063/yuzibo/experiments/ettrc_eval5_terminal_edfbd7e5/formal/off/gpu2_id0/official_eval/metrics.json",
+      "exists": true,
+      "self_hash_valid": true,
+      "unchanged": true,
+      "metrics": {
+        "average_mAP": 0.6175874882566784,
+        "mAP@0.3": 0.7623048911190157,
+        "mAP@0.4": 0.71413789321811,
+        "mAP@0.5": 0.6361779571303118,
+        "mAP@0.6": 0.548231550263453,
+        "mAP@0.7": 0.427085149552502
+      },
+      "training_sha": "9a346f0d71e8870ad499bb0a58b9f1824b8904c0",
+      "evaluator_sha": "edfbd7e580bbd903db543e1be67169eff6d9125f",
+      "clean_tree": true
+    },
+    "ET_on": {
+      "path": "/data/run01/sczc063/yuzibo/experiments/ettrc_eval5_terminal_edfbd7e5/formal/on/gpu2_id0/official_eval/metrics.json",
+      "exists": true,
+      "self_hash_valid": true,
+      "unchanged": true,
+      "metrics": {
+        "average_mAP": 0.5459757523556376,
+        "mAP@0.3": 0.7014817893427924,
+        "mAP@0.4": 0.6551665037610698,
+        "mAP@0.5": 0.5723676303167357,
+        "mAP@0.6": 0.4664689311820583,
+        "mAP@0.7": 0.3343939071755316
+      },
+      "training_sha": "9a346f0d71e8870ad499bb0a58b9f1824b8904c0",
+      "evaluator_sha": "edfbd7e580bbd903db543e1be67169eff6d9125f",
+      "clean_tree": true
+    },
+    "CT_g0": {
+      "path": "/data/run01/sczc063/yuzibo/experiments/ctdp_coordinate_eval_07383274/formal/g0/gpu1_id0/official_eval/metrics.json",
+      "exists": true,
+      "self_hash_valid": true,
+      "unchanged": true,
+      "metrics": {
+        "average_mAP": 0.6427200272571093,
+        "mAP@0.3": 0.8007885484368389,
+        "mAP@0.4": 0.7460867056195133,
+        "mAP@0.5": 0.6741285579333751,
+        "mAP@0.6": 0.5657943413687253,
+        "mAP@0.7": 0.42680198292709387
+      },
+      "training_sha": "fe1c53db1b2a7e467a6af2eccfe8b7636f667a81",
+      "evaluator_sha": "073832744dd171dee4119dc29d1bb12a057e84f4",
+      "clean_tree": true
+    },
+    "CT_g1": {
+      "path": "/data/run01/sczc063/yuzibo/experiments/ctdp_coordinate_eval_07383274/formal/g1/gpu1_id0/official_eval/metrics.json",
+      "exists": true,
+      "self_hash_valid": true,
+      "unchanged": true,
+      "metrics": {
+        "average_mAP": 0.6167397028285398,
+        "mAP@0.3": 0.7861633235376628,
+        "mAP@0.4": 0.7285757322889715,
+        "mAP@0.5": 0.6347676761532852,
+        "mAP@0.6": 0.5350382081934079,
+        "mAP@0.7": 0.39915357396937123
+      },
+      "training_sha": "fe1c53db1b2a7e467a6af2eccfe8b7636f667a81",
+      "evaluator_sha": "073832744dd171dee4119dc29d1bb12a057e84f4",
+      "clean_tree": true
+    },
+    "Evidence_A1": {
+      "path": "/data/run01/sczc063/yuzibo/experiments/duca_evidence_storage_resume_ce767b4d/evaluation/A1/seed_8261/gpu1_id0/official_eval/metrics.json",
+      "exists": true,
+      "self_hash_valid": true,
+      "unchanged": true,
+      "metrics": {
+        "average_mAP": 0.5159681679375281,
+        "mAP@0.3": 0.6996763679956545,
+        "mAP@0.4": 0.6390762093566129,
+        "mAP@0.5": 0.5405654235751765,
+        "mAP@0.6": 0.4221696475089728,
+        "mAP@0.7": 0.278353191251224
+      },
+      "evaluation_sha256": "d5685e9bd27ec1e788f9fd5b5def9f0afd006ae06fd59cae82fa29cde0e907f3",
+      "training_sha": "ce767b4df49a82b42f4fab4897ac4ea562e4b548"
+    },
+    "Evidence_A6": {
+      "path": "/data/run01/sczc063/yuzibo/experiments/duca_evidence_storage_resume_ce767b4d/evaluation/A6/seed_8261/gpu1_id0/official_eval/metrics.json",
+      "exists": false,
+      "unchanged": true
+    },
+    "Evidence_F": {
+      "path": "/data/run01/sczc063/yuzibo/experiments/duca_evidence_storage_resume_ce767b4d/evaluation/F/seed_8261/gpu1_id0/official_eval/metrics.json",
+      "exists": false,
+      "unchanged": true
+    }
+  },
+  "checkpoint_certification_reused": "All five new terminal and five best files have identical path/size/mtime to the previous validated observation. All five BAFDR terminal file stats likewise match by path; directory iteration order is ignored. No unchanged large checkpoint reloaded or inference repeated.",
+  "sources": {
+    "h65_tia_eval5_629162cd": {
+      "sha": {
+        "code": 0,
+        "stdout": "629162cdddbe490d896899a067e9803e237df467",
+        "stderr": ""
+      },
+      "tree": {
+        "code": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    "h65_eval5_terminal_4af4ad96": {
+      "sha": {
+        "code": 0,
+        "stdout": "4af4ad96e0a9688488246b2632fad55926ffc4c8",
+        "stderr": ""
+      },
+      "tree": {
+        "code": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    "ettrc_anchor_eval5_9a346f0d": {
+      "sha": {
+        "code": 0,
+        "stdout": "9a346f0d71e8870ad499bb0a58b9f1824b8904c0",
+        "stderr": ""
+      },
+      "tree": {
+        "code": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    "ettrc_eval5_terminal_edfbd7e5": {
+      "sha": {
+        "code": 0,
+        "stdout": "edfbd7e580bbd903db543e1be67169eff6d9125f",
+        "stderr": ""
+      },
+      "tree": {
+        "code": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    "h65_matched_96e5b3a5": {
+      "sha": {
+        "code": 0,
+        "stdout": "96e5b3a5e9d77d65b7a0afca86277261dd63295b",
+        "stderr": ""
+      },
+      "tree": {
+        "code": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    }
+  },
+  "training_logs": {
+    "H65_UNIFORM": {
+      "out": {
+        "path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/logs/uniform_1280127.out",
+        "exists": true,
+        "all_lines_read": 1735,
+        "tail": "2026-09-09 03:12:38 Train INFO: mAP at tIoU 0.50 is 67.01%\n2026-09-09 03:12:38 Train INFO: mAP at tIoU 0.60 is 56.23%\n2026-09-09 03:12:38 Train INFO: mAP at tIoU 0.70 is 42.06%\n2026-09-09 03:12:38 Train INFO: Training Over...\n",
+        "fatal_lines": []
+      },
+      "err": {
+        "path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/logs/uniform_1280127.err",
+        "exists": true,
+        "all_lines_read": 4796,
+        "tail": " 99%|█████████▉| 393/396 [20:11<00:05,  1.90s/it]\n 99%|█████████▉| 394/396 [20:14<00:04,  2.20s/it]\n100%|█████████▉| 395/396 [20:16<00:01,  1.95s/it]\n100%|██████████| 396/396 [20:19<00:00,  2.24s/it]\n100%|██████████| 396/396 [20:19<00:00,  3.08s/it]",
+        "fatal_lines": []
+      }
+    },
+    "H65_PHASEOFF": {
+      "out": {
+        "path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/logs/phaseoff_1280128.out",
+        "exists": true,
+        "all_lines_read": 1745,
+        "tail": "2026-09-09 02:59:19 Train INFO: mAP at tIoU 0.60 is 57.28%\n2026-09-09 02:59:19 Train INFO: mAP at tIoU 0.70 is 43.09%\n2026-09-09 02:59:20 Train INFO: New test-selected best EMA: epoch 60, Avg-mAP=64.2632%\n2026-09-09 02:59:20 Train INFO: Training Over...\n",
+        "fatal_lines": []
+      },
+      "err": {
+        "path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/logs/phaseoff_1280128.err",
+        "exists": true,
+        "all_lines_read": 4805,
+        "tail": " 99%|█████████▉| 393/396 [18:03<00:07,  2.54s/it]\n 99%|█████████▉| 394/396 [18:04<00:03,  1.90s/it]\n100%|█████████▉| 395/396 [18:08<00:02,  2.69s/it]\n100%|██████████| 396/396 [18:09<00:00,  1.99s/it]\n100%|██████████| 396/396 [18:09<00:00,  2.75s/it]",
+        "fatal_lines": []
+      }
+    },
+    "H65_PHASEON": {
+      "out": {
+        "path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/logs/phaseon_1280129.out",
+        "exists": true,
+        "all_lines_read": 1744,
+        "tail": "2026-09-09 02:45:09 Train INFO: mAP at tIoU 0.50 is 60.60%\n2026-09-09 02:45:09 Train INFO: mAP at tIoU 0.60 is 48.22%\n2026-09-09 02:45:09 Train INFO: mAP at tIoU 0.70 is 34.23%\n2026-09-09 02:45:09 Train INFO: Training Over...\n",
+        "fatal_lines": []
+      },
+      "err": {
+        "path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/logs/phaseon_1280129.err",
+        "exists": true,
+        "all_lines_read": 4794,
+        "tail": " 99%|█████████▉| 393/396 [17:14<00:06,  2.31s/it]\n 99%|█████████▉| 394/396 [17:14<00:03,  1.74s/it]\n100%|█████████▉| 395/396 [17:19<00:02,  2.61s/it]\n100%|██████████| 396/396 [17:19<00:00,  1.93s/it]\n100%|██████████| 396/396 [17:19<00:00,  2.63s/it]",
+        "fatal_lines": []
+      }
+    },
+    "ET_OFF": {
+      "out": {
+        "path": "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal/logs/off_1280118.out",
+        "exists": true,
+        "all_lines_read": 1487,
+        "tail": "2026-09-09 01:17:06 Train INFO: mAP at tIoU 0.50 is 63.62%\n2026-09-09 01:17:06 Train INFO: mAP at tIoU 0.60 is 54.82%\n2026-09-09 01:17:06 Train INFO: mAP at tIoU 0.70 is 42.71%\n2026-09-09 01:17:06 Train INFO: Training Over...\n",
+        "fatal_lines": []
+      },
+      "err": {
+        "path": "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal/logs/off_1280118.err",
+        "exists": true,
+        "all_lines_read": 4795,
+        "tail": "393it [18:35,  2.50s/it]\n394it [18:41,  3.43s/it]\n395it [18:44,  3.31s/it]\n396it [18:47,  3.43s/it]\n396it [18:48,  2.85s/it]",
+        "fatal_lines": []
+      }
+    },
+    "ET_ON": {
+      "out": {
+        "path": "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal/logs/on_1280117.out",
+        "exists": true,
+        "all_lines_read": 1488,
+        "tail": "2026-09-08 23:23:35 Train INFO: mAP at tIoU 0.50 is 57.24%\n2026-09-08 23:23:35 Train INFO: mAP at tIoU 0.60 is 46.65%\n2026-09-08 23:23:35 Train INFO: mAP at tIoU 0.70 is 33.44%\n2026-09-08 23:23:35 Train INFO: Training Over...\n",
+        "fatal_lines": []
+      },
+      "err": {
+        "path": "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal/logs/on_1280117.err",
+        "exists": true,
+        "all_lines_read": 4795,
+        "tail": "393it [13:45,  1.28s/it]\n394it [13:48,  1.69s/it]\n395it [13:48,  1.23s/it]\n396it [13:50,  1.56s/it]\n396it [13:50,  2.10s/it]",
+        "fatal_lines": []
+      }
+    }
+  },
+  "evaluation_logs": {
+    "h65_eval5_terminal_4af4ad96_0.out": {
+      "path": "/data/run01/sczc063/yuzibo/experiments/h65_eval5_terminal_4af4ad96/logs/formal_1281175_0.out",
+      "exists": true,
+      "all_lines_read": 853,
+      "tail": "2026-09-09 07:43:23 Test INFO: mAP at tIoU 0.50 is 67.01%\n2026-09-09 07:43:23 Test INFO: mAP at tIoU 0.60 is 56.23%\n2026-09-09 07:43:23 Test INFO: mAP at tIoU 0.70 is 42.06%\n2026-09-09 07:43:24 Test INFO: Testing Over...\n",
+      "fatal_lines": []
+    },
+    "h65_eval5_terminal_4af4ad96_0.err": {
+      "path": "/data/run01/sczc063/yuzibo/experiments/h65_eval5_terminal_4af4ad96/logs/formal_1281175_0.err",
+      "exists": true,
+      "all_lines_read": 405,
+      "tail": " 99%|█████████▉| 393/396 [17:11<00:06,  2.14s/it]\n 99%|█████████▉| 394/396 [17:12<00:03,  1.77s/it]\n100%|█████████▉| 395/396 [17:17<00:02,  2.57s/it]\n100%|██████████| 396/396 [17:17<00:00,  1.87s/it]\n100%|██████████| 396/396 [17:17<00:00,  2.62s/it]",
+      "fatal_lines": []
+    },
+    "h65_eval5_terminal_4af4ad96_1.out": {
+      "path": "/data/run01/sczc063/yuzibo/experiments/h65_eval5_terminal_4af4ad96/logs/formal_1281175_1.out",
+      "exists": true,
+      "all_lines_read": 857,
+      "tail": "2026-09-09 07:43:46 Test INFO: mAP at tIoU 0.50 is 66.78%\n2026-09-09 07:43:46 Test INFO: mAP at tIoU 0.60 is 57.28%\n2026-09-09 07:43:46 Test INFO: mAP at tIoU 0.70 is 43.09%\n2026-09-09 07:43:49 Test INFO: Testing Over...\n",
+      "fatal_lines": []
+    },
+    "h65_eval5_terminal_4af4ad96_1.err": {
+      "path": "/data/run01/sczc063/yuzibo/experiments/h65_eval5_terminal_4af4ad96/logs/formal_1281175_1.err",
+      "exists": true,
+      "all_lines_read": 409,
+      "tail": " 99%|█████████▉| 393/396 [17:32<00:04,  1.63s/it]\n 99%|█████████▉| 394/396 [17:35<00:04,  2.18s/it]\n100%|█████████▉| 395/396 [17:37<00:01,  1.96s/it]\n100%|██████████| 396/396 [17:40<00:00,  2.28s/it]\n100%|██████████| 396/396 [17:40<00:00,  2.68s/it]",
+      "fatal_lines": []
+    },
+    "h65_eval5_terminal_4af4ad96_2.out": {
+      "path": "/data/run01/sczc063/yuzibo/experiments/h65_eval5_terminal_4af4ad96/logs/formal_1281175_2.out",
+      "exists": true,
+      "all_lines_read": 857,
+      "tail": "2026-09-09 07:43:18 Test INFO: mAP at tIoU 0.50 is 60.60%\n2026-09-09 07:43:18 Test INFO: mAP at tIoU 0.60 is 48.22%\n2026-09-09 07:43:18 Test INFO: mAP at tIoU 0.70 is 34.23%\n2026-09-09 07:43:20 Test INFO: Testing Over...\n",
+      "fatal_lines": []
+    },
+    "h65_eval5_terminal_4af4ad96_2.err": {
+      "path": "/data/run01/sczc063/yuzibo/experiments/h65_eval5_terminal_4af4ad96/logs/formal_1281175_2.err",
+      "exists": true,
+      "all_lines_read": 401,
+      "tail": " 99%|█████████▉| 393/396 [17:01<00:05,  1.80s/it]\n 99%|█████████▉| 394/396 [17:04<00:04,  2.06s/it]\n100%|█████████▉| 395/396 [17:06<00:02,  2.13s/it]\n100%|██████████| 396/396 [17:08<00:00,  2.08s/it]\n100%|██████████| 396/396 [17:08<00:00,  2.60s/it]",
+      "fatal_lines": []
+    },
+    "ettrc_eval5_terminal_edfbd7e5_0.out": {
+      "path": "/data/run01/sczc063/yuzibo/experiments/ettrc_eval5_terminal_edfbd7e5/logs/formal_1281049_0.out",
+      "exists": true,
+      "all_lines_read": 460,
+      "tail": "2026-09-09 05:29:28 Test INFO: mAP at tIoU 0.50 is 63.62%\n2026-09-09 05:29:28 Test INFO: mAP at tIoU 0.60 is 54.82%\n2026-09-09 05:29:28 Test INFO: mAP at tIoU 0.70 is 42.71%\n2026-09-09 05:29:29 Test INFO: Testing Over...\n",
+      "fatal_lines": []
+    },
+    "ettrc_eval5_terminal_edfbd7e5_0.err": {
+      "path": "/data/run01/sczc063/yuzibo/experiments/ettrc_eval5_terminal_edfbd7e5/logs/formal_1281049_0.err",
+      "exists": true,
+      "all_lines_read": 402,
+      "tail": "393it [14:14,  1.60s/it]\n394it [14:17,  1.80s/it]\n395it [14:19,  1.96s/it]\n396it [14:21,  1.91s/it]\n396it [14:21,  2.18s/it]",
+      "fatal_lines": []
+    },
+    "ettrc_eval5_terminal_edfbd7e5_1.out": {
+      "path": "/data/run01/sczc063/yuzibo/experiments/ettrc_eval5_terminal_edfbd7e5/logs/formal_1281049_1.out",
+      "exists": true,
+      "all_lines_read": 460,
+      "tail": "2026-09-09 05:30:48 Test INFO: mAP at tIoU 0.50 is 57.24%\n2026-09-09 05:30:48 Test INFO: mAP at tIoU 0.60 is 46.65%\n2026-09-09 05:30:48 Test INFO: mAP at tIoU 0.70 is 33.44%\n2026-09-09 05:30:50 Test INFO: Testing Over...\n",
+      "fatal_lines": []
+    },
+    "ettrc_eval5_terminal_edfbd7e5_1.err": {
+      "path": "/data/run01/sczc063/yuzibo/experiments/ettrc_eval5_terminal_edfbd7e5/logs/formal_1281049_1.err",
+      "exists": true,
+      "all_lines_read": 402,
+      "tail": "393it [14:37,  1.39s/it]\n394it [14:40,  1.86s/it]\n395it [14:41,  1.47s/it]\n396it [14:43,  1.85s/it]\n396it [14:44,  2.23s/it]",
+      "fatal_lines": []
+    }
+  },
+  "failure_logs": {
+    "signed_1280314.out": {
+      "path": "/data/run01/sczc063/yuzibo/experiments/h65_matched_96e5b3a5_seed3407/logs/signed_1280314.out",
+      "exists": true,
+      "all_lines_read": 1267,
+      "tail": "09/09 00:27:48 - mmengine - WARNING - \"FileClient\" will be deprecated in future. Please use io functions in https://mmengine.readthedocs.io/en/latest/api/fileio.html#file-io\n09/09 00:27:48 - mmengine - WARNING - \"HardDiskBackend\" is the alias of \"LocalBackend\" and the former will be deprecated in future.\n2026-09-09 00:30:37 Train INFO: [Train]: [016][00050/00099]  Loss=2.6021  detector_loss=0.0000  budget_loss=0.0000  lagrangian_budget_loss=0.0000  marginal_monotonic_loss=0.0000  hard_budget_cap_loss=0.0000  teacher_utility_loss=0.0000  boundary_utility_proxy_distribution_loss=0.0000  start_endpoint_distribution_loss=0.0000  end_endpoint_distribution_loss=0.0000  boundary_context_distribution_loss=0.0000  transition_distribution_loss=1.7425  transition_boundary_coverage_loss=0.0087  boundary_coverage_loss=0.0000  actionness_bce_loss=0.3409  action_local_hole_loss=0.0000  temporal_max_gap_hole_loss=0.0000  redundancy_loss=0.0000  radius_cost_loss=0.0000  entropy_anti_collapse_loss=0.0000  cls_loss=0.2580  reg_loss=0.2157  detector_cls_contribution_distillation_loss=0.0213  detector_reg_contribution_distillation_loss=0.0150  lr_backbone=1.8e-04  lr_det=9.0e-05  mem=11083MB  duca_schedule_step=1650  duca_phase=continuous_policy_homotopy  duca_schedule_progress=0.5782  duca_detector_grad_w=0.0597  duca_actionness_w=0.5663  duca_transition_w=0.2687  duca_transition_boundary_w=0.9881  duca_policy_alpha_w=0.5782  duca_detector_utility_w=0.0000  duca_hole_w=0.0000  duca_action_raw=0.5523  duca_transition_raw=6.6096  duca_boundary_raw=0.0121  duca_budget=384  duca_dynamic_budget=False  duca_budget_policy=fixed_budget  duca_requested_budget_mean=384.00  duca_effective_budget_mean=384.00\n2026-09-09 00:31:01 Train INFO: [Train]: AMP skipped batch 57; replay 1/8 with scale 8192.0\n2026-09-09 00:31:03 Train INFO: [Train]: AMP skipped batch 57; replay 2/8 with scale 4096.0",
+      "fatal_lines": []
+    },
+    "signed_1280314.err": {
+      "path": "/data/run01/sczc063/yuzibo/experiments/h65_matched_96e5b3a5_seed3407/logs/signed_1280314.err",
+      "exists": true,
+      "all_lines_read": 1242,
+      "tail": "  File \"/data/run01/sczc063/yuzibo/projects/h65_matched_96e5b3a5/tools/../opentad/models/duca/acquisition.py\", line 3275, in acquire\n    scores = self.forward_scores(\n  File \"/data/run01/sczc063/yuzibo/projects/h65_matched_96e5b3a5/tools/../opentad/models/duca/acquisition.py\", line 2042, in forward_scores\n    raise FloatingPointError(\nFloatingPointError: p_action calibration check received non-finite values",
+      "fatal_lines": [
+        "Traceback (most recent call last):",
+        "    raise FloatingPointError(",
+        "FloatingPointError: p_action calibration check received non-finite values"
+      ]
+    },
+    "control_fulltia_1280316.out": {
+      "path": "/data/run01/sczc063/yuzibo/experiments/h65_matched_96e5b3a5_seed3407/logs/control_fulltia_1280316.out",
+      "exists": true,
+      "all_lines_read": 1266,
+      "tail": "09/09 00:28:33 - mmengine - WARNING - \"FileClient\" will be deprecated in future. Please use io functions in https://mmengine.readthedocs.io/en/latest/api/fileio.html#file-io\n09/09 00:28:33 - mmengine - WARNING - \"FileClient\" will be deprecated in future. Please use io functions in https://mmengine.readthedocs.io/en/latest/api/fileio.html#file-io\n09/09 00:28:33 - mmengine - WARNING - \"HardDiskBackend\" is the alias of \"LocalBackend\" and the former will be deprecated in future.\n09/09 00:28:33 - mmengine - WARNING - \"HardDiskBackend\" is the alias of \"LocalBackend\" and the former will be deprecated in future.\n2026-09-09 00:29:00 Train INFO: [Train]: AMP skipped batch 6; replay 1/8 with scale 4096.0",
+      "fatal_lines": []
+    },
+    "control_fulltia_1280316.err": {
+      "path": "/data/run01/sczc063/yuzibo/experiments/h65_matched_96e5b3a5_seed3407/logs/control_fulltia_1280316.err",
+      "exists": true,
+      "all_lines_read": 1242,
+      "tail": "  File \"/data/run01/sczc063/yuzibo/projects/h65_matched_96e5b3a5/tools/../opentad/models/duca/acquisition.py\", line 3275, in acquire\n    scores = self.forward_scores(\n  File \"/data/run01/sczc063/yuzibo/projects/h65_matched_96e5b3a5/tools/../opentad/models/duca/acquisition.py\", line 2042, in forward_scores\n    raise FloatingPointError(\nFloatingPointError: p_action calibration check received non-finite values",
+      "fatal_lines": [
+        "Traceback (most recent call last):",
+        "    raise FloatingPointError(",
+        "FloatingPointError: p_action calibration check received non-finite values"
+      ]
+    }
+  },
+  "bafdr": {
+    "metrics_paths": [],
+    "terminal_checkpoints": {
+      "/data/run01/sczc063/yuzibo/experiments/bafdr_successful_updates_710ce8a6/work_dirs/bafdr_k16_d160_seed4407/checkpoint/epoch_59.pth": {
+        "exists": true,
+        "size": 623826234,
+        "mtime_ns": "1788786113422890289"
+      },
+      "/data/run01/sczc063/yuzibo/experiments/bafdr_successful_updates_710ce8a6/work_dirs/bafdr_k16_g96_seed4407/checkpoint/epoch_59.pth": {
+        "exists": true,
+        "size": 623826234,
+        "mtime_ns": "1788786110187031956"
+      },
+      "/data/run01/sczc063/yuzibo/experiments/bafdr_successful_updates_710ce8a6/work_dirs/bafdr_k16_late_seed4407/checkpoint/epoch_59.pth": {
+        "exists": true,
+        "size": 630958277,
+        "mtime_ns": "1788797665536913323"
+      },
+      "/data/run01/sczc063/yuzibo/experiments/bafdr_successful_updates_710ce8a6/work_dirs/bafdr_k16_nokd_seed4407/checkpoint/epoch_59.pth": {
+        "exists": true,
+        "size": 643564041,
+        "mtime_ns": "1788809285053296908"
+      },
+      "/data/run01/sczc063/yuzibo/experiments/bafdr_successful_updates_710ce8a6/work_dirs/bafdr_k16_u16_uniform_a0_seed4407/checkpoint/epoch_59.pth": {
+        "exists": true,
+        "size": 643564041,
+        "mtime_ns": "1788797846661687380"
+      }
+    }
+  },
+  "remaining_routes": {
+    "CT": "G0 64.2720/G1 61.6740 verified unchanged. Old G2/G3 56.5234/57.8489 retain 78cde1be identity. Geometry G0-G3 do not enable B-AMoD; separate mechanism matrix/eval5 still missing.",
+    "BAFDR": "710ce8a6 five terminal checkpoints unchanged; independent metrics count 0; FULL only PRECHECK. Old update-deficient scores remain diagnostics. b142 padding/ragged fixes are partial, not production-validated.",
+    "Evidence": "Existing A1 51.5968 receipt verified unchanged. F/A6 missing independent terminal metrics. C0 59.2292/A2 54.2756 historical values not re-certified in this check. New utility/two-view/cycle mechanisms incomplete.",
+    "Unified": "Time-axis repair registered, but Taylor P0/P1, legal one-swap and H65 retention/transition remain incomplete; no complete formal result.",
+    "official_AdaTAD": "Historical original log 68.73 percent is not REF-D768 67.58 percent. Source/pretrain/data provenance completion and independent certification remain separate unfinished work; do not substitute H65 uniform or ET OFF for original AdaTAD."
+  },
+  "unresolved_failures": [
+    {
+      "name": "另一任务历史H65 30+60轮复现",
+      "jobs": [
+        "1280314",
+        "1280316"
+      ],
+      "status": "FAILED(1:0)",
+      "message": "p_action calibration check received non-finite values after AMP replay at stage2 epoch16",
+      "root_cause": "First numerical contamination source remains unlocalized; throwing-site check is not the causal diagnosis.",
+      "owner_task": "01a08058-1402-7b21-8c17-ec6c1ad522f7",
+      "owner_scope": "Read-only registration; do not take over, cancel, remove validation or duplicate submission.",
+      "retry_submitted": false,
+      "logs_unchanged": true,
+      "next_action": "Owning task must preserve checkpoint/RNG, locate first nonfinite output and replay state, then apply minimal independent repair and pass focused/exact-SHA/CUDA/PRECHECK before a new namespace/job."
+    }
+  ],
+  "related_fix_status": [
+    {
+      "internal_id": "H65_MATCHED90_RELATED",
+      "sha": "96e5b3a5e9d77d65b7a0afca86277261dd63295b",
+      "branch": "codex/h65-matched-controls-20260908",
+      "local_directory": "E:/DeskTop/TAD/_duca_fix_worktrees/h65_matched_controls",
+      "local_head": "96e5b3a5e9d77d65b7a0afca86277261dd63295b",
+      "local_clean_tree": true,
+      "github_branch_published": false,
+      "github_check": "Successful git ls-remote --heads origin for all four exact refs in this cycle returned no matches."
+    },
+    {
+      "internal_id": "EVIDENCE_WIRING_RELATED",
+      "sha": "79aea08a32c7343af593e20227beaacb23ebb484",
+      "branch": "codex/duca-evidence-wiring-repair-20260908",
+      "local_directory": "E:/DeskTop/TAD/_duca_fix_worktrees/evidence_wiring_repair",
+      "local_head": "79aea08a32c7343af593e20227beaacb23ebb484",
+      "local_clean_tree": true,
+      "github_branch_published": false,
+      "github_check": "Successful git ls-remote --heads origin for all four exact refs in this cycle returned no matches."
+    },
+    {
+      "internal_id": "BAFDR_PADDING_RELATED",
+      "sha": "b142bffa3c2352e9d2a35992dc13844259c5a06a",
+      "branch": "codex/bafdr-padding-repair-20260908",
+      "local_directory": "E:/DeskTop/TAD/_duca_fix_worktrees/bafdr_padding_repair",
+      "local_head": "b142bffa3c2352e9d2a35992dc13844259c5a06a",
+      "local_clean_tree": true,
+      "github_branch_published": false,
+      "github_check": "Successful git ls-remote --heads origin for all four exact refs in this cycle returned no matches."
+    },
+    {
+      "internal_id": "UNIFIED_WIRING_RELATED",
+      "sha": "0fcef0bf60fae8aa4560e082775e8ffca55418b4",
+      "branch": "codex/duca-unified-wiring-repair-20260908",
+      "local_directory": "E:/DeskTop/TAD/_duca_fix_worktrees/unified_wiring_repair",
+      "local_head": "0fcef0bf60fae8aa4560e082775e8ffca55418b4",
+      "local_clean_tree": true,
+      "github_branch_published": false,
+      "github_check": "Successful git ls-remote --heads origin for all four exact refs in this cycle returned no matches."
+    }
+  ],
+  "cluster": {
+    "checked_at": "2026-09-09T11:38:19.889442+08:00",
+    "gpu": {
+      "command_returncode": 0,
+      "total": 200,
+      "allocated": 174,
+      "available": 26
+    },
+    "free_disk_gib": 108.99943923950195,
+    "user_running_jobs": 3,
+    "user_pending_jobs": 1,
+    "user_running_allocated_gpus": 10,
+    "queue": {
+      "code": 0,
+      "stdout": "1278774|tr-786cf750fa74|PENDING|JobHeldUser|gres/gpu:1\n1281445|input-gradient-69bccca2|RUNNING|None|gres/gpu:1\n1281444|rot-select-full|RUNNING|None|N/A\n1281424|fd-mstcn2-full-point0|RUNNING|None|gres/gpu:1",
+      "stderr": ""
+    },
+    "queue_scope": {
+      "1278774": {
+        "job_name": "tr-786cf750fa74",
+        "state": "PENDING",
+        "request_tres": "cpu=8,mem=124400M,node=1,billing=8,gres/gpu=1",
+        "allocated_tres": "(null)",
+        "tres_per_node": "gres/gpu:1",
+        "reason": "JobHeldUser",
+        "scope": "Other project; not managed or modified by this six-route heartbeat."
+      },
+      "1281424": {
+        "job_name": "fd-mstcn2-full-point0",
+        "state": "RUNNING",
+        "request_tres": "cpu=8,mem=124400M,node=1,billing=8,gres/gpu=1",
+        "allocated_tres": "cpu=8,mem=124400M,node=1,billing=8,gres/gpu=1",
+        "tres_per_node": "gres/gpu:1",
+        "reason": "None",
+        "scope": "Other project; not managed or modified by this six-route heartbeat."
+      },
+      "1281444": {
+        "job_name": "rot-select-full",
+        "state": "RUNNING",
+        "request_tres": "cpu=1,mem=15550M,node=1,billing=1,gres/gpu=8",
+        "allocated_tres": "cpu=64,mem=995200M,node=1,billing=64,gres/gpu=8",
+        "tres_per_node": null,
+        "reason": "None",
+        "scope": "Other project; not managed or modified by this six-route heartbeat."
+      },
+      "1281445": {
+        "job_name": "input-gradient-69bccca2",
+        "state": "RUNNING",
+        "request_tres": "cpu=8,mem=124400M,node=1,billing=8,gres/gpu=1",
+        "allocated_tres": "cpu=8,mem=124400M,node=1,billing=8,gres/gpu=1",
+        "tres_per_node": "gres/gpu:1",
+        "reason": "None",
+        "scope": "Other project; not managed or modified by this six-route heartbeat."
+      }
+    },
+    "interpretation": "Public unallocated GPUs do not guarantee an individual allocation. Running jobs allocate 1+8+1 GPUs by AllocTRES; TresPerNode N/A is not absence of GPU allocation. One other-project job is JobHeldUser; not unheld here."
+  },
+  "remote_supervisor": {
+    "status": "ACTIVE",
+    "root": "/data/run01/sczc063/yuzibo/projects/duca_multibranch_supervisor_recovery_20260907",
+    "receipt_age_seconds": 1,
+    "checked_at": "2026-09-09T03:43:22+00:00",
+    "dispatcher_status": "BLOCKED",
+    "dispatcher_mode": "plan",
+    "entries": []
+  },
+  "pro_consultation": {
+    "status": "BLOCKED_PREVIOUS_ATTEMPT_UNRESOLVED",
+    "last_attempt_record": "44_HEARTBEAT_EVIDENCE_20260909_1035.json",
+    "last_attempt_at_cst": "2026-09-09 10:40",
+    "error": "failed to write kernel assets: 系统找不到指定的路径。 (os error 3)",
+    "attempted_this_cycle": false,
+    "entered_ixbrowser": false,
+    "model_confirmed": false,
+    "materials_sent": false,
+    "consultation_completed": false,
+    "note": "No API, alternate browser or self-built helper bypass. No claim of a fresh failure this cycle."
+  },
+  "automation_update_tool_available": false,
+  "thread_coordination_tool_available": false,
+  "model_changes": [],
+  "config_changes": [],
+  "hyperparameter_trials": [],
+  "slurm_submissions": [],
+  "cancelled_jobs": [],
+  "historical_readonly_jobs": [
+    "1267920",
+    "1267921"
+  ],
+  "scientific_clarification_reused": "43号初版A Phase证据仍有效：semantic phase使用动作性logits及导数符合当时实现说明，缺center_scores直接融合不能独立证明漏接；phase-on/off仍不等于仅配额改变。没有新因果证明，不因低分盲改原设计。",
+  "collection_log": "C:/Users/skywalker/.fastctx/jobs/j-yub9by/output.log",
+  "final_catalog_refresh": {
+    "catalog_updated_at": "2026-09-09T03:47:02+00:00",
+    "remote_supervisor": {
+      "status": "ACTIVE",
+      "root": "/data/run01/sczc063/yuzibo/projects/duca_multibranch_supervisor_recovery_20260907",
+      "receipt_age_seconds": 37,
+      "checked_at": "2026-09-09T03:46:26+00:00",
+      "dispatcher_status": "BLOCKED",
+      "dispatcher_mode": "plan",
+      "entries": []
+    },
+    "report_json_valid": true
+  },
+  "local_validation": {
+    "focused_tests": {
+      "passed": 28,
+      "command": "python -m pytest tests/test_duca_catalog_heartbeat_freshness.py tests/test_c3_coarse_classifier_model_matrix.py tests/test_c3_asformer_delta_ledger_full_train.py -q",
+      "warning": "Existing yapf/lib2to3 DeprecationWarning"
+    },
+    "py_compile": "PASS: tools/bata/update_experiment_catalog.py, tools/train.py, tools/bata/train_lowres_action_probe.py",
+    "catalog": {
+      "entry_count": 22,
+      "unique_ids": 22,
+      "identity_metrics_trials_unchanged": true,
+      "all_local_states_unchanged": true,
+      "new_and_related_exact_clean": true,
+      "periodic_results": 60,
+      "independent_terminal_verified": 5,
+      "remote_supervisor": {
+        "status": "ACTIVE",
+        "root": "/data/run01/sczc063/yuzibo/projects/duca_multibranch_supervisor_recovery_20260907",
+        "receipt_age_seconds": 1,
+        "checked_at": "2026-09-09T03:43:22+00:00",
+        "dispatcher_status": "BLOCKED",
+        "dispatcher_mode": "plan",
+        "entries": []
+      },
+      "catalog_updated_at": "2026-09-09T03:43:22+00:00"
+    }
+  }
+}
