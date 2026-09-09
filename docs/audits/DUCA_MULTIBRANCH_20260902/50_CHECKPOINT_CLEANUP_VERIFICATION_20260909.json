@@ -1,0 +1,16 @@
+{
+  "checked_at": "2026-09-09T06:27:17.086344+00:00",
+  "status": "APPLIED",
+  "deleted_files": 803,
+  "deleted_bytes": 501769717837,
+  "deleted_allocated_bytes": 501769955840,
+  "kept_files": 101,
+  "found_weight_files": 101,
+  "missing_kept": [],
+  "unexpected_weights": [],
+  "remaining_deleted": [],
+  "temporary_checkpoint_files": [],
+  "errors": [],
+  "df": "Filesystem         1B-blocks          Used    Available Use% Mounted on\nJuiceFS:jfs    5827411623936 5320056623104 507355000832  92% /data\n",
+  "queue": "1278774|tr-786cf750fa74|PENDING\n1281582|dense-gt-gradients|RUNNING\n1281445|input-gradient-69bccca2|RUNNING\n"
+}

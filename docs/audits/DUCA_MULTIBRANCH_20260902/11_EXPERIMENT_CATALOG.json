@@ -1,6 +1,6 @@
 {
   "schema_version": "DUCA-EXPERIMENT-CATALOG-v001",
-  "last_updated_utc": "2026-09-09T05:57:46+00:00",
+  "last_updated_utc": "2026-09-09T06:37:04+00:00",
   "scope": "所有当前 DUCA/ZoomToken 代码实验及其独立修正路线；旧远端作业另列为不纳入结果",
   "repository": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702",
   "entries": [
@@ -711,7 +711,8 @@
           },
           "receipt_sha256": "4e88641c187eb29f75140c59dade549c3a0a3fd57945c865ef81d21363dd8a26",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal/on/gpu2_id0/test_guided/epoch_04/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 10,
@@ -726,7 +727,8 @@
           },
           "receipt_sha256": "c8c9ae21ecd2b13af91c583a542db4a5ab5b945007057faddacbfd826b19c301",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal/on/gpu2_id0/test_guided/epoch_09/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 15,
@@ -741,7 +743,8 @@
           },
           "receipt_sha256": "35f7f550790d9e46164f0693c8861141c6825594cc92661a5d8f48cb10fe78f6",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal/on/gpu2_id0/test_guided/epoch_14/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 20,
@@ -756,7 +759,8 @@
           },
           "receipt_sha256": "1e820bb5a9a1753486cacb03bf4b551b58d9274d4662b0416b35d37e677c870d",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal/on/gpu2_id0/test_guided/epoch_19/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 25,
@@ -771,7 +775,8 @@
           },
           "receipt_sha256": "1b2523042e0c576983ca36257a6224624cef7fcc628b2741da30f29006b278af",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal/on/gpu2_id0/test_guided/epoch_24/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 30,
@@ -786,7 +791,8 @@
           },
           "receipt_sha256": "7285cb88554f054dc5ea81869f5d7881b39346d02311f158cdc1ab7d9b2ff690",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal/on/gpu2_id0/test_guided/epoch_29/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 35,
@@ -801,7 +807,8 @@
           },
           "receipt_sha256": "437ac997c92ec239523fdfb09d5a815ff3b56f68cd112feb93aaefcbd071d409",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal/on/gpu2_id0/test_guided/epoch_34/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 40,
@@ -816,7 +823,8 @@
           },
           "receipt_sha256": "2f5191ba284a9f108d69d68d2ced63ad57ddf87f3c0a3b7cc83040de91807c52",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal/on/gpu2_id0/test_guided/epoch_39/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 45,
@@ -831,7 +839,8 @@
           },
           "receipt_sha256": "107c92e7e8f045113ac70e63d71fb3d91e185a67a53e21054739b7a55635f0fa",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal/on/gpu2_id0/test_guided/epoch_44/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 50,
@@ -846,7 +855,8 @@
           },
           "receipt_sha256": "78a7ba27c0106b6a04f5d4cbe969c580a2e3b2a952fb0a2463aea9c0025cf422",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal/on/gpu2_id0/test_guided/epoch_49/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 55,
@@ -861,7 +871,8 @@
           },
           "receipt_sha256": "1c107ebf445f040ad9aa908aa6a9036de775c02507e85706183e02c7e42b029e",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal/on/gpu2_id0/test_guided/epoch_54/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 60,
@@ -876,7 +887,8 @@
           },
           "receipt_sha256": "d48e366bd6cb60780ef6c4120d7ebb52745167c591c5f822ee72da6663793fa5",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal/on/gpu2_id0/test_guided/epoch_59/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": true
         }
       ],
       "best_test_checkpoint": {
@@ -887,7 +899,10 @@
         "verified_at": "2026-09-08T21:31:49+08:00",
         "ema_all_finite": true,
         "identity_matches": true,
-        "verification_reused": true
+        "verification_reused": true,
+        "weight_file_available": false,
+        "removal_reason": "用户授权仅保留最后可用checkpoint；历史最佳成绩不改写",
+        "cleanup_record": "50_CHECKPOINT_CLEANUP_20260909.json"
       },
       "terminal_training_evaluation": {
         "completed_epochs": 60,
@@ -923,7 +938,8 @@
           "mAP@0.5": 0,
           "mAP@0.6": 0,
           "mAP@0.7": 0
-        }
+        },
+        "checkpoint_weight_available": true
       },
       "test_guided_hyperparameter_trials": [],
       "next_action": "用户已于2026-09-09终止本任务实验；保留结果和原计划，未经此后明确授权不得恢复、修复重跑或重新提交",
@@ -1056,7 +1072,8 @@
       "local_head": "9a346f0d71e8870ad499bb0a58b9f1824b8904c0",
       "local_clean_tree": true,
       "execution_status": "USER_STOPPED",
-      "next_action_before_user_stop": "两项独立终态已封存，不重复评测或重训未变化的权重。开启近似最佳低7.1476点、终轮低7.1612点；下一步定位固定stride/shared低秩代理的残差拟合、学习与原设计差异，不能把它当作精确JVP/事件触发。所有新调参尝试必须留存；原版AdaTAD来源与比较协议单列"
+      "next_action_before_user_stop": "两项独立终态已封存，不重复评测或重训未变化的权重。开启近似最佳低7.1476点、终轮低7.1612点；下一步定位固定stride/shared低秩代理的残差拟合、学习与原设计差异，不能把它当作精确JVP/事件触发。所有新调参尝试必须留存；原版AdaTAD来源与比较协议单列",
+      "checkpoint_storage_note": "2026-09-09清理旧权重：best_test.pth副本已删除，最后epoch59 checkpoint保留；完整曲线与最佳成绩仍是历史测量记录，不承诺重跑已删除权重"
     },
     {
       "category": "test_guided_exploratory",
@@ -1090,7 +1107,8 @@
           },
           "receipt_sha256": "2f47ae495364a78c0a2a5160b32e8cb7df75f32accb9c0ef7beaaf53837f0eee",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal/off/gpu2_id0/test_guided/epoch_04/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 10,
@@ -1105,7 +1123,8 @@
           },
           "receipt_sha256": "bd391ac823db6941249a4b5469765326d7705e6819f5ca473f47390b9a71b27c",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal/off/gpu2_id0/test_guided/epoch_09/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 15,
@@ -1120,7 +1139,8 @@
           },
           "receipt_sha256": "811710018b46e64e9fe4d775a45a69946fea192c71453e728ae916a74988d14f",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal/off/gpu2_id0/test_guided/epoch_14/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 20,
@@ -1135,7 +1155,8 @@
           },
           "receipt_sha256": "59ec2afbd40b4b3e16d2e1a507bb6b6206978839af042ee891579b12b29df29a",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal/off/gpu2_id0/test_guided/epoch_19/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 25,
@@ -1150,7 +1171,8 @@
           },
           "receipt_sha256": "a6ee65ae3aece409fe897b13e0e10d1d03585c61681b029ae041db6c9404aebe",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal/off/gpu2_id0/test_guided/epoch_24/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 30,
@@ -1165,7 +1187,8 @@
           },
           "receipt_sha256": "de22e54ac6572efa19f66c6af590030719371bd3de244a5797f405ce738a5c01",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal/off/gpu2_id0/test_guided/epoch_29/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 35,
@@ -1180,7 +1203,8 @@
           },
           "receipt_sha256": "5ca976a7060c072ff84ea0f0a77f03c87f4ab2bf42ccca534765d1e99ef0c019",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal/off/gpu2_id0/test_guided/epoch_34/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 40,
@@ -1195,7 +1219,8 @@
           },
           "receipt_sha256": "c2708e8a90846b2612c3ed18009cc3b85f0fd88de77ab54bd2dfe007a906057f",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal/off/gpu2_id0/test_guided/epoch_39/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 45,
@@ -1210,7 +1235,8 @@
           },
           "receipt_sha256": "14b5e9a8541d0ef28ce6cfd896b4b166de766e3415ce228abc39757b1045b0f7",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal/off/gpu2_id0/test_guided/epoch_44/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 50,
@@ -1225,7 +1251,8 @@
           },
           "receipt_sha256": "b8d6db8f029754b05d7eddc02c7f412999bd219f2f6378222b385bfe501b17f3",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal/off/gpu2_id0/test_guided/epoch_49/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 55,
@@ -1240,7 +1267,8 @@
           },
           "receipt_sha256": "d8cc23db00434b2c05e022710ed5c2b05866b0ece4939c2e0f726fa2bcf3bbf9",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal/off/gpu2_id0/test_guided/epoch_54/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 60,
@@ -1255,7 +1283,8 @@
           },
           "receipt_sha256": "62731bbf4a13c7d0305cff361a7200f39ba7a4ff2fa8c85b43aa78a6ec7f15a4",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal/off/gpu2_id0/test_guided/epoch_59/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": true
         }
       ],
       "best_test_checkpoint": {
@@ -1266,7 +1295,10 @@
         "verified_at": "2026-09-08T21:31:51+08:00",
         "ema_all_finite": true,
         "identity_matches": true,
-        "verification_reused": true
+        "verification_reused": true,
+        "weight_file_available": false,
+        "removal_reason": "用户授权仅保留最后可用checkpoint；历史最佳成绩不改写",
+        "cleanup_record": "50_CHECKPOINT_CLEANUP_20260909.json"
       },
       "test_guided_hyperparameter_trials": [],
       "next_action": "用户已于2026-09-09终止本任务实验；保留结果和原计划，未经此后明确授权不得恢复、修复重跑或重新提交",
@@ -1304,7 +1336,8 @@
           "mAP@0.5": 0,
           "mAP@0.6": 0,
           "mAP@0.7": 0
-        }
+        },
+        "checkpoint_weight_available": true
       },
       "supporting_local_directories": [
         "E:/DeskTop/TAD/_duca_fix_worktrees/ettrc_eval5_terminal_20260909"
@@ -1435,7 +1468,8 @@
       "local_head": "9a346f0d71e8870ad499bb0a58b9f1824b8904c0",
       "local_clean_tree": true,
       "execution_status": "USER_STOPPED",
-      "next_action_before_user_stop": "两项独立终态已封存，不重复评测或重训未变化的权重。开启近似最佳低7.1476点、终轮低7.1612点；下一步定位固定stride/shared低秩代理的残差拟合、学习与原设计差异，不能把它当作精确JVP/事件触发。所有新调参尝试必须留存；原版AdaTAD来源与比较协议单列"
+      "next_action_before_user_stop": "两项独立终态已封存，不重复评测或重训未变化的权重。开启近似最佳低7.1476点、终轮低7.1612点；下一步定位固定stride/shared低秩代理的残差拟合、学习与原设计差异，不能把它当作精确JVP/事件触发。所有新调参尝试必须留存；原版AdaTAD来源与比较协议单列",
+      "checkpoint_storage_note": "2026-09-09清理旧权重：best_test.pth副本已删除，最后epoch59 checkpoint保留；完整曲线与最佳成绩仍是历史测量记录，不承诺重跑已删除权重"
     },
     {
       "category": "test_guided_exploratory",
@@ -1469,7 +1503,8 @@
           },
           "receipt_sha256": "757280365f62c14d3008d3092cf12f766fa7997b0e7b1a1f53ca6c843e4fedf1",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-UNIFORM_seed3407/gpu1_id0/test_guided/epoch_04/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 10,
@@ -1484,7 +1519,8 @@
           },
           "receipt_sha256": "95284e1ee73a1e0db56ec4b34db52aa2af72187a8a23b8b19f4476114f151ae2",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-UNIFORM_seed3407/gpu1_id0/test_guided/epoch_09/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 15,
@@ -1499,7 +1535,8 @@
           },
           "receipt_sha256": "68f14e1d49053f20d232ef9f6799be6d4c9ed45cd87b7e9017a7205851265bef",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-UNIFORM_seed3407/gpu1_id0/test_guided/epoch_14/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 20,
@@ -1514,7 +1551,8 @@
           },
           "receipt_sha256": "8be7bf747d4e47e0434362bb61fece6ceeb1dc0a0c0a20dd260a664fa906a13c",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-UNIFORM_seed3407/gpu1_id0/test_guided/epoch_19/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 25,
@@ -1529,7 +1567,8 @@
           },
           "receipt_sha256": "09eef79d887903612be241ca401cbfbbec3ca15d79a7455cb2828441dc9a6fa0",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-UNIFORM_seed3407/gpu1_id0/test_guided/epoch_24/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 30,
@@ -1544,7 +1583,8 @@
           },
           "receipt_sha256": "72d29618d87e6c6090dc9c21d5e5ec5f5c434e937a42f95e33b530aea4b912a6",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-UNIFORM_seed3407/gpu1_id0/test_guided/epoch_29/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 35,
@@ -1559,7 +1599,8 @@
           },
           "receipt_sha256": "4eab1f5028475505a2af7f8e9e8a5d6f4dd04d2594278c1aea9be8dbfb13a1d3",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-UNIFORM_seed3407/gpu1_id0/test_guided/epoch_34/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 40,
@@ -1574,7 +1615,8 @@
           },
           "receipt_sha256": "65a12c6f188cf6cae226dbc74880f0659feb67f80f38f296cc6f5835913f778b",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-UNIFORM_seed3407/gpu1_id0/test_guided/epoch_39/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 45,
@@ -1589,7 +1631,8 @@
           },
           "receipt_sha256": "f89b886fbf88f7c24126273350f707a6d8da512adfea56d79b2f63b75fe181eb",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-UNIFORM_seed3407/gpu1_id0/test_guided/epoch_44/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 50,
@@ -1604,7 +1647,8 @@
           },
           "receipt_sha256": "01677e9089374a3c1f252674d2604cb764a6a08ae24b3a030adef8c80083cdf7",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-UNIFORM_seed3407/gpu1_id0/test_guided/epoch_49/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 55,
@@ -1619,7 +1663,8 @@
           },
           "receipt_sha256": "6668043acf16b9a26c1de913778620d363fac5a889dd4cea05950f9720fd2c25",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-UNIFORM_seed3407/gpu1_id0/test_guided/epoch_54/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 60,
@@ -1634,7 +1679,8 @@
           },
           "receipt_sha256": "8bf130d56e8d9d8802f137b73dcd353af05cf9d981859c560a7fa015c6e8add8",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-UNIFORM_seed3407/gpu1_id0/test_guided/epoch_59/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": true
         }
       ],
       "best_test_checkpoint": {
@@ -1645,7 +1691,10 @@
         "verified_at": "2026-09-09T02:24:42.002796+08:00",
         "ema_all_finite": true,
         "identity_matches": true,
-        "verification_reused": true
+        "verification_reused": true,
+        "weight_file_available": false,
+        "removal_reason": "用户授权仅保留最后可用checkpoint；历史最佳成绩不改写",
+        "cleanup_record": "50_CHECKPOINT_CLEANUP_20260909.json"
       },
       "test_guided_hyperparameter_trials": [],
       "next_action": "用户已于2026-09-09终止本任务实验；保留结果和原计划，未经此后明确授权不得恢复、修复重跑或重新提交",
@@ -1688,7 +1737,8 @@
         "ema_finite": true,
         "all_parameter_states_6000": true,
         "parameter_participation_note": "Global successful-update counter is 6000. Per-parameter Adam steps are reported separately; lower-step parameter ownership/conditional participation has not been certified by this snapshot.",
-        "independent_terminal_receipt_status": "VERIFIED"
+        "independent_terminal_receipt_status": "VERIFIED",
+        "checkpoint_weight_available": true
       },
       "supporting_local_directories": [
         "E:/DeskTop/TAD/_duca_fix_worktrees/h65_eval5_terminal_20260909"
@@ -2052,7 +2102,8 @@
       "local_head": "629162cdddbe490d896899a067e9803e237df467",
       "local_clean_tree": true,
       "execution_status": "USER_STOPPED",
-      "next_action_before_user_stop": "保留完整曲线、最佳和独立终态负结果。43号确认初版A Phase说明就是动作性logits/导数，不能直接把缺center_scores fusion判为接线遗漏；当前对照仍同时改变采样评分/ST路径，真实参数梯度参与和因果归属待定位，不为追分盲改设计。"
+      "next_action_before_user_stop": "保留完整曲线、最佳和独立终态负结果。43号确认初版A Phase说明就是动作性logits/导数，不能直接把缺center_scores fusion判为接线遗漏；当前对照仍同时改变采样评分/ST路径，真实参数梯度参与和因果归属待定位，不为追分盲改设计。",
+      "checkpoint_storage_note": "2026-09-09清理旧权重：best_test.pth副本已删除，最后epoch59 checkpoint保留；完整曲线与最佳成绩仍是历史测量记录，不承诺重跑已删除权重"
     },
     {
       "category": "test_guided_exploratory",
@@ -2086,7 +2137,8 @@
           },
           "receipt_sha256": "33a03d72a781dd3e6f6a612997a8e12ae7fb303e194505d7b13088168e828940",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-PHASEOFF_seed3407/gpu1_id0/test_guided/epoch_04/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 10,
@@ -2101,7 +2153,8 @@
           },
           "receipt_sha256": "3f8e67ddc2782b3d39754ccd97ae170f7ceb4b442b84c07eff8a3ad1a420efc2",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-PHASEOFF_seed3407/gpu1_id0/test_guided/epoch_09/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 15,
@@ -2116,7 +2169,8 @@
           },
           "receipt_sha256": "71012477d4e1921ef3ab1c41524a50fbcadae4564f9f1ec62aa1b7142d7cf121",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-PHASEOFF_seed3407/gpu1_id0/test_guided/epoch_14/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 20,
@@ -2131,7 +2185,8 @@
           },
           "receipt_sha256": "a26c94199f1dc122c7526a6894f70376b712cb09a77a81901e54006424f79919",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-PHASEOFF_seed3407/gpu1_id0/test_guided/epoch_19/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 25,
@@ -2146,7 +2201,8 @@
           },
           "receipt_sha256": "e08d23d76b33cf0ef76f363f309d8cd53a0aedbd1a05b7ab749a441646adca1e",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-PHASEOFF_seed3407/gpu1_id0/test_guided/epoch_24/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 30,
@@ -2161,7 +2217,8 @@
           },
           "receipt_sha256": "c46730515ac0e622b22cfc81454ca683956c16937034ceddbd2d8c8085420a18",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-PHASEOFF_seed3407/gpu1_id0/test_guided/epoch_29/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 35,
@@ -2176,7 +2233,8 @@
           },
           "receipt_sha256": "6ba33e5480140ab924f056aecf60147cad675e565ccc6e13b7cd2991bf16ace8",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-PHASEOFF_seed3407/gpu1_id0/test_guided/epoch_34/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 40,
@@ -2191,7 +2249,8 @@
           },
           "receipt_sha256": "63189b80904ab9ee4df376d09e4ba42e5512894a29dd9460c3ddb1605a639ba4",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-PHASEOFF_seed3407/gpu1_id0/test_guided/epoch_39/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 45,
@@ -2206,7 +2265,8 @@
           },
           "receipt_sha256": "3fabb2709cec222ff9a19024378bf3742fae7e801fa676511254fd7716680e7d",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-PHASEOFF_seed3407/gpu1_id0/test_guided/epoch_44/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 50,
@@ -2221,7 +2281,8 @@
           },
           "receipt_sha256": "f77e5ca2f718bfc8b9b2785562ef62670d69d60d294ec8fe611cb4303bd4172d",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-PHASEOFF_seed3407/gpu1_id0/test_guided/epoch_49/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 55,
@@ -2236,7 +2297,8 @@
           },
           "receipt_sha256": "d5b9fe73cb5c71eef325ba30f8e85184e9c8ad4f739940bb254fb10a97af2fa1",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-PHASEOFF_seed3407/gpu1_id0/test_guided/epoch_54/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 60,
@@ -2251,7 +2313,8 @@
           },
           "receipt_sha256": "66128a10607a1e865a28f1ed07c5e6893f83077c977c3a6f7c9f0a196535b3c4",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-PHASEOFF_seed3407/gpu1_id0/test_guided/epoch_59/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": true
         }
       ],
       "best_test_checkpoint": {
@@ -2262,7 +2325,10 @@
         "verified_at": "2026-09-09T03:26:17.628583+08:00",
         "ema_all_finite": true,
         "identity_matches": true,
-        "verification_reused": false
+        "verification_reused": false,
+        "weight_file_available": false,
+        "removal_reason": "用户授权仅保留最后可用checkpoint；历史最佳成绩不改写",
+        "cleanup_record": "50_CHECKPOINT_CLEANUP_20260909.json"
       },
       "test_guided_hyperparameter_trials": [],
       "next_action": "用户已于2026-09-09终止本任务实验；保留结果和原计划，未经此后明确授权不得恢复、修复重跑或重新提交",
@@ -2308,7 +2374,8 @@
         "ema_finite": true,
         "all_parameter_states_6000": false,
         "parameter_participation_note": "Global successful-update counter is 6000. Per-parameter Adam steps are reported separately; lower-step parameter ownership/conditional participation has not been certified by this snapshot.",
-        "independent_terminal_receipt_status": "VERIFIED"
+        "independent_terminal_receipt_status": "VERIFIED",
+        "checkpoint_weight_available": true
       },
       "supporting_local_directories": [
         "E:/DeskTop/TAD/_duca_fix_worktrees/h65_eval5_terminal_20260909"
@@ -2675,7 +2742,8 @@
       "local_head": "629162cdddbe490d896899a067e9803e237df467",
       "local_clean_tree": true,
       "execution_status": "USER_STOPPED",
-      "next_action_before_user_stop": "保留完整曲线、最佳和独立终态负结果。43号确认初版A Phase说明就是动作性logits/导数，不能直接把缺center_scores fusion判为接线遗漏；当前对照仍同时改变采样评分/ST路径，真实参数梯度参与和因果归属待定位，不为追分盲改设计。"
+      "next_action_before_user_stop": "保留完整曲线、最佳和独立终态负结果。43号确认初版A Phase说明就是动作性logits/导数，不能直接把缺center_scores fusion判为接线遗漏；当前对照仍同时改变采样评分/ST路径，真实参数梯度参与和因果归属待定位，不为追分盲改设计。",
+      "checkpoint_storage_note": "2026-09-09清理旧权重：best_test.pth副本已删除，最后epoch59 checkpoint保留；完整曲线与最佳成绩仍是历史测量记录，不承诺重跑已删除权重"
     },
     {
       "category": "test_guided_exploratory",
@@ -2709,7 +2777,8 @@
           },
           "receipt_sha256": "d325b9066d0eab01b9e9c977707b76e73b4eb80e17c59e71c200019175b590cf",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-PHASEON_seed3407/gpu1_id0/test_guided/epoch_04/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 10,
@@ -2724,7 +2793,8 @@
           },
           "receipt_sha256": "389fe89d49d59ce1783179cfc5247536cce128a89099072ee0c06402a5525476",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-PHASEON_seed3407/gpu1_id0/test_guided/epoch_09/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 15,
@@ -2739,7 +2809,8 @@
           },
           "receipt_sha256": "676ce60308351accad2b839c1c3306c638c6eb2e713ec5f1012e71ae7ba2668a",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-PHASEON_seed3407/gpu1_id0/test_guided/epoch_14/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 20,
@@ -2754,7 +2825,8 @@
           },
           "receipt_sha256": "f3fafcf3dd0871e95ad80104f0b5bf9f810d160d4f49fa4f6411abbd46b4e3b0",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-PHASEON_seed3407/gpu1_id0/test_guided/epoch_19/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 25,
@@ -2769,7 +2841,8 @@
           },
           "receipt_sha256": "60cbef35bd27dbeef9f8dc296d9fca06526bba422c394b7b077bcaed35a47e0b",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-PHASEON_seed3407/gpu1_id0/test_guided/epoch_24/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 30,
@@ -2784,7 +2857,8 @@
           },
           "receipt_sha256": "0a8cb947156a307e4acff406b31b221b9a31e6dc915096c4ca819084f8117cfa",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-PHASEON_seed3407/gpu1_id0/test_guided/epoch_29/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 35,
@@ -2799,7 +2873,8 @@
           },
           "receipt_sha256": "6e662d0f61bc5b8f2227b84ae1531f11176b47fdb0af8d47360c081b497c1387",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-PHASEON_seed3407/gpu1_id0/test_guided/epoch_34/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 40,
@@ -2814,7 +2889,8 @@
           },
           "receipt_sha256": "7ac310014698b10e29051ea7ada8fac0538de15aa18864c71f977d62a894edb6",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-PHASEON_seed3407/gpu1_id0/test_guided/epoch_39/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 45,
@@ -2829,7 +2905,8 @@
           },
           "receipt_sha256": "48db5cc7315dca2b1c3a66ee1ee7965368c3d7d419bc2e7d9919de47abc89cba",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-PHASEON_seed3407/gpu1_id0/test_guided/epoch_44/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 50,
@@ -2844,7 +2921,8 @@
           },
           "receipt_sha256": "78221426fd90baaa6636b6dc4b83384d9695d42bddc6506ab6f962c472bed07a",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-PHASEON_seed3407/gpu1_id0/test_guided/epoch_49/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 55,
@@ -2859,7 +2937,8 @@
           },
           "receipt_sha256": "1de9f261b7055cd7726f3bda321813110b731bf914e3f5bee8055c37f7496578",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-PHASEON_seed3407/gpu1_id0/test_guided/epoch_54/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": false
         },
         {
           "completed_epochs": 60,
@@ -2874,7 +2953,8 @@
           },
           "receipt_sha256": "e325a3c00dcdc4f3b97100d13ce730774c69a34c7dc70e7b6be380a7e48770ff",
           "receipt_path": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-PHASEON_seed3407/gpu1_id0/test_guided/epoch_59/metrics.json",
-          "self_hash_valid": true
+          "self_hash_valid": true,
+          "checkpoint_weight_available": true
         }
       ],
       "best_test_checkpoint": {
@@ -2885,7 +2965,10 @@
         "verified_at": "2026-09-09T02:24:43.783488+08:00",
         "ema_all_finite": true,
         "identity_matches": true,
-        "verification_reused": true
+        "verification_reused": true,
+        "weight_file_available": false,
+        "removal_reason": "用户授权仅保留最后可用checkpoint；历史最佳成绩不改写",
+        "cleanup_record": "50_CHECKPOINT_CLEANUP_20260909.json"
       },
       "test_guided_hyperparameter_trials": [],
       "next_action": "用户已于2026-09-09终止本任务实验；保留结果和原计划，未经此后明确授权不得恢复、修复重跑或重新提交",
@@ -2930,7 +3013,8 @@
         "ema_finite": true,
         "all_parameter_states_6000": false,
         "parameter_participation_note": "Global successful-update counter is 6000. Per-parameter Adam steps are reported separately; lower-step parameter ownership/conditional participation has not been certified by this snapshot.",
-        "independent_terminal_receipt_status": "VERIFIED"
+        "independent_terminal_receipt_status": "VERIFIED",
+        "checkpoint_weight_available": true
       },
       "supporting_local_directories": [
         "E:/DeskTop/TAD/_duca_fix_worktrees/h65_eval5_terminal_20260909"
@@ -3296,7 +3380,8 @@
       "local_head": "629162cdddbe490d896899a067e9803e237df467",
       "local_clean_tree": true,
       "execution_status": "USER_STOPPED",
-      "next_action_before_user_stop": "保留完整曲线、最佳和独立终态负结果。43号确认初版A Phase说明就是动作性logits/导数，不能直接把缺center_scores fusion判为接线遗漏；当前对照仍同时改变采样评分/ST路径，真实参数梯度参与和因果归属待定位，不为追分盲改设计。"
+      "next_action_before_user_stop": "保留完整曲线、最佳和独立终态负结果。43号确认初版A Phase说明就是动作性logits/导数，不能直接把缺center_scores fusion判为接线遗漏；当前对照仍同时改变采样评分/ST路径，真实参数梯度参与和因果归属待定位，不为追分盲改设计。",
+      "checkpoint_storage_note": "2026-09-09清理旧权重：best_test.pth副本已删除，最后epoch59 checkpoint保留；完整曲线与最佳成绩仍是历史测量记录，不承诺重跑已删除权重"
     },
     {
       "category": "related_task_repair",
@@ -3461,6 +3546,16 @@
       "local_clean_tree": true
     }
   ],
+  "checkpoint_cleanup": {
+    "status": "APPLIED",
+    "applied_at_utc": "2026-09-09T06:25:38.472041+00:00",
+    "record": "50_CHECKPOINT_CLEANUP_20260909.json",
+    "deleted_files": 803,
+    "deleted_bytes": 501769717837,
+    "retained_files": 101,
+    "policy": "用户授权每个独立运行只保留最后可加载且model/EMA参数有限的checkpoint；日志/配置/metadata/metrics不改写，可加载不等于正式性能有效，其他任务不清理",
+    "storage_after": "2026-09-09 14:27 CST，/data可用507355000832 bytes，使用率92%；后续不自动轮询或重启实验"
+  },
   "execution_control": {
     "status": "USER_STOPPED",
     "stopped_at_utc": "2026-09-09T05:52:44.003958+00:00",

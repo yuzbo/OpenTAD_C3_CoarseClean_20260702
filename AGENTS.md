@@ -1,5 +1,19 @@
 @RTK.md
 
+## User checkpoint cleanup authorization (2026-09-09)
+
+After the stop order, the user authorized deleting historical checkpoints and
+retaining only the last usable checkpoint per independent experiment/run/seed.
+This overrides checkpoint-retention requirements only for the explicitly owned
+roots in 50_CHECKPOINT_CLEANUP_SCOPE_20260909.json. CPU deserialization and
+finite-parameter checks, file cleanup, and maintenance records are authorized;
+training, GPU evaluation, retries and supervision remain stopped. Keep the
+retained checkpoint intact with its EMA/optimizer state and required metadata.
+Keep logs, configurations and metric receipts. Earlier best-test weight copies
+may be removed under this authorization; disclose their removal without
+rewriting their historical measured scores. Other tasks, protected historical
+BAFDR runs and external pretrained models remain outside the cleanup scope.
+
 ## User stop order (2026-09-09, effective immediately)
 
 The user has terminated all experiments owned by this six-route supervisory

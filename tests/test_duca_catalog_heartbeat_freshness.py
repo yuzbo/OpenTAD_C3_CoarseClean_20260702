@@ -77,3 +77,19 @@ def test_user_stop_preserves_results_without_contacting_remote(monkeypatch):
             assert entry["next_action_before_user_stop"] == original["next_action"]
             assert "未经" in entry["next_action"]
     assert "用户已于2026-09-09终止" in catalog.md_text(payload)
+
+
+def test_cleanup_marks_old_weights_unavailable_but_keeps_scores(monkeypatch):
+    monkeypatch.setattr(catalog, "git_head", lambda path: "unchanged")
+    monkeypatch.setattr(catalog, "clean_tree", lambda path: True)
+    originals = {entry["internal_id"]: entry for entry in catalog.route_entries()}
+    payload = catalog.catalog()
+    selected = [entry for entry in payload["entries"] if entry.get("best_test_checkpoint")]
+    assert len(selected) == 5
+    for entry in selected:
+        assert entry["best_test_checkpoint"]["weight_file_available"] is False
+        assert entry["best_test_checkpoint"]["average_mAP"] == originals[entry["internal_id"]]["best_test_checkpoint"]["average_mAP"]
+        assert sum(row["checkpoint_weight_available"] for row in entry["periodic_results"]) == 1
+        assert entry["terminal_training_evaluation"]["checkpoint_weight_available"] is True
+    assert payload["checkpoint_cleanup"]["deleted_files"] == 803
+    assert payload["checkpoint_cleanup"]["retained_files"] == 101

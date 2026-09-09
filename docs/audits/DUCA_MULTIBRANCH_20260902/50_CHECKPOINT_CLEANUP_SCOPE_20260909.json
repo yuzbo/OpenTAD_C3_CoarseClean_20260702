@@ -1,0 +1,28 @@
+{
+  "purpose": "User-authorized checkpoint cleanup on 2026-09-09; one last loadable finite checkpoint per independent run/arm/seed; no experiment restart.",
+  "remote_base": "/data/run01/sczc063/yuzibo",
+  "roots": [
+    "/data/run01/sczc063/yuzibo/experiments/bafdr_successful_updates_710ce8a6",
+    "/data/run01/sczc063/yuzibo/experiments/ctdp_coordinate_fe1c53db",
+    "/data/run01/sczc063/yuzibo/experiments/ctdp_successful_updates_78cde1be",
+    "/data/run01/sczc063/yuzibo/experiments/duca_ctdp_c0fae67a_seed3407",
+    "/data/run01/sczc063/yuzibo/experiments/duca_evidence_77c8d173_seed8261",
+    "/data/run01/sczc063/yuzibo/experiments/duca_evidence_normalized_246058f2",
+    "/data/run01/sczc063/yuzibo/experiments/duca_evidence_optimizer_1570a725",
+    "/data/run01/sczc063/yuzibo/experiments/duca_evidence_remaining_73bdd34a",
+    "/data/run01/sczc063/yuzibo/experiments/duca_evidence_storage_resume_ce767b4d",
+    "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407",
+    "/data/run01/sczc063/yuzibo/experiments/h65_pro_fullmatrix_e553a5a4",
+    "/data/run01/sczc063/yuzibo/experiments/h65_pro_paction_30514803",
+    "/data/run01/sczc063/yuzibo/experiments/h65_pro_physical_optimizer_f2068e18",
+    "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407",
+    "/data/run01/sczc063/yuzibo/experiments/zoomtoken_bafdr_539287fa_seed4407",
+    "/data/run01/sczc063/yuzibo/experiments/zoomtoken_ettrc_74473c27_seed4407",
+    "/data/run01/sczc063/yuzibo/duca_evidence_recovery_single_seed_8261_647151fa_20260902_092503",
+    "/data/run01/sczc063/yuzibo/projects/duca_ctdp_revised_20260902",
+    "/data/run01/sczc063/yuzibo/projects/duca_unified_single_seed_20260903",
+    "/data/run01/sczc063/yuzibo/projects/zoomtoken_et_trc_correction_20260902",
+    "/data/run01/sczc063/yuzibo/projects/zoomtoken_et_trc_fix_be330c07"
+  ],
+  "excluded": "All other roots, including separately owned historical BAFDR compute trees, H65 matched90, original AdaTAD/pretrained checkpoints, GeoSparse, BCR, and older unrelated DUCA/ZoomToken routes."
+}

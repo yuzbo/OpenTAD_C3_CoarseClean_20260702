@@ -8,7 +8,7 @@ import datetime as dt
 import json
 import os
 import subprocess
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 
@@ -588,6 +588,10 @@ def route_entries() -> list[dict[str, Any]]:
 
 
 def catalog() -> dict[str, Any]:
+    cleanup_name = "50_CHECKPOINT_CLEANUP_20260909.json"
+    cleanup = json.loads((AUDIT / cleanup_name).read_text(encoding="utf-8"))
+    retained = {run["kept"]["path"] for run in cleanup["runs"] if run["kept"]}
+    removed = {item["path"] for run in cleanup["runs"] for item in run["remove"]}
     entries = route_entries()
     for entry in entries:
         entry["local_head"] = git_head(entry["local_directory"])
@@ -596,12 +600,34 @@ def catalog() -> dict[str, Any]:
             entry["execution_status"] = "USER_STOPPED"
             entry["next_action_before_user_stop"] = entry["next_action"]
             entry["next_action"] = "用户已于2026-09-09终止本任务实验；保留结果和原计划，未经此后明确授权不得恢复、修复重跑或重新提交"
+        best = entry.get("best_test_checkpoint")
+        if best and best["path"] in removed:
+            best["weight_file_available"] = False
+            best["removal_reason"] = "用户授权仅保留最后可用checkpoint；历史最佳成绩不改写"
+            best["cleanup_record"] = cleanup_name
+            run_root = PurePosixPath(best["path"]).parent.parent
+            entry["checkpoint_storage_note"] = "2026-09-09清理旧权重：best_test.pth副本已删除，最后epoch59 checkpoint保留；完整曲线与最佳成绩仍是历史测量记录，不承诺重跑已删除权重"
+            for record in entry.get("periodic_results", []):
+                path = str(run_root / "checkpoint" / f"epoch_{record['completed_epochs'] - 1}.pth")
+                record["checkpoint_weight_available"] = path in retained
+            terminal = entry.get("terminal_training_evaluation", {})
+            terminal["checkpoint_weight_available"] = terminal.get("checkpoint_path") in retained
     return {
         "schema_version": "DUCA-EXPERIMENT-CATALOG-v001",
         "last_updated_utc": utc_now(),
         "scope": "所有当前 DUCA/ZoomToken 代码实验及其独立修正路线；旧远端作业另列为不纳入结果",
         "repository": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702",
         "entries": entries,
+        "checkpoint_cleanup": {
+            "status": cleanup["status"],
+            "applied_at_utc": cleanup["applied_at_utc"],
+            "record": cleanup_name,
+            "deleted_files": cleanup["deleted_files"],
+            "deleted_bytes": cleanup["deleted_bytes"],
+            "retained_files": cleanup["kept_files"],
+            "policy": "用户授权每个独立运行只保留最后可加载且model/EMA参数有限的checkpoint；日志/配置/metadata/metrics不改写，可加载不等于正式性能有效，其他任务不清理",
+            "storage_after": "2026-09-09 14:27 CST，/data可用507355000832 bytes，使用率92%；后续不自动轮询或重启实验",
+        },
         "execution_control": {
             "status": "USER_STOPPED",
             "stopped_at_utc": "2026-09-09T05:52:44.003958+00:00",
@@ -710,6 +736,8 @@ def md_text(payload: dict[str, Any]) -> str:
         "",
         f"**用户已于2026-09-09终止本任务所有实验进程。当前状态：`{payload['execution_control']['status']}`。运行中/排队中的本任务作业均为0，远端每分钟监督进程已停止；未经后续明确授权不得重启或重提。** 停止记录：[{payload['execution_control']['evidence']}]({payload['execution_control']['evidence']})。{payload['execution_control']['local_heartbeat']}。",
         "",
+        f"**历史权重已按用户授权清理**：删除{payload['checkpoint_cleanup']['deleted_files']}份（约{payload['checkpoint_cleanup']['deleted_bytes'] / 1e9:.2f} GB），每个独立运行保留最后可用checkpoint，共{payload['checkpoint_cleanup']['retained_files']}份。旧best副本和中间epoch权重已删，历史成绩及曲线不改写。完整保留/删除清单：[{payload['checkpoint_cleanup']['record']}]({payload['checkpoint_cleanup']['record']})。{payload['checkpoint_cleanup']['storage_after']}。以下较早审计中的“所有权重保留”是清理前历史状态，不代表当前存储状态。",
+        "",
         "本表用完整中文描述实验目的；括号中的内部 ID 仅用于与 Slurm/manifest 对照。前六行为9月2日冻结历史快照，当前后继修复另行列示，不把历史准入状态当最新状态。每一行都是独立代码身份，结果不能跨 SHA 转移。",
         "",
         f"基线口径纠正：[{payload['baseline_reference_note']}]({payload['baseline_reference_note']})。{payload['baseline_comparison_policy']}。",
@@ -751,6 +779,8 @@ def md_text(payload: dict[str, Any]) -> str:
         deployment = entry["deployment_status"]
         if entry.get("current_cycle"):
             deployment += f"<br>本轮更新：{entry['current_cycle']}"
+        if entry.get("checkpoint_storage_note"):
+            deployment += f"<br>权重保留：{entry['checkpoint_storage_note']}"
         if entry.get("receipt_recheck"):
             deployment += f"<br>收据复核：{entry['receipt_recheck']}"
         if entry.get("admission_progress"):
