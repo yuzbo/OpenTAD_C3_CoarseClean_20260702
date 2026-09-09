@@ -25,3 +25,8 @@ python -m pytest tests/test_sci3_training_gradient_parity.py tests/test_sci3_tra
 
 该入口是独立测量修订，旧诊断准入未放宽。实际CPU验证、GPU排队和现场证据记录于外部
 执行包；没有真实GPU产物前不称已定位B20差异。部署必须使用新stage，不覆盖245705的旧输出。
+
+2026-09-09 CPU验证：实现1e22e14a87c883fe6fce8d4c0c2ce565351b63b8在独立远端干净checkout
+通过11项focused检查（pytest53.32秒，完整进程56.93秒）。包含真实小规模B的重复ordinary、
+分量total逐参数比较、状态/RNG恢复、等范数异方向拒绝、非有限/断连拒绝和失配产物保留。
+这些是合成输入CPU证据，不是AMP或B20生产GPU结果。原GPU失败保持原身份与原容差。
