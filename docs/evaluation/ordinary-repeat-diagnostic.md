@@ -32,3 +32,7 @@ python /ABS/RESEARCH/geosparse_research/ordinary_repeat_diagnostic.py \
 ```
 
 两个命令各保存独立退出状态。source失败不能吞掉完整日志，strict也不得以warn_only替代。
+
+2026-09-09：实现2214cc512610fbe252ca3047cf80014c1546697c在干净远端CPU checkout
+通过4项focused检查（pytest56.86秒，完整进程60.44秒），覆盖实际小型B的计划/loss/梯度
+重复、完整状态恢复、等数量异位置拒绝及backward失败保留forward。这不是生产CUDA诊断。
