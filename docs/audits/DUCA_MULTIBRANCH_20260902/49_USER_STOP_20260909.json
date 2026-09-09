@@ -1,0 +1,156 @@
+{
+  "schema_version": "DUCA-USER-STOP-v001",
+  "user_request": "终止你负责的所有实验进程",
+  "scope": "本任务负责的 OpenTAD 六路线、其训练/评测/提交进程和远端每分钟监督器；不操作其他任务",
+  "status": "USER_STOPPED",
+  "inspected_at_utc": "2026-09-09T05:51:27.035742+00:00",
+  "stopped_at_utc": "2026-09-09T05:52:44.003958+00:00",
+  "verified_at_utc": "2026-09-09T05:53:54.325934+00:00",
+  "active_or_pending_owned_slurm_jobs": [],
+  "scancel_jobs": [],
+  "terminated_processes": [
+    {
+      "pid": 1914589,
+      "uid": 1258,
+      "state": "S",
+      "ppid": 1,
+      "start_ticks": 55458971,
+      "argv": [
+        "/data/run01/sczc063/yuzibo/conda_envs/opentad/bin/python",
+        "/data/run01/sczc063/yuzibo/projects/duca_multibranch_supervisor_20260902/duca_remote_supervisor.py",
+        "--root",
+        "/data/run01/sczc063/yuzibo/projects/duca_multibranch_supervisor_recovery_20260907",
+        "--queue",
+        "/data/run01/sczc063/yuzibo/projects/duca_multibranch_supervisor_20260902/duca_remote_supervisor_queue.json",
+        "--dispatcher",
+        "/data/run01/sczc063/yuzibo/projects/duca_multibranch_supervisor_20260902/dispatcher.py",
+        "--manifest",
+        "/data/run01/sczc063/yuzibo/projects/duca_multibranch_supervisor_20260902/manifest.json",
+        "--admission",
+        "/data/run01/sczc063/yuzibo/projects/duca_multibranch_supervisor_20260902/admission.json",
+        "--interval",
+        "60"
+      ],
+      "signal": "SIGTERM",
+      "children": [],
+      "after_5_seconds": null
+    }
+  ],
+  "remaining_supervisor_processes": [],
+  "broader_route_process_check": {
+    "checked_at": "2026-09-09T05:57:38.068639+00:00",
+    "route_keyword_processes": [
+      {
+        "pid": 361594,
+        "cmd": "/data/run01/sczc063/yuzibo/conda_envs/opentad/bin/python /data/run01/sczc063/yuzibo/geosparse_official_20260908/audit_repair_b70ae056/control/audit_queue.py --manifest /data/run01/sczc063/yuzibo/geosparse_official_20260908/audit_repair_b70ae056/control/experiments.jsonl --bindings /data/run01/sczc063/yuzibo/geosparse_official_20260908/audit_repair_b70ae056/control/bindings.json ",
+        "cwd": "/data/run01/sczc063/yuzibo/geosparse_official_20260908/audit_repair_b70ae056/snapshots/b70ae056"
+      },
+      {
+        "pid": 4169978,
+        "cmd": "/data/run01/sczc063/yuzibo/conda_envs/opentad/bin/python /data/run01/sczc063/yuzibo/geosparse_official_20260908/audit_repair_b70ae056_secondary/control/audit_queue.py --manifest /data/run01/sczc063/yuzibo/geosparse_official_20260908/audit_repair_b70ae056_secondary/control/experiments.jsonl --bindings /data/run01/sczc063/yuzibo/geosparse_official_20260908/audit_repair_b70ae056_secondary/control/bindings.json ",
+        "cwd": "/data/run01/sczc063/yuzibo/geosparse_official_20260908/audit_repair_b70ae056_secondary/snapshots/b70ae056"
+      }
+    ],
+    "decision": "两个匹配项均为独立 GeoSparse 项目的 audit_queue.py；只读核对，未终止"
+  },
+  "remote_supervisor_root": "/data/run01/sczc063/yuzibo/projects/duca_multibranch_supervisor_recovery_20260907",
+  "last_remote_poll_receipt_at_utc": "2026-09-09T05:52:14+00:00",
+  "cron": {
+    "returncode": 1,
+    "stdout": "",
+    "stderr": "no crontab for sczc063\n"
+  },
+  "local_inspection": {
+    "checked_at": "2026-09-09T13:54:05.6203202+08:00",
+    "processes": [],
+    "scheduled_tasks": []
+  },
+  "local_heartbeat": {
+    "id": "opentad-c3-duca",
+    "config_path": "C:/Users/skywalker/.codex/automations/opentad-c3-duca/automation.toml",
+    "observed_status": "ACTIVE",
+    "disabled": false,
+    "limitation": "automation_update 未出现在可用工具清单；本会话无法通过支持的管理接口停用，不把远端进程终止冒称心跳任务已停用",
+    "interim_instruction": "coordination/AGENTS.md 已记录用户停止命令；任何后续旧心跳禁止连接集群、重启监督器或重提实验，等待用户明确恢复"
+  },
+  "preserved_other_jobs": [
+    {
+      "job_id": "1278774",
+      "JobName": "tr-786cf750fa74",
+      "JobState": "PENDING",
+      "WorkDir": "/data/run01/sczc063/yuzibo/geosparse_official_20260908/audit_repair_b70ae056_secondary/snapshots/b70ae056",
+      "StdOut": "/data/run01/sczc063/yuzibo/geosparse_official_20260908/audit_repair_b70ae056_secondary/runs/b70ae056/runs/tr-786cf750fa74/attempt02-1278774.out",
+      "ReqTRES": "cpu=8,mem=124400M,node=1,billing=8,gres/gpu=1",
+      "AllocTRES": "(null)"
+    },
+    {
+      "job_id": "1281445",
+      "JobName": "input-gradient-69bccca2",
+      "JobState": "RUNNING",
+      "WorkDir": "/data/run01/sczc063/yuzibo/dense_gradient_20260909/source_69bccca2",
+      "StdOut": "/data/run01/sczc063/yuzibo/dense_gradient_20260909/gradient-1281445.stdout.txt",
+      "ReqTRES": "cpu=8,mem=124400M,node=1,billing=8,gres/gpu=1",
+      "AllocTRES": "cpu=8,mem=124400M,node=1,billing=8,gres/gpu=1"
+    },
+    {
+      "job_id": "1281582",
+      "JobName": "dense-gt-gradients",
+      "JobState": "RUNNING",
+      "WorkDir": "/data/home/sczc063",
+      "StdOut": "/data/run01/sczc063/yuzibo/dense_gt_gradient_20260909/gt-gradient-1281582.stdout.txt",
+      "ReqTRES": "cpu=8,mem=124400M,node=1,billing=8,gres/gpu=1",
+      "AllocTRES": "cpu=8,mem=124400M,node=1,billing=8,gres/gpu=1"
+    },
+    {
+      "job_id": "1281614_0",
+      "JobName": "xsrc-attack-pilot",
+      "JobState": "RUNNING",
+      "WorkDir": "/data/run01/sczc063/huangjian/SEED/SEED-main",
+      "StdOut": "/data/home/sczc063/run/huangjian/SEED/SEED-main/logs/xsrc-attack-pilot-1281614_0.out",
+      "ReqTRES": "cpu=1,mem=15550M,node=1,billing=1,gres/gpu=1",
+      "AllocTRES": "cpu=8,mem=124400M,node=1,billing=8,gres/gpu=1"
+    },
+    {
+      "job_id": "1281614_1",
+      "JobName": "xsrc-attack-pilot",
+      "JobState": "RUNNING",
+      "WorkDir": "/data/run01/sczc063/huangjian/SEED/SEED-main",
+      "StdOut": "/data/home/sczc063/run/huangjian/SEED/SEED-main/logs/xsrc-attack-pilot-1281614_1.out",
+      "ReqTRES": "cpu=1,mem=15550M,node=1,billing=1,gres/gpu=1",
+      "AllocTRES": "cpu=8,mem=124400M,node=1,billing=8,gres/gpu=1"
+    },
+    {
+      "job_id": "1281614_2",
+      "JobName": "xsrc-attack-pilot",
+      "JobState": "RUNNING",
+      "WorkDir": "/data/run01/sczc063/huangjian/SEED/SEED-main",
+      "StdOut": "/data/home/sczc063/run/huangjian/SEED/SEED-main/logs/xsrc-attack-pilot-1281614_2.out",
+      "ReqTRES": "cpu=1,mem=15550M,node=1,billing=1,gres/gpu=1",
+      "AllocTRES": "cpu=8,mem=124400M,node=1,billing=8,gres/gpu=1"
+    },
+    {
+      "job_id": "1281614_3",
+      "JobName": "xsrc-attack-pilot",
+      "JobState": "RUNNING",
+      "WorkDir": "/data/run01/sczc063/huangjian/SEED/SEED-main",
+      "StdOut": "/data/home/sczc063/run/huangjian/SEED/SEED-main/logs/xsrc-attack-pilot-1281614_3.out",
+      "ReqTRES": "cpu=1,mem=15550M,node=1,billing=1,gres/gpu=1",
+      "AllocTRES": "cpu=8,mem=124400M,node=1,billing=8,gres/gpu=1"
+    }
+  ],
+  "queue_after": [
+    "1278774|tr-786cf750fa74|PENDING|JobHeldUser|gres/gpu:1",
+    "1281614_0|xsrc-attack-pilot|RUNNING|None|N/A",
+    "1281614_1|xsrc-attack-pilot|RUNNING|None|N/A",
+    "1281614_2|xsrc-attack-pilot|RUNNING|None|N/A",
+    "1281614_3|xsrc-attack-pilot|RUNNING|None|N/A",
+    "1281582|dense-gt-gradients|RUNNING|None|gres/gpu:1",
+    "1281445|input-gradient-69bccca2|RUNNING|None|gres/gpu:1"
+  ],
+  "artifact_policy": "未删除、覆盖或迁移任何日志/checkpoint/receipt；已完成结果和未解决失败保留，不以停止命令改写实验结论",
+  "evidence_source_local_logs": [
+    "C:/Users/skywalker/.fastctx/jobs/j-8rr5vf/output.log",
+    "C:/Users/skywalker/.fastctx/jobs/j-kook4w/output.log"
+  ],
+  "next_action": "保持停止。不得自动修复、重跑、重提或恢复监督，直到用户在停止命令之后明确授权恢复。"
+}

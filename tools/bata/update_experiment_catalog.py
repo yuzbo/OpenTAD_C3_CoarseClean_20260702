@@ -592,13 +592,36 @@ def catalog() -> dict[str, Any]:
     for entry in entries:
         entry["local_head"] = git_head(entry["local_directory"])
         entry["local_clean_tree"] = clean_tree(entry["local_directory"])
+        if entry["category"] not in {"related_task_repair", "historical_exact_route"}:
+            entry["execution_status"] = "USER_STOPPED"
+            entry["next_action_before_user_stop"] = entry["next_action"]
+            entry["next_action"] = "用户已于2026-09-09终止本任务实验；保留结果和原计划，未经此后明确授权不得恢复、修复重跑或重新提交"
     return {
         "schema_version": "DUCA-EXPERIMENT-CATALOG-v001",
         "last_updated_utc": utc_now(),
         "scope": "所有当前 DUCA/ZoomToken 代码实验及其独立修正路线；旧远端作业另列为不纳入结果",
         "repository": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702",
         "entries": entries,
-        "remote_supervisor": remote_receipt(),
+        "execution_control": {
+            "status": "USER_STOPPED",
+            "stopped_at_utc": "2026-09-09T05:52:44.003958+00:00",
+            "verified_at_utc": "2026-09-09T05:53:54.325934+00:00",
+            "active_or_pending_owned_slurm_jobs": [],
+            "evidence": "49_USER_STOP_20260909.json",
+            "local_heartbeat": "opentad-c3-duca配置仍ACTIVE；automation_update工具不可用，未确认停用。旧心跳禁止连接集群或恢复实验",
+            "scope": "只终止本监督任务负责的六路线进程；其他独立任务不操作。原成绩、失败证据及未执行计划全部保留",
+        },
+        "remote_supervisor": {
+            "status": "USER_STOPPED",
+            "root": REMOTE_ROOT,
+            "terminated_pid": 1914589,
+            "signal": "SIGTERM",
+            "stopped_at_utc": "2026-09-09T05:52:44.003958+00:00",
+            "verified_at_utc": "2026-09-09T05:53:54.325934+00:00",
+            "last_receipt_at_utc": "2026-09-09T05:52:14+00:00",
+            "remaining_processes": [],
+            "dispatcher_status": "STOPPED_BY_USER",
+        },
         "remote_supervisor_recovery": {
             "old_root": "/data/run01/sczc063/yuzibo/projects/duca_multibranch_supervisor_20260902",
             "old_last_checked_at_utc": "2026-09-07T08:48:01+00:00",
@@ -606,6 +629,7 @@ def catalog() -> dict[str, Any]:
             "failure": "OSError [Errno 122] Disk quota exceeded while writing supervisor_state.json.tmp; old process exited",
             "root": REMOTE_ROOT,
             "pid": 1914589,
+            "current_status": "USER_STOPPED_20260909",
             "restart_at_utc": "2026-09-07T13:32:31+00:00",
             "precheck": "unchanged supervisor --once passed; squeue/sacct returncode0; dispatcher BLOCKED; entries0",
             "scope": "每60秒恢复只读队列轮询，旧source/queue/manifest/admission不变；旧日志和状态保留。不是当前修复队列的自动提交器。目录生成器现以180秒识别过期回执，不能仅因JSON可读就称ACTIVE",
@@ -684,6 +708,8 @@ def md_text(payload: dict[str, Any]) -> str:
         "",
         f"最后更新时间（UTC）：`{payload['last_updated_utc']}`",
         "",
+        f"**用户已于2026-09-09终止本任务所有实验进程。当前状态：`{payload['execution_control']['status']}`。运行中/排队中的本任务作业均为0，远端每分钟监督进程已停止；未经后续明确授权不得重启或重提。** 停止记录：[{payload['execution_control']['evidence']}]({payload['execution_control']['evidence']})。{payload['execution_control']['local_heartbeat']}。",
+        "",
         "本表用完整中文描述实验目的；括号中的内部 ID 仅用于与 Slurm/manifest 对照。前六行为9月2日冻结历史快照，当前后继修复另行列示，不把历史准入状态当最新状态。每一行都是独立代码身份，结果不能跨 SHA 转移。",
         "",
         f"基线口径纠正：[{payload['baseline_reference_note']}]({payload['baseline_reference_note']})。{payload['baseline_comparison_policy']}。",
@@ -753,7 +779,7 @@ def md_text(payload: dict[str, Any]) -> str:
         "",
         "## 监督器与动态状态",
         "",
-        f"远端 N16R4 监督器恢复目录：`{REMOTE_ROOT}`，每60秒轮询；本地heartbeat每30分钟刷新本表并用中文详细通知用户，即使无变化。当前回执状态：`{payload['remote_supervisor'].get('status')}`，距生成`{payload['remote_supervisor'].get('receipt_age_seconds', '未知')}`秒；dispatcher：`{payload['remote_supervisor'].get('dispatcher_status', '未知')}`，mode：`{payload['remote_supervisor'].get('dispatcher_mode', '未知')}`。该服务恢复的是只读轮询，超过180秒标STALE，不自动续提当前修复队列。最新训练、独立评测、失败与本监督手动提交见各实验行及[{payload['heartbeat_evidence']}]({payload['heartbeat_evidence']})，不能把历史运行段落当作当前状态。旧job/log/checkpoint保留，其他任务及历史BAFDR1267920/1267921不操作。",
+        f"远端监督器目录：`{REMOTE_ROOT}`。PID1914589已于2026-09-09 13:52:44 CST终止，13:53:54复核未重启，状态`{payload['remote_supervisor']['status']}`。原60秒轮询已停止，不再执行原30分钟监督/自动重提计划；本地心跳停用尚受工具限制，详情见停止记录。以下实验行及[{payload['heartbeat_evidence']}]({payload['heartbeat_evidence']})保留停止前的训练、结果、失败和计划，不表示仍在推进。旧job/log/checkpoint保留，其他任务及历史BAFDR1267920/1267921不操作。",
         "",
         f"集群观测（{payload['cluster_observation']['checked_at_cst']}）：本次可见可调度节点未分配 GPU {payload['cluster_observation']['public_gpu_available']}/{payload['cluster_observation']['public_gpu_total']}，本用户队列 {payload['cluster_observation']['user_jobs_in_queue']} 项；当前约束为 {payload['cluster_observation']['account_constraint']}。",
         "",

@@ -1,6 +1,6 @@
 {
   "schema_version": "DUCA-EXPERIMENT-CATALOG-v001",
-  "last_updated_utc": "2026-09-09T05:40:04+00:00",
+  "last_updated_utc": "2026-09-09T05:57:46+00:00",
   "scope": "所有当前 DUCA/ZoomToken 代码实验及其独立修正路线；旧远端作业另列为不纳入结果",
   "repository": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702",
   "entries": [
@@ -15,9 +15,11 @@
       "deployment_status": "已完成精确 SHA CUDA focused admission；P0 admission 失败，正式矩阵未提交",
       "result_status": "无最终结果",
       "final_result": "15 个 focused CUDA 测试通过；更深 P0 检查 14 通过、1 失败，暴露 x-only backbone 收到 masks 的签名错误",
-      "next_action": "在独立修正 SHA 完成签名路由复验，再重新冻结 H65 SHA",
+      "next_action": "用户已于2026-09-09终止本任务实验；保留结果和原计划，未经此后明确授权不得恢复、修复重跑或重新提交",
       "local_head": "cfb7041d876f6e38e9ef6ce77cef7cee04b79659",
-      "local_clean_tree": true
+      "local_clean_tree": true,
+      "execution_status": "USER_STOPPED",
+      "next_action_before_user_stop": "在独立修正 SHA 完成签名路由复验，再重新冻结 H65 SHA"
     },
     {
       "category": "frozen_route",
@@ -30,9 +32,11 @@
       "deployment_status": "生成器 fail-closed；Taylor P0/P1、原始 H65 retention/transition、真实 cost 未实现，未提交训练",
       "result_status": "无最终结果",
       "final_result": "无合法 mAP、速度或成本结果；41 个 cell 保持关闭",
-      "next_action": "这是冻结历史快照；后续按当前修正路线补Taylor/H65真实接线。延迟、吞吐及显存不作为强制门禁，不因历史cost占位恢复已取消的要求",
+      "next_action": "用户已于2026-09-09终止本任务实验；保留结果和原计划，未经此后明确授权不得恢复、修复重跑或重新提交",
       "local_head": "89b9ea3e8e018b41034917ee14de7f409354a7e9",
-      "local_clean_tree": true
+      "local_clean_tree": true,
+      "execution_status": "USER_STOPPED",
+      "next_action_before_user_stop": "这是冻结历史快照；后续按当前修正路线补Taylor/H65真实接线。延迟、吞吐及显存不作为强制门禁，不因历史cost占位恢复已取消的要求"
     },
     {
       "category": "frozen_route",
@@ -45,9 +49,11 @@
       "deployment_status": "精确 SHA CUDA focused admission 和 seed 8261 precheck 已通过；C0 parity 尚未完成，正式训练未提交",
       "result_status": "无最终结果",
       "final_result": "35 个 focused CUDA/证据测试通过；尚无 terminal EMA、官方评测或 mAP",
-      "next_action": "完成 indices、physical positions、features、logits、loss、decode、predictions 的 C0 精确 parity",
+      "next_action": "用户已于2026-09-09终止本任务实验；保留结果和原计划，未经此后明确授权不得恢复、修复重跑或重新提交",
       "local_head": "08d425a259fc468dde7c496e77b4c43e953d8d0c",
-      "local_clean_tree": true
+      "local_clean_tree": true,
+      "execution_status": "USER_STOPPED",
+      "next_action_before_user_stop": "完成 indices、physical positions、features、logits、loss、decode、predictions 的 C0 精确 parity"
     },
     {
       "category": "frozen_route",
@@ -60,9 +66,11 @@
       "deployment_status": "精确 SHA geometry focused admission 已通过；冻结 SHA 的 G0/G1 因子化与声明冲突，正式矩阵未提交",
       "result_status": "无最终结果",
       "final_result": "7 个 focused CUDA/几何测试通过；不能据此宣称 CT-DP 机制有效",
-      "next_action": "采用独立修正分支完成 geometry、有限差分 gradient、batch/DDP 后重新冻结 SHA",
+      "next_action": "用户已于2026-09-09终止本任务实验；保留结果和原计划，未经此后明确授权不得恢复、修复重跑或重新提交",
       "local_head": "2b7f81808006c6cb09a4d21a7f6fdc8ed3f6babc",
-      "local_clean_tree": true
+      "local_clean_tree": true,
+      "execution_status": "USER_STOPPED",
+      "next_action_before_user_stop": "采用独立修正分支完成 geometry、有限差分 gradient、batch/DDP 后重新冻结 SHA"
     },
     {
       "category": "frozen_route",
@@ -75,9 +83,11 @@
       "deployment_status": "静态协议 admission 已通过；精确 SHA 五臂 screen 尚未通过，21-cell 矩阵关闭",
       "result_status": "无最终结果",
       "final_result": "11 个静态协议测试通过；缺少同种子 D160 epoch 59 EMA Teacher 和 selection-screen PASS",
-      "next_action": "提供并核验 terminal Teacher，再运行不依赖 held-out 的五臂 screen",
+      "next_action": "用户已于2026-09-09终止本任务实验；保留结果和原计划，未经此后明确授权不得恢复、修复重跑或重新提交",
       "local_head": "fdeaeb98340bf7070201a02feb8093f50486aeaa",
-      "local_clean_tree": true
+      "local_clean_tree": true,
+      "execution_status": "USER_STOPPED",
+      "next_action_before_user_stop": "提供并核验 terminal Teacher，再运行不依赖 held-out 的五臂 screen"
     },
     {
       "category": "frozen_route",
@@ -90,9 +100,11 @@
       "deployment_status": "静态 launcher/pretrain 协议测试已通过；真实 checkpoint coverage、单卡加载和双 GPU DDP 尚未完成",
       "result_status": "无最终结果",
       "final_result": "10 个协议测试通过；无合法 OFF/ON terminal EMA 或评测结果",
-      "next_action": "核验 VideoMAE checkpoint 覆盖，再执行真实 global-batch=2 双 GPU OFF/ON DDP 和 resume",
+      "next_action": "用户已于2026-09-09终止本任务实验；保留结果和原计划，未经此后明确授权不得恢复、修复重跑或重新提交",
       "local_head": "59eab0c6aaacf5039d2ae20969a6dd5772bcb80f",
-      "local_clean_tree": true
+      "local_clean_tree": true,
+      "execution_status": "USER_STOPPED",
+      "next_action_before_user_stop": "核验 VideoMAE checkpoint 覆盖，再执行真实 global-batch=2 双 GPU OFF/ON DDP 和 resume"
     },
     {
       "category": "correction_route",
@@ -119,9 +131,11 @@
       "deployment_status": "远端 exact-SHA admission 1267684 已通过；REF-D768、REF-U384、REF-MNV3FC384 正式训练 1267709/1267711/1267737 与官方评测 1269303/1269360/1269373 均 COMPLETED(0:0)。30514803 的 F01/F02/F04 在 AMP replay 后独立出现 probe 全 NaN，F03/F05/F06 随即安全停止并保留 checkpoint。精确 RNG 复现 1269647、梯度审计 1269698/1269699 定位到 relative_physical_time_scale；独立修复 f2068e18 将该标量纳入零 weight-decay optimizer group，validator 强制该合同；本地 H65 tests 9 passed/11 skipped、C3 tests 23 passed，远端 exact-SHA clean checkout 59 passed/1 skipped。F01-F06 PRECHECK 全部通过，正式重训 1269705/1269707/1269759/1269761/1269764/1269769 均 COMPLETED(0:0)；六臂均有 epoch_59.pth/state_dict_ema，training audit 均确认 optimizer/scheduler/EMA/DUCA schedule 各 6000 successful updates，日志未见 non-finite/NaN/traceback/OOM。首轮评测 1270970-1270975 因错误使用训练 checkout 的旧 evaluator，全部在推理前以 resolved_config_sha256 mismatch 退出；日志已读，checkpoint 未损坏。独立 evaluator 67c8f39f 的 PRECHECK 1270985 COMPLETED(0:0)，修正后的官方评测 1270987-1270992 均 COMPLETED(0:0)；六份结构化 metrics receipt 均绑定训练 SHA f2068e18、evaluator SHA 67c8f39f、seed 3407、epoch 59 state_dict_ema、6000 successful updates，且 evaluation_sha256 自哈希复算一致",
       "result_status": "D768、U384、MNV 及 F01-F06 有本协议下官方评估器产生的终态数值与收据；这不等于未修改 AdaTAD 的复现成功或机制有效。仅 seed 3407，非完整 24 臂或多种子结论",
       "final_result": "参考臂：D768 Avg-mAP=67.58%，U384=63.89%，MNV3FC384=57.01%。H65 F01-F06 official Avg-mAP 分别为 63.3854%、64.2265%、60.3648%、60.7013%、64.0886%、63.8181%；对应 mAP@0.3/0.4/0.5/0.6/0.7：F01=79.1680/74.3484/66.5598/56.0579/40.7929，F02=79.9377/74.5653/67.3877/56.1257/43.1163，F03=75.9121/70.5691/63.0241/52.9793/39.3393，F04=75.8391/71.1599/63.8342/53.5592/39.1141，F05=79.2504/74.3064/67.1331/56.9056/42.8476，F06=79.2828/74.6584/66.6302/56.2470/42.2723。相对 U384，F02 最好为 +0.34 个百分点，F05 为 +0.20，F06 为 -0.07，F01 为 -0.50，F03 为 -3.53，F04 为 -3.19；所有 F 臂仍低于 D768",
-      "next_action": "三组匹配控制已完成全曲线及独立终态，保留最佳/终态并定位四相负结果，不重复训练或评测。原始官方1245842仍须另补来源及独立复评，新U384不替代官方原版；后续测试指导调参保留全部尝试，旧结果不重贴新SHA",
+      "next_action": "用户已于2026-09-09终止本任务实验；保留结果和原计划，未经此后明确授权不得恢复、修复重跑或重新提交",
       "local_head": "629162cdddbe490d896899a067e9803e237df467",
-      "local_clean_tree": true
+      "local_clean_tree": true,
+      "execution_status": "USER_STOPPED",
+      "next_action_before_user_stop": "三组匹配控制已完成全曲线及独立终态，保留最佳/终态并定位四相负结果，不重复训练或评测。原始官方1245842仍须另补来源及独立复评，新U384不替代官方原版；后续测试指导调参保留全部尝试，旧结果不重贴新SHA"
     },
     {
       "category": "correction_route",
@@ -384,9 +398,11 @@
       "deployment_status": "G0/G1/G2/G3 训练 1267229/1267230/1267231/1267232 均 COMPLETED(0:0)，四个 epoch_59.pth/EMA 均存在。但 2026-09-07 直接读取 checkpoint，实际 optimizer step 分别只有 5997/5996/5996/5997，scheduler 均为 6000。源码确认该路线未启用正式 AMP replay，跳过更新仍推进 scheduler",
       "result_status": "新fe1c53db G0/G1的6000更新训练、07383274独立官方评测及自哈希收据均完成；78cde1be G2/G3沿用原身份结果。最早更新不合格四臂及旧坐标错误G0/G1仍仅诊断，不能将新收据等同完整CT/B-AMoD机制验收",
       "final_result": "新fe1c53db/07383274：G0均匀选帧Avg-mAP=64.2720%，mAP@0.3/0.4/0.5/0.6/0.7=80.0789/74.6087/67.4129/56.5794/42.6802%；G1动态选帧=61.6740%，对应78.6163/72.8576/63.4768/53.5038/39.9154%。G1相对G0 Avg-mAP -2.5980pp、mAP@0.7 -2.7648pp。旧78cde1be/11ced13a的G2/G3仍56.5234%/57.8489%，mAP@0.7为26.9965%/31.6861%，不迁移训练SHA。单种子3407，geometry四臂均未启用B-AMoD，不外推多种子显著性、完整机制有效或原始AdaTAD性能；旧c0fae67a预算不合格指标及78cde1be坐标错误G0/G1只保留诊断",
-      "next_action": "新G0/G1训练和独立评测已闭环，不重复提交。保留配对单种子负结果，下一步核对动态选帧的原设计与实际梯度/边界行为；需要Pro讨论时使用已授权ixBrowser Computer Use入口。与原始官方AdaTAD来源补证/独立复评区分，不按测试集追分改预算或挑checkpoint。G2/G3保留原训练身份，未实现机制不得扩矩阵",
+      "next_action": "用户已于2026-09-09终止本任务实验；保留结果和原计划，未经此后明确授权不得恢复、修复重跑或重新提交",
       "local_head": "fe1c53db1b2a7e467a6af2eccfe8b7636f667a81",
-      "local_clean_tree": true
+      "local_clean_tree": true,
+      "execution_status": "USER_STOPPED",
+      "next_action_before_user_stop": "新G0/G1训练和独立评测已闭环，不重复提交。保留配对单种子负结果，下一步核对动态选帧的原设计与实际梯度/边界行为；需要Pro讨论时使用已授权ixBrowser Computer Use入口。与原始官方AdaTAD来源补证/独立复评区分，不按测试集追分改预算或挑checkpoint。G2/G3保留原训练身份，未实现机制不得扩矩阵"
     },
     {
       "category": "correction_route",
@@ -401,9 +417,11 @@
       "deployment_status": "提交器保持fail-closed；Taylor P0/P1与H65 retention/transition未落地的相关单元禁止提交。不重新加入已取消的延迟、吞吐、显存门槛；如声称节省计算，另需对应执行量证据",
       "result_status": "BLOCKED_UNIMPLEMENTED，无正式性能",
       "final_result": "manifest/生成器/准入规则可验证，但不能把缺失机制的占位配置当实验",
-      "next_action": "先明确P0/P1的BCT布局并从已有loss祖先tensor取梯度，再按原合同接入运行时训练和H65保留/转换。各子问题按真实依赖分阶段释放，不把helper单测或配置存在当机制完成",
+      "next_action": "用户已于2026-09-09终止本任务实验；保留结果和原计划，未经此后明确授权不得恢复、修复重跑或重新提交",
       "local_head": "793c4f9cdf7dac4f224bc73012aff8bc93949f87",
-      "local_clean_tree": true
+      "local_clean_tree": true,
+      "execution_status": "USER_STOPPED",
+      "next_action_before_user_stop": "先明确P0/P1的BCT布局并从已有loss祖先tensor取梯度，再按原合同接入运行时训练和H65保留/转换。各子问题按真实依赖分阶段释放，不把helper单测或配置存在当机制完成"
     },
     {
       "category": "correction_route",
@@ -418,7 +436,7 @@
       "deployment_status": "历史539287fa更新不足仍保留。710ce8a6新Teacher/G96/U16/LATE/NOKD实际终态6000此前已验证，FULL仅PRECHECK。该旧SHA的padding/screen问题不能忽略；另任务本地b142bffa已修padding路由/执行/监督接线，须按新身份验证，不把修复迁移给旧checkpoint",
       "result_status": "旧五臂及旧D160仍PROTOCOL_ERROR；710ce8a6五份6000终态没有新的独立性能。后继padding修复b142bffa尚无生产结果，screen和eval5仍待完成。以下旧分数仅供诊断",
       "final_result": "保留的协议不合格诊断数值：G96官方评估器Avg-mAP=50.93%，各阈值64.67/59.83/53.47/44.68/32.00%；U16均匀分块48.17%，63.50/57.95/50.12/40.46/28.84%；晚期融合LATE53.11%，68.84/63.39/56.05/45.40/31.88%；无蒸馏NOKD49.44%，64.86/58.81/51.60/41.85/30.09%；完整FULL52.38%，67.63/62.71/54.60/45.14/31.83%。五份旧receipt绑定seed4407/evaluator29b5a7a2，但其中自报6000 successful updates已被真实AdamW state证伪。FULL绑定539287fa的D160教师也只有5996更新。不得据此宣称满足严格预算、模型优劣或多种子显著性；原始分数和checkpoint不改写",
-      "next_action": "协调并复用另一任务b142bffa的padding修复，避免重复实现；取得其原始验证证据，再完成真实terminal screen与eval5接入。新SHA做受影响focused/CUDA/PRECHECK后安排配对训练。旧710ce8a6及历史作业保持原身份，不直接放开21单元",
+      "next_action": "用户已于2026-09-09终止本任务实验；保留结果和原计划，未经此后明确授权不得恢复、修复重跑或重新提交",
       "evaluation_preparation": {
         "checked_at_cst": "2026-09-07 22:55心跳",
         "already_correct": "710ce8a6五臂val/test masks-only和Collect snippet_stride/offset_frames已包含29b5a7a2修复，无需再次移植；eval-only不构造teacher，从checkpoint保留teacher_identity",
@@ -478,7 +496,9 @@
       },
       "successful_update_observation_at_cst": "2026-09-08 04:28; U16/LATE/NOKD actual terminal state; D160/G96 reuse prior verified terminal evidence",
       "local_head": "710ce8a6246c471742c83bf7c180d9ab87c36fac",
-      "local_clean_tree": true
+      "local_clean_tree": true,
+      "execution_status": "USER_STOPPED",
+      "next_action_before_user_stop": "协调并复用另一任务b142bffa的padding修复，避免重复实现；取得其原始验证证据，再完成真实terminal screen与eval5接入。新SHA做受影响focused/CUDA/PRECHECK后安排配对训练。旧710ce8a6及历史作业保持原身份，不直接放开21单元"
     },
     {
       "category": "correction_route",
@@ -511,11 +531,13 @@
       "deployment_status": "OFF1267218/ON1267219正式训练及epoch59 EMA均完成；独立评测代码67d7079d、本地/远端28 tests、2GPU PRECHECK1275569_0/1通过，完整官方评测1275624_0/1和结构化自哈希receipt现已完成",
       "result_status": "双臂具有可追溯的官方终态结果；本种子开启Taylor/JVP近似明显退化，不支持保持准确率的主张；算子实现忠实度和训练配方的因果排查尚未完成",
       "final_result": "OFF official Avg-mAP=62.076775%，mAP@0.3/0.4/0.5/0.6/0.7=77.063201/71.910513/65.342222/54.513056/41.554882%；ON official Avg-mAP=54.809580%，对应70.378016/64.889287/57.494778/46.651646/34.634174%。ON比OFF低7.267195个百分点，mAP@0.7低6.920708个百分点。单种子4407，不外推多种子显著性，也不把低分本身当作已证明实现错误",
-      "next_action": "新9a346f0d的OFF/ON正式训练及edfbd7e5独立终态评测均已完成，详见ETTRC_EVAL5_OFF/ON。保留旧负结果，不将fixed-stride低秩代理等同事件触发/精确JVP；继续定位完整训练后退化，不重复已完成评测",
+      "next_action": "用户已于2026-09-09终止本任务实验；保留结果和原计划，未经此后明确授权不得恢复、修复重跑或重新提交",
       "remote_eval_root": "/data/run01/sczc063/yuzibo/experiments/ettrc_terminal_eval_67d7079d/formal",
       "remote_log_root": "/data/run01/sczc063/yuzibo/experiments/ettrc_terminal_eval_67d7079d/slurm_logs",
       "local_head": "9a346f0d71e8870ad499bb0a58b9f1824b8904c0",
-      "local_clean_tree": true
+      "local_clean_tree": true,
+      "execution_status": "USER_STOPPED",
+      "next_action_before_user_stop": "新9a346f0d的OFF/ON正式训练及edfbd7e5独立终态评测均已完成，详见ETTRC_EVAL5_OFF/ON。保留旧负结果，不将fixed-stride低秩代理等同事件触发/精确JVP；继续定位完整训练后退化，不重复已完成评测"
     },
     {
       "category": "historical_exact_route",
@@ -560,7 +582,7 @@
       "deployment_status": "C0训练1269374_0/评测1270672_0、A2训练1270870_3/评测1274711_3均已完成，保留246058f2原身份。旧A1/A6非有限cost修复经过1570a725真实optimizer覆盖、动态DDP、non-reentrant checkpoint及49tests/真实PRECHECK验证，未关闭time/merge/recovery；相关失败日志和权重均保留。其后A1/A6的1274924_2/7与F/A3/A4/A5的1275675_1/4/5/6又因磁盘配额失败，不再运行；旧死依赖eval已取消。ce767b4d增加保持原模型/配置/计数/RNG的跨目录续训，六臂恢复PRECHECK已完成，当前新提交与待办见本轮更新",
       "result_status": "C0/A2原登记值不变；新增A1旧实现的可追溯终态评测51.5968%，不作完整机制验收。A6/F训练终态已绑定但独立评测未完成。e0c88c9a仅修refiner初始化且无新正式性能；utility/robust/cycle仍未实现",
       "final_result": "C0 MATCHED_H65_60 Avg-mAP=59.23%，各tIoU=75.22/70.01/61.54/50.90/38.48%。A2 NO_TIME=54.2756%，各tIoU=72.2334/67.0169/57.6467/44.8214/29.6595%。新增旧实现A1 NO_COVERAGE=51.5968%，各tIoU=69.9676/63.9076/54.0565/42.2170/27.8353%；seed8261，1570a725 epoch39/4000次恢复到ce767b4d终态6000，独立eval1277953_2。C0是历史H65选择控制，A2关闭物理时间，A1关闭覆盖约束，均不代表缺失机制已实现。test 792次暴露对应791个唯一物理窗口（video_test_0001431|7680重复），246058f2按唯一物理窗口严格覆盖",
-      "next_action": "先按原设计明确utility可学习目标/梯度路径并实现真实two-view与cycle，禁止只加无科学含义loss以制造非零梯度。refiner旧checkpoint会覆盖新初始化，后续使用新模型/新命名空间或明确登记的转换实验，不冒充无改动续训。保留旧A1/A6/F及原始receipt，核验已完成产物但不继续自动提交有缺陷的A3/A4/A5",
+      "next_action": "用户已于2026-09-09终止本任务实验；保留结果和原计划，未经此后明确授权不得恢复、修复重跑或重新提交",
       "remote_run_root": "/data/run01/sczc063/yuzibo/experiments/duca_evidence_storage_resume_ce767b4d/formal",
       "remote_log_root": "/data/run01/sczc063/yuzibo/experiments/duca_evidence_storage_resume_ce767b4d/slurm_logs",
       "remote_eval_root": "/data/run01/sczc063/yuzibo/experiments/duca_evidence_storage_resume_ce767b4d/evaluation",
@@ -653,7 +675,9 @@
         "A5": 29
       },
       "local_head": "e0c88c9a9e2582878c88bb2c728891ea5413bc77",
-      "local_clean_tree": true
+      "local_clean_tree": true,
+      "execution_status": "USER_STOPPED",
+      "next_action_before_user_stop": "先按原设计明确utility可学习目标/梯度路径并实现真实two-view与cycle，禁止只加无科学含义loss以制造非零梯度。refiner旧checkpoint会覆盖新初始化，后续使用新模型/新命名空间或明确登记的转换实验，不冒充无改动续训。保留旧A1/A6/F及原始receipt，核验已完成产物但不继续自动提交有缺陷的A3/A4/A5"
     },
     {
       "category": "test_guided_exploratory",
@@ -902,7 +926,7 @@
         }
       },
       "test_guided_hyperparameter_trials": [],
-      "next_action": "两项独立终态已封存，不重复评测或重训未变化的权重。开启近似最佳低7.1476点、终轮低7.1612点；下一步定位固定stride/shared低秩代理的残差拟合、学习与原设计差异，不能把它当作精确JVP/事件触发。所有新调参尝试必须留存；原版AdaTAD来源与比较协议单列",
+      "next_action": "用户已于2026-09-09终止本任务实验；保留结果和原计划，未经此后明确授权不得恢复、修复重跑或重新提交",
       "supporting_local_directories": [
         "E:/DeskTop/TAD/_duca_fix_worktrees/ettrc_eval5_terminal_20260909"
       ],
@@ -1030,7 +1054,9 @@
         }
       },
       "local_head": "9a346f0d71e8870ad499bb0a58b9f1824b8904c0",
-      "local_clean_tree": true
+      "local_clean_tree": true,
+      "execution_status": "USER_STOPPED",
+      "next_action_before_user_stop": "两项独立终态已封存，不重复评测或重训未变化的权重。开启近似最佳低7.1476点、终轮低7.1612点；下一步定位固定stride/shared低秩代理的残差拟合、学习与原设计差异，不能把它当作精确JVP/事件触发。所有新调参尝试必须留存；原版AdaTAD来源与比较协议单列"
     },
     {
       "category": "test_guided_exploratory",
@@ -1243,7 +1269,7 @@
         "verification_reused": true
       },
       "test_guided_hyperparameter_trials": [],
-      "next_action": "两项独立终态已封存，不重复评测或重训未变化的权重。开启近似最佳低7.1476点、终轮低7.1612点；下一步定位固定stride/shared低秩代理的残差拟合、学习与原设计差异，不能把它当作精确JVP/事件触发。所有新调参尝试必须留存；原版AdaTAD来源与比较协议单列",
+      "next_action": "用户已于2026-09-09终止本任务实验；保留结果和原计划，未经此后明确授权不得恢复、修复重跑或重新提交",
       "terminal_training_evaluation": {
         "completed_epochs": 60,
         "epoch": 59,
@@ -1407,7 +1433,9 @@
         }
       },
       "local_head": "9a346f0d71e8870ad499bb0a58b9f1824b8904c0",
-      "local_clean_tree": true
+      "local_clean_tree": true,
+      "execution_status": "USER_STOPPED",
+      "next_action_before_user_stop": "两项独立终态已封存，不重复评测或重训未变化的权重。开启近似最佳低7.1476点、终轮低7.1612点；下一步定位固定stride/shared低秩代理的残差拟合、学习与原设计差异，不能把它当作精确JVP/事件触发。所有新调参尝试必须留存；原版AdaTAD来源与比较协议单列"
     },
     {
       "category": "test_guided_exploratory",
@@ -1620,7 +1648,7 @@
         "verification_reused": true
       },
       "test_guided_hyperparameter_trials": [],
-      "next_action": "保留完整曲线、最佳和独立终态负结果。43号确认初版A Phase说明就是动作性logits/导数，不能直接把缺center_scores fusion判为接线遗漏；当前对照仍同时改变采样评分/ST路径，真实参数梯度参与和因果归属待定位，不为追分盲改设计。",
+      "next_action": "用户已于2026-09-09终止本任务实验；保留结果和原计划，未经此后明确授权不得恢复、修复重跑或重新提交",
       "terminal_training_evaluation": {
         "completed_epochs": 60,
         "epoch": 59,
@@ -2022,7 +2050,9 @@
         "verification_note": "Self-hash refers to the original remote receipt, before adding these catalog verification fields."
       },
       "local_head": "629162cdddbe490d896899a067e9803e237df467",
-      "local_clean_tree": true
+      "local_clean_tree": true,
+      "execution_status": "USER_STOPPED",
+      "next_action_before_user_stop": "保留完整曲线、最佳和独立终态负结果。43号确认初版A Phase说明就是动作性logits/导数，不能直接把缺center_scores fusion判为接线遗漏；当前对照仍同时改变采样评分/ST路径，真实参数梯度参与和因果归属待定位，不为追分盲改设计。"
     },
     {
       "category": "test_guided_exploratory",
@@ -2235,7 +2265,7 @@
         "verification_reused": false
       },
       "test_guided_hyperparameter_trials": [],
-      "next_action": "保留完整曲线、最佳和独立终态负结果。43号确认初版A Phase说明就是动作性logits/导数，不能直接把缺center_scores fusion判为接线遗漏；当前对照仍同时改变采样评分/ST路径，真实参数梯度参与和因果归属待定位，不为追分盲改设计。",
+      "next_action": "用户已于2026-09-09终止本任务实验；保留结果和原计划，未经此后明确授权不得恢复、修复重跑或重新提交",
       "terminal_training_evaluation": {
         "completed_epochs": 60,
         "epoch": 59,
@@ -2643,7 +2673,9 @@
         "verification_note": "Self-hash refers to the original remote receipt, before adding these catalog verification fields."
       },
       "local_head": "629162cdddbe490d896899a067e9803e237df467",
-      "local_clean_tree": true
+      "local_clean_tree": true,
+      "execution_status": "USER_STOPPED",
+      "next_action_before_user_stop": "保留完整曲线、最佳和独立终态负结果。43号确认初版A Phase说明就是动作性logits/导数，不能直接把缺center_scores fusion判为接线遗漏；当前对照仍同时改变采样评分/ST路径，真实参数梯度参与和因果归属待定位，不为追分盲改设计。"
     },
     {
       "category": "test_guided_exploratory",
@@ -2856,7 +2888,7 @@
         "verification_reused": true
       },
       "test_guided_hyperparameter_trials": [],
-      "next_action": "保留完整曲线、最佳和独立终态负结果。43号确认初版A Phase说明就是动作性logits/导数，不能直接把缺center_scores fusion判为接线遗漏；当前对照仍同时改变采样评分/ST路径，真实参数梯度参与和因果归属待定位，不为追分盲改设计。",
+      "next_action": "用户已于2026-09-09终止本任务实验；保留结果和原计划，未经此后明确授权不得恢复、修复重跑或重新提交",
       "terminal_training_evaluation": {
         "completed_epochs": 60,
         "epoch": 59,
@@ -3262,7 +3294,9 @@
         "verification_note": "Self-hash refers to the original remote receipt, before adding these catalog verification fields."
       },
       "local_head": "629162cdddbe490d896899a067e9803e237df467",
-      "local_clean_tree": true
+      "local_clean_tree": true,
+      "execution_status": "USER_STOPPED",
+      "next_action_before_user_stop": "保留完整曲线、最佳和独立终态负结果。43号确认初版A Phase说明就是动作性logits/导数，不能直接把缺center_scores fusion判为接线遗漏；当前对照仍同时改变采样评分/ST路径，真实参数梯度参与和因果归属待定位，不为追分盲改设计。"
     },
     {
       "category": "related_task_repair",
@@ -3427,14 +3461,25 @@
       "local_clean_tree": true
     }
   ],
+  "execution_control": {
+    "status": "USER_STOPPED",
+    "stopped_at_utc": "2026-09-09T05:52:44.003958+00:00",
+    "verified_at_utc": "2026-09-09T05:53:54.325934+00:00",
+    "active_or_pending_owned_slurm_jobs": [],
+    "evidence": "49_USER_STOP_20260909.json",
+    "local_heartbeat": "opentad-c3-duca配置仍ACTIVE；automation_update工具不可用，未确认停用。旧心跳禁止连接集群或恢复实验",
+    "scope": "只终止本监督任务负责的六路线进程；其他独立任务不操作。原成绩、失败证据及未执行计划全部保留"
+  },
   "remote_supervisor": {
-    "status": "ACTIVE",
+    "status": "USER_STOPPED",
     "root": "/data/run01/sczc063/yuzibo/projects/duca_multibranch_supervisor_recovery_20260907",
-    "receipt_age_seconds": 2,
-    "checked_at": "2026-09-09T05:40:04+00:00",
-    "dispatcher_status": "BLOCKED",
-    "dispatcher_mode": "plan",
-    "entries": []
+    "terminated_pid": 1914589,
+    "signal": "SIGTERM",
+    "stopped_at_utc": "2026-09-09T05:52:44.003958+00:00",
+    "verified_at_utc": "2026-09-09T05:53:54.325934+00:00",
+    "last_receipt_at_utc": "2026-09-09T05:52:14+00:00",
+    "remaining_processes": [],
+    "dispatcher_status": "STOPPED_BY_USER"
   },
   "remote_supervisor_recovery": {
     "old_root": "/data/run01/sczc063/yuzibo/projects/duca_multibranch_supervisor_20260902",
@@ -3443,6 +3488,7 @@
     "failure": "OSError [Errno 122] Disk quota exceeded while writing supervisor_state.json.tmp; old process exited",
     "root": "/data/run01/sczc063/yuzibo/projects/duca_multibranch_supervisor_recovery_20260907",
     "pid": 1914589,
+    "current_status": "USER_STOPPED_20260909",
     "restart_at_utc": "2026-09-07T13:32:31+00:00",
     "precheck": "unchanged supervisor --once passed; squeue/sacct returncode0; dispatcher BLOCKED; entries0",
     "scope": "每60秒恢复只读队列轮询，旧source/queue/manifest/admission不变；旧日志和状态保留。不是当前修复队列的自动提交器。目录生成器现以180秒识别过期回执，不能仅因JSON可读就称ACTIVE"

@@ -1,5 +1,23 @@
 @RTK.md
 
+## User stop order (2026-09-09, effective immediately)
+
+The user has terminated all experiments owned by this six-route supervisory
+task. Do not launch, resume, retry, evaluate, diagnose on GPU, or restart its
+remote supervisor unless the user explicitly authorizes resumption after this
+order. This supersedes earlier deployment, automatic repair and heartbeat
+instructions for this task. Preserve all jobs, logs, checkpoints and results.
+Do not cancel or adopt jobs owned by other tasks, including historical BAFDR
+1267920/1267921. See 49_USER_STOP_20260909.md/JSON in the audit directory.
+
+Remote supervisor PID 1914589 was terminated at 2026-09-09 13:52:44 CST and
+verified absent after 70 seconds. No owned Slurm job was active or pending.
+The local heartbeat opentad-c3-duca still has ACTIVE configuration; its
+management tool is unavailable in this session, so disabling the automation
+has not been confirmed. If a stale heartbeat fires, honor this stop order,
+do not contact the cluster or restart experiments, and disable the heartbeat
+using automation_update when that tool becomes available.
+
 ## OpenTAD six-route protocol amendment (2026-09-08)
 
 The user's latest instruction explicitly authorizes selecting the best checkpoint

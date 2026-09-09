@@ -51,3 +51,29 @@ def test_unpublished_local_repair_does_not_link_to_a_github_commit(monkeypatch):
     assert "/commit/unpublished-local-sha" not in rendered
     assert payload["repository"] in rendered
     assert "unpublished-local-sha" in rendered
+
+
+def test_user_stop_preserves_results_without_contacting_remote(monkeypatch):
+    monkeypatch.setattr(catalog, "git_head", lambda path: "unchanged")
+    monkeypatch.setattr(catalog, "clean_tree", lambda path: True)
+
+    def unexpected_remote_query():
+        pytest.fail("a stopped catalog must not poll the remote supervisor")
+
+    monkeypatch.setattr(catalog, "remote_receipt", unexpected_remote_query)
+    originals = {entry["internal_id"]: entry for entry in catalog.route_entries()}
+    payload = catalog.catalog()
+    assert payload["execution_control"]["status"] == "USER_STOPPED"
+    assert payload["remote_supervisor"]["status"] == "USER_STOPPED"
+    for entry in payload["entries"]:
+        original = originals[entry["internal_id"]]
+        assert entry["final_result"] == original["final_result"]
+        assert entry["deployment_status"] == original["deployment_status"]
+        if entry["category"] in {"related_task_repair", "historical_exact_route"}:
+            assert entry["next_action"] == original["next_action"]
+            assert "execution_status" not in entry
+        else:
+            assert entry["execution_status"] == "USER_STOPPED"
+            assert entry["next_action_before_user_stop"] == original["next_action"]
+            assert "未经" in entry["next_action"]
+    assert "用户已于2026-09-09终止" in catalog.md_text(payload)
