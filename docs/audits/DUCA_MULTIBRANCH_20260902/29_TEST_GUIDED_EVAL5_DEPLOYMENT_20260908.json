@@ -1,4 +1,5 @@
 {
+  "interpretation_note_20260909": {"recorded_at":"2026-09-09T09:57:10+08:00","status":"INTERPRETATION_CORRECTION_NOT_A_PROTOCOL_OR_MODEL_CHANGE","detail":"Original statement that the phase pair only changes allocation is a config-level description, not an isolated quota-effect claim. Switching acquisition_policy also switches sampling score construction and the ST gradient path. Initial implementation notes at bd862375 Phase A explicitly use ASFormer logits/logit(p_action), smoothing and derivatives, consistent with this source; missing center_scores fusion alone is not a proven wiring bug.","evidence_record":"43_HEARTBEAT_EVIDENCE_20260909_0950.md","historical_run_identity_unchanged":true},
   "checked_at": "2026-09-08T17:27:59+08:00",
   "kind": "interactive_protocol_amendment_and_deployment",
   "user_instruction": "选“最佳 checkpoint” 且按测试集调参",
