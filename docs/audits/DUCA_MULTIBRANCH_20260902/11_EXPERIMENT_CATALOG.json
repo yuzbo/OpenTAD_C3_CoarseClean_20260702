@@ -1,6 +1,6 @@
 {
   "schema_version": "DUCA-EXPERIMENT-CATALOG-v001",
-  "last_updated_utc": "2026-09-09T00:21:49+00:00",
+  "last_updated_utc": "2026-09-09T01:16:05+00:00",
   "scope": "所有当前 DUCA/ZoomToken 代码实验及其独立修正路线；旧远端作业另列为不纳入结果",
   "repository": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702",
   "entries": [
@@ -100,7 +100,7 @@
       "internal_id": "H65_PRO_ACTIVE",
       "scientific_audit": "旧F01-F06全部phase=False，旧REF-D768是clip内TIA，不能当官方原版。629162cd已恢复384原始帧/192tubelets整窗TIA并完成matched uniform/phase-off/phase-on。四相开启最佳比关闭低6.7550点、终轮低6.7774点，当前单种子配方不支持四相收益；不能把修复身份转给旧分数或声称原始AdaTAD复现完成。少步参数参与语义与新独立terminal receipt另待核对",
       "receipt_recheck": "2026-09-08 06:39 CST：六份F01-F06 metrics JSON的evaluation_sha256逐份复算一致，f2068e18训练/67c8f39f评测身份及六个epoch59 EMA文件存在性已复核；六份Avg-mAP不变。未重复加载已认证的大权重或重新推理，四相仍未开启，TIA及匹配控制仍待修复",
-      "current_cycle": "2026-09-09 08:09/08:13：新629162cd三项训练及4af4ad96独立终态评测1281175_0/1/2全部COMPLETED，独立63.8596%/64.2632%/57.4857%与训练内六项指标完全一致，原始receipt及训练绑定通过。最佳仍63.9646%(50)/64.2632%(60)/57.5081%(55)，详见三个新协议行；不是复用旧F臂冒充四相结果",
+      "current_cycle": "2026-09-09 08:57/09:08：新三项训练及独立终态均COMPLETED，原始收据自哈希有效且身份未变，终轮63.8596%/64.2632%/57.4857%。42号源码核查：四相开关同时切换采样评分来源与ST路径，不只是配额，不能据此单独归因预算；未改模型或重训",
       "branch": "codex/h65-pro-admission-fix-20260902（参考臂） + codex/h65-pro-physical-time-optimizer-repair-20260904（F 臂）",
       "sha": "e553a5a4a1063a755900d3dfa4bf8909bf97d466（参考臂） / f2068e18e2c68bdbdd7a607b47f32d05ac3beed7（F 臂）",
       "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/f2068e18e2c68bdbdd7a607b47f32d05ac3beed7",
@@ -128,7 +128,7 @@
       "name": "CT-DP 当前几何四臂：均匀选择、动态选择、物理网格及 CT-Tubelet（均未启用 B-AMoD）",
       "internal_id": "CT_DP_BAMOD_ACTIVE",
       "scientific_audit": "78cde1be的G0/G1确有dense GT与selected检测点错域。fe1c53db已按实际tubelet中心及插值后特征位置将GT映射到selected轴，并使proposal只逆映射一次；G2/G3显式保留dense GT，未通过开启physical head混淆消融。真实registry/head CPU回归通过，但旧训练权重不因此变正确。G0-G3全部B-AMoD关闭；M00-M11才是CTConv乘B-AMoD的机制矩阵",
-      "current_cycle": "2026-09-09 08:09：fe1c53db/07383274独立原始收据自哈希有效，均匀G0 64.2720%、双相G1 61.6740%不变；不重复训练或评测。B-AMoD机制矩阵与eval5接入仍未完成，不迁移旧G2/G3身份",
+      "current_cycle": "2026-09-09 09:08：fe1c53db/07383274独立原始收据自哈希仍有效，均匀G0 64.2720%、双相G1 61.6740%不变；B-AMoD机制矩阵与eval5仍未完成，不迁移旧G2/G3身份，不重复完成的评测",
       "branch": "codex/duca-ctdp-successful-updates-20260907（训练） + codex/duca-ctdp-terminal-eval-20260907（独立评测）",
       "sha": "78cde1be1cb8b3acc7d750afc92ea740f2a03d06（更新合同修复训练） / 11ced13ac6b72091d26405c5d6f152f09914c22d（独立评测） / c0fae67a1236f2c47e6c2935d217659cd1f8fb9d（旧训练）",
       "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/78cde1be1cb8b3acc7d750afc92ea740f2a03d06",
@@ -393,7 +393,7 @@
       "name": "DUCA-Unified 当前 41 单元系统因素对照：17 开发单元与 24 多种子确认单元",
       "internal_id": "DUCA_UNIFIED_ACTIVE",
       "scientific_audit": "Taylor helper同时存在真实BCT尺寸误判，以及对loss图之外的新合成tensor求梯度的问题；运行时P0/P1与H65 retention/transition仍未接通。41单元是复用控制的系统对照，不是所有因素完全正交的全因子矩阵。已实现子问题可在依赖明确后单独验证，不能给D/F/H缺失机制签发通过",
-      "current_cycle": "2026-09-09 08:09心跳：无新正式性能；本地身份随目录刷新。0fcef0bf已登记时间轴接线修复，不替代真实Taylor P0/P1、合法one-swap与H65 retention/transition，机制仍BLOCKED_UNIMPLEMENTED",
+      "current_cycle": "2026-09-09 09:08性能检查：无新正式成绩。0fcef0bf时间轴接线修复保留；Taylor P0/P1、合法one-swap及H65 retention/transition仍未完成，不能因目录已生成就解除实现阻塞",
       "branch": "codex/duca-unified-formal-gates-20260903",
       "sha": "793c4f9cdf7dac4f224bc73012aff8bc93949f87",
       "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/793c4f9cdf7dac4f224bc73012aff8bc93949f87",
@@ -410,7 +410,7 @@
       "name": "BAFDR 当前 seed 4407 正式流水线：D160 教师与五臂 K16 筛选",
       "internal_id": "BAFDR_ACTIVE",
       "scientific_audit": "G96是96x96空间分辨率，全局48x16=768原始帧；K16局部256原始帧/128 tubelets。710ce8a6存在top-K前padding未屏蔽和screen未验证真实终态的问题。另任务b142bffa已加入有效选块、ragged局部执行与掩码监督，未完成生产验证；screen缺项仍保留。连续gate在非零残差路径下可回传router，少3-6次更新不能单独解释十余个百分点差距",
-      "current_cycle": "2026-09-09 08:09：710ce8a6五份terminal保留，metrics.json仍0，FULL仍只有PRECHECK。b142bffa有效chunk接线修复仍缺真实terminal screen/eval5与生产结果；四个相关GitHub ref本轮仍无匹配，不迁移旧不合格成绩，不操作1267920/1267921",
+      "current_cycle": "2026-09-09 08:57/09:08：710ce8a6五份terminal路径/尺寸/mtime未变，metrics.json仍0，FULL仅PRECHECK；b142部分padding/ragged修复尚无真实terminal screen/eval5生产结果，不迁移旧不合格成绩，不操作1267920/1267921",
       "branch": "codex/zoomtoken-bafdr-successful-updates-20260907（修复） + codex/zoomtoken-bafdr-eval-metadata-repair-20260904（旧评测）",
       "sha": "710ce8a6246c471742c83bf7c180d9ab87c36fac（更新合同修复） / 539287fa8a035765afd7e79863ce77278bef83f2（旧训练） / 29b5a7a2b291203ea7b697cfe416b64f0d365d02（旧评测）",
       "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/710ce8a6246c471742c83bf7c180d9ab87c36fac",
@@ -507,7 +507,7 @@
         },
         "terminal_evaluation_checked_at": "2026-09-09T06:04:52.148175+08:00"
       },
-      "current_cycle": "2026-09-09 08:09：新9a346f0d训练及edfbd7e5独立评测均完成，OFF61.7587%、ON54.5976%，两份原始独立收据自哈希有效，与39号及训练内终轮完全一致。最佳OFF62.5093%(35)/ON55.3617%(40)另列；不再把已完成评测写为等待receipt",
+      "current_cycle": "2026-09-09 09:08：新9a346f0d训练及edfbd7e5独立评测均完成，原始收据再次自哈希有效、身份与成绩未变，OFF61.7587%、ON54.5976%；最佳62.5093%(35)/55.3617%(40)另列。低分不是资源排队，不把固定anchor/共享低秩代理称为真实event gate/精确JVP",
       "deployment_status": "OFF1267218/ON1267219正式训练及epoch59 EMA均完成；独立评测代码67d7079d、本地/远端28 tests、2GPU PRECHECK1275569_0/1通过，完整官方评测1275624_0/1和结构化自哈希receipt现已完成",
       "result_status": "双臂具有可追溯的官方终态结果；本种子开启Taylor/JVP近似明显退化，不支持保持准确率的主张；算子实现忠实度和训练配方的因果排查尚未完成",
       "final_result": "OFF official Avg-mAP=62.076775%，mAP@0.3/0.4/0.5/0.6/0.7=77.063201/71.910513/65.342222/54.513056/41.554882%；ON official Avg-mAP=54.809580%，对应70.378016/64.889287/57.494778/46.651646/34.634174%。ON比OFF低7.267195个百分点，mAP@0.7低6.920708个百分点。单种子4407，不外推多种子显著性，也不把低分本身当作已证明实现错误",
@@ -555,7 +555,7 @@
         "validation": "本地C3 23 passed；远端exact-SHA clean CPU25 passed，含初始输出等价、真实AdamW三步门控/卷积更新、旧checkpoint加载不被隐式重置。未做新模型CUDA或正式训练",
         "status": "REFINER_INIT_FIXED; UTILITY_AND_ROBUST_CYCLE_PENDING"
       },
-      "current_cycle": "2026-09-09 08:09：旧A1 Avg-mAP51.5968%、evaluation_sha256有效；F/A6独立metrics仍缺。79aea08a已登记监督/时间梯度/support接线修复，但utility/真实two-view/cycle及新eval5结果未完成，旧权重不代表新初始化或新接线性能",
+      "current_cycle": "2026-09-09 09:08：历史A1 51.5968%原始收据自哈希有效、身份未变，F/A6独立metrics仍缺。79aea监督/时间梯度/support接线是部分修复，utility、真实two-view、cycle及新eval5结果仍未完成",
       "receipt_recheck": "2026-09-07 22:55心跳：C0/A2两份metrics JSON可读且evaluation_sha256复算通过，仍分别59.2292%/54.2756%；seed8261、246058f2和epoch59 EMA身份未变，不属于完整Recovery结果",
       "deployment_status": "C0训练1269374_0/评测1270672_0、A2训练1270870_3/评测1274711_3均已完成，保留246058f2原身份。旧A1/A6非有限cost修复经过1570a725真实optimizer覆盖、动态DDP、non-reentrant checkpoint及49tests/真实PRECHECK验证，未关闭time/merge/recovery；相关失败日志和权重均保留。其后A1/A6的1274924_2/7与F/A3/A4/A5的1275675_1/4/5/6又因磁盘配额失败，不再运行；旧死依赖eval已取消。ce767b4d增加保持原模型/配置/计数/RNG的跨目录续训，六臂恢复PRECHECK已完成，当前新提交与待办见本轮更新",
       "result_status": "C0/A2原登记值不变；新增A1旧实现的可追溯终态评测51.5968%，不作完整机制验收。A6/F训练终态已绑定但独立评测未完成。e0c88c9a仅修refiner初始化且无新正式性能；utility/robust/cycle仍未实现",
@@ -670,7 +670,7 @@
       "remote_run_root": "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal/on/gpu2_id0",
       "remote_stdout": "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal/logs/on_1280117.out",
       "remote_stderr": "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal/logs/on_1280117.err",
-      "deployment_status": "2026-09-09 08:09核查：训练1280117及独立终态1281049_1均COMPLETED(0:0)，9a346f0d训练和edfbd7e5评测源仍exact/clean。12份周期、best、协议及独立终态收据未变且自哈希有效；复用39号完整独立认证，不重复评测或加载未变化权重",
+      "deployment_status": "2026-09-09 08:57/09:08核查：训练1280117及既有独立终态均COMPLETED(0:0)，远端训练/评测源exact/clean。12次全测试、best、protocol、终态checkpoint stat及原始独立收据未变，收据自哈希有效；沿用既有完整训练绑定认证，不重复推理或加载大型权重",
       "result_status": "测试集选模最佳成绩与独立终态EMA均已取得；独立评测六个mAP指标与训练内终轮完全一致。完整训练负结果已确认，不能据此认证事件触发/精确JVP机制或官方AdaTAD复现",
       "final_result": "完整THUMOS14测试集211视频/792窗口：第5轮 5.7073%；第10轮 32.0496%；第15轮 42.1020%；第20轮 47.3332%；第25轮 51.8133%；第30轮 54.2127%；第35轮 55.3159%；第40轮 55.3617%；第45轮 55.2871%；第50轮 55.0948%；第55轮 54.8392%；第60轮 54.5976%；最佳第40轮 55.3617%，最佳对应mAP@0.7 33.6320%。第60轮训练内EMA评测 54.5976%，mAP@0.7 33.4394%。12份周期与best收据有效；未变best复用已有实际EMA认证。全局6000与参数实际参与计数分开记录，不把scheduler替代optimizer证据。独立评测1281049_1的edfbd7e5终态receipt有效，六项mAP与训练内终轮逐项完全相同；测试集参与选模/调参，不称未见测试泛化或原论文公平复现。",
       "periodic_results": [
@@ -1047,7 +1047,7 @@
       "remote_run_root": "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal/off/gpu2_id0",
       "remote_stdout": "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal/logs/off_1280118.out",
       "remote_stderr": "/data/run01/sczc063/yuzibo/experiments/ettrc_anchor_eval5_9a346f0d_seed4407/formal/logs/off_1280118.err",
-      "deployment_status": "2026-09-09 08:09核查：训练1280118及独立终态1281049_0均COMPLETED(0:0)，9a346f0d训练和edfbd7e5评测源仍exact/clean。12份周期、best、协议及独立终態收据未变且自哈希有效；复用39号完整独立认证，不重复评测或加载未变化权重",
+      "deployment_status": "2026-09-09 08:57/09:08核查：训练1280118及既有独立终态均COMPLETED(0:0)，远端训练/评测源exact/clean。12次全测试、best、protocol、终态checkpoint stat及原始独立收据未变，收据自哈希有效；沿用既有完整训练绑定认证，不重复推理或加载大型权重",
       "result_status": "测试集选模最佳成绩与独立终态EMA均已取得；独立评测六个mAP指标与训练内终轮完全一致。完整训练负结果已确认，不能据此认证事件触发/精确JVP机制或官方AdaTAD复现",
       "final_result": "完整THUMOS14测试集211视频/792窗口：第5轮 4.2952%；第10轮 33.7828%；第15轮 42.7081%；第20轮 53.8420%；第25轮 59.5824%；第30轮 62.0582%；第35轮 62.5093%；第40轮 62.4262%；第45轮 62.4605%；第50轮 62.3928%；第55轮 62.1272%；第60轮 61.7587%；最佳第35轮 62.5093%，最佳对应mAP@0.7 41.1250%。第60轮训练内EMA评测 61.7587%，mAP@0.7 42.7085%。12份周期与best收据有效；未变best复用已有实际EMA认证。全局6000与参数实际参与计数分开记录，不把scheduler替代optimizer证据。独立评测1281049_0的edfbd7e5终态receipt有效，六项mAP与训练内终轮逐项完全相同；测试集参与选模/调参，不称未见测试泛化或原论文公平复现。",
       "periodic_results": [
@@ -1424,7 +1424,7 @@
       "remote_run_root": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-UNIFORM_seed3407/gpu1_id0",
       "remote_stdout": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/logs/uniform_1280127.out",
       "remote_stderr": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/logs/uniform_1280127.err",
-      "deployment_status": "2026-09-09 08:09/08:13核查：训练1280127、独立评测1281175_0均COMPLETED(0:0)。训练629162cd和评测4af4ad96 exact/clean、opentad/configs差异为空；新原始收据、配置/预测/评测器、训练protocol/audit/sidecar绑定均有效。完整211视频/792窗口和原epoch59 EMA，实际全局optimizer/scheduler6000、审计EMA/DUCA6000；各阈值及Avg-mAP与训练内终轮完全一致",
+      "deployment_status": "2026-09-09 08:57/09:08核查：训练1280127及既有独立终态均COMPLETED(0:0)，远端训练/评测源exact/clean。12次全测试、best、protocol、终态checkpoint stat及原始独立收据未变，收据自哈希有效；沿用既有完整训练绑定认证，不重复推理或加载大型权重",
       "result_status": "60轮及12次全测试完成；测试集最佳另列，独立终态官方收据已核验",
       "final_result": "完整THUMOS14测试集211视频/792窗口：第5轮 5.2404%；第10轮 30.9742%；第15轮 38.1240%；第20轮 49.0216%；第25轮 56.7257%；第30轮 60.7207%；第35轮 62.5658%；第40轮 63.4838%；第45轮 63.8428%；第50轮 63.9646%；第55轮 63.9520%；第60轮 63.8596%；最佳第50轮 63.9646%，最佳对应mAP@0.7 41.7472%。第60轮训练内EMA评测 63.8596%，mAP@0.7 42.0630%。12份周期与best收据有效；未变best复用已有实际EMA认证。全局6000与参数实际参与计数分开记录，不把scheduler替代optimizer证据。4af4ad96独立terminal原始receipt已核验，全部六项mAP与训练内第60轮完全一致；测试集参与选模/调参，不称未见测试泛化或原论文公平复现。",
       "periodic_results": [
@@ -1620,7 +1620,7 @@
         "verification_reused": true
       },
       "test_guided_hyperparameter_trials": [],
-      "next_action": "保留完整12次曲线、最佳和独立终态结果，不重复训练/评测；继续定位四相开启相对关闭终轮低6.7774点的分配/学习原因及条件参数参与归属。独立复评一致不等于机制完整或路线有效；测试指导调参保留全部尝试。",
+      "next_action": "五项新训练及独立终态齐全，保留负结果和所有曲线。42号源码线索：四相开关还改变采样评分来源与ST路径，先核对原设计和真实梯度归属，再选择最小修复或新匹配控制；不能把全部降分只归因配额，也不盲目加入fusion。",
       "terminal_training_evaluation": {
         "completed_epochs": 60,
         "epoch": 59,
@@ -2039,7 +2039,7 @@
       "remote_run_root": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-PHASEOFF_seed3407/gpu1_id0",
       "remote_stdout": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/logs/phaseoff_1280128.out",
       "remote_stderr": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/logs/phaseoff_1280128.err",
-      "deployment_status": "2026-09-09 08:09/08:13核查：训练1280128、独立评测1281175_1均COMPLETED(0:0)。训练629162cd和评测4af4ad96 exact/clean、opentad/configs差异为空；新原始收据、配置/预测/评测器、训练protocol/audit/sidecar绑定均有效。完整211视频/792窗口和原epoch59 EMA，实际全局optimizer/scheduler6000、审计EMA/DUCA6000；各阈值及Avg-mAP与训练内终轮完全一致",
+      "deployment_status": "2026-09-09 08:57/09:08核查：训练1280128及既有独立终态均COMPLETED(0:0)，远端训练/评测源exact/clean。12次全测试、best、protocol、终态checkpoint stat及原始独立收据未变，收据自哈希有效；沿用既有完整训练绑定认证，不重复推理或加载大型权重",
       "result_status": "60轮及12次全测试完成；测试集最佳另列，独立终态官方收据已核验",
       "final_result": "完整THUMOS14测试集211视频/792窗口：第5轮 5.4013%；第10轮 30.8467%；第15轮 38.9224%；第20轮 49.1960%；第25轮 55.8911%；第30轮 60.2283%；第35轮 62.1153%；第40轮 63.2568%；第45轮 63.5516%；第50轮 63.4065%；第55轮 63.7444%；第60轮 64.2632%；最佳第60轮 64.2632%，最佳对应mAP@0.7 43.0885%。第60轮训练内EMA评测 64.2632%，mAP@0.7 43.0885%。12份周期与best收据有效；新best实际EMA认证通过。全局6000与参数实际参与计数分开记录，不把scheduler替代optimizer证据。4af4ad96独立terminal原始receipt已核验，全部六项mAP与训练内第60轮完全一致；测试集参与选模/调参，不称未见测试泛化或原论文公平复现。",
       "periodic_results": [
@@ -2235,7 +2235,7 @@
         "verification_reused": false
       },
       "test_guided_hyperparameter_trials": [],
-      "next_action": "保留完整12次曲线、最佳和独立终态结果，不重复训练/评测；继续定位四相开启相对关闭终轮低6.7774点的分配/学习原因及条件参数参与归属。独立复评一致不等于机制完整或路线有效；测试指导调参保留全部尝试。",
+      "next_action": "五项新训练及独立终态齐全，保留负结果和所有曲线。42号源码线索：四相开关还改变采样评分来源与ST路径，先核对原设计和真实梯度归属，再选择最小修复或新匹配控制；不能把全部降分只归因配额，也不盲目加入fusion。",
       "terminal_training_evaluation": {
         "completed_epochs": 60,
         "epoch": 59,
@@ -2660,7 +2660,7 @@
       "remote_run_root": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/TEST-PHASEON_seed3407/gpu1_id0",
       "remote_stdout": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/logs/phaseon_1280129.out",
       "remote_stderr": "/data/run01/sczc063/yuzibo/experiments/h65_tia_eval5_629162cd_seed3407/formal/logs/phaseon_1280129.err",
-      "deployment_status": "2026-09-09 08:09/08:13核查：训练1280129、独立评测1281175_2均COMPLETED(0:0)。训练629162cd和评测4af4ad96 exact/clean、opentad/configs差异为空；新原始收据、配置/预测/评测器、训练protocol/audit/sidecar绑定均有效。完整211视频/792窗口和原epoch59 EMA，实际全局optimizer/scheduler6000、审计EMA/DUCA6000；各阈值及Avg-mAP与训练内终轮完全一致",
+      "deployment_status": "2026-09-09 08:57/09:08核查：训练1280129及既有独立终态均COMPLETED(0:0)，远端训练/评测源exact/clean。12次全测试、best、protocol、终态checkpoint stat及原始独立收据未变，收据自哈希有效；沿用既有完整训练绑定认证，不重复推理或加载大型权重",
       "result_status": "60轮及12次全测试完成；测试集最佳另列，独立终态官方收据已核验",
       "final_result": "完整THUMOS14测试集211视频/792窗口：第5轮 4.9665%；第10轮 25.6088%；第15轮 32.4714%；第20轮 43.3471%；第25轮 49.1838%；第30轮 52.6773%；第35轮 55.2683%；第40轮 57.0365%；第45轮 57.4413%；第50轮 56.9274%；第55轮 57.5081%；第60轮 57.4857%；最佳第55轮 57.5081%，最佳对应mAP@0.7 34.0924%。第60轮训练内EMA评测 57.4857%，mAP@0.7 34.2285%。12份周期与best收据有效；未变best复用已有实际EMA认证。全局6000与参数实际参与计数分开记录，不把scheduler替代optimizer证据。4af4ad96独立terminal原始receipt已核验，全部六项mAP与训练内第60轮完全一致；测试集参与选模/调参，不称未见测试泛化或原论文公平复现。",
       "periodic_results": [
@@ -2856,7 +2856,7 @@
         "verification_reused": true
       },
       "test_guided_hyperparameter_trials": [],
-      "next_action": "保留完整12次曲线、最佳和独立终态结果，不重复训练/评测；继续定位四相开启相对关闭终轮低6.7774点的分配/学习原因及条件参数参与归属。独立复评一致不等于机制完整或路线有效；测试指导调参保留全部尝试。",
+      "next_action": "五项新训练及独立终态齐全，保留负结果和所有曲线。42号源码线索：四相开关还改变采样评分来源与ST路径，先核对原设计和真实梯度归属，再选择最小修复或新匹配控制；不能把全部降分只归因配额，也不盲目加入fusion。",
       "terminal_training_evaluation": {
         "completed_epochs": 60,
         "epoch": 59,
@@ -3268,7 +3268,7 @@
       "category": "related_task_repair",
       "github_commit": null,
       "github_branch_published": false,
-      "github_publication_evidence": "本轮git ls-remote origin refs/heads/...返回成功但没有对应分支；不构造可用commit链接",
+      "github_publication_evidence": "2026-09-09本轮git ls-remote origin四个精确refs/heads成功但无匹配，仍未见GitHub发布，不构造可用commit链接",
       "owner_task": {
         "title": "查找90轮H65实验配置",
         "thread_id": "01a08058-1402-7b21-8c17-ec6c1ad522f7",
@@ -3279,7 +3279,7 @@
       "branch": "codex/h65-matched-controls-20260908",
       "sha": "96e5b3a5e9d77d65b7a0afca86277261dd63295b",
       "local_directory": "E:/DeskTop/TAD/_duca_fix_worktrees/h65_matched_controls",
-      "deployment_status": "2026-09-09 08:09再次读取stdout/stderr及sacct：signed1280314/control链1280316仍FAILED(1:0)，epoch16 AMP replay后p_action非有限。没有本登记命名空间的fulltia正式启动/恢复证据；由原任务修复，旧job/log/checkpoint保留，本监督未接管、删除校验或盲目重提",
+      "deployment_status": "2026-09-09 08:57全量日志/09:08 sacct核查：1280314/1280316仍FAILED(1:0)，epoch16 AMP replay后p_action非有限，首个污染源未定位。没有本登记命名空间新恢复证据；原任务负责修复，保留旧产物，本监督未接管或盲目重提",
       "result_status": "FAILED_NUMERICAL；Stage2仅有5/10/15轮日志曲线，无终态结果",
       "final_result": "独立历史30+60轮协议；signed/control均在stage2 epoch16失败，最后落盘审计为epoch15、1600成功更新，不能作为最终性能。第15轮tIoU0.3-0.7日志signed为77.46/72.55/64.59/53.73/38.65%，control为77.52/73.13/64.98/53.23/38.55%；仅为四舍五入中期telemetry，不与本任务strict60测试选best混用。直接错误p_action calibration check received non-finite values，数值污染源待定位，非资源未分配",
       "next_action": "原任务01a08058-1402-7b21-8c17-ec6c1ad522f7须按原checkpoint/RNG定位首个非有限输出和AMP重放状态；在独立修复SHA、本地focused及远端exact/CUDA/PRECHECK通过后新命名空间重提。本监督已登记失败与完整日志位置，未热改、未接管或重复提交；保留失败，不删除校准校验来掩盖数值问题",
@@ -3341,7 +3341,7 @@
         "retry_submitted": false,
         "owner_notified_via_thread_tool": false,
         "note": "Thread coordination tool unavailable in this turn; recorded in shared catalog, not claimed delivered to the owner.",
-        "last_rechecked_at": "2026-09-09T08:09:46.303588+08:00"
+        "last_rechecked_at": "2026-09-09T09:08:25.085687+08:00"
       },
       "local_head": "96e5b3a5e9d77d65b7a0afca86277261dd63295b",
       "local_clean_tree": true
@@ -3350,7 +3350,7 @@
       "category": "related_task_repair",
       "github_commit": null,
       "github_branch_published": false,
-      "github_publication_evidence": "本轮git ls-remote origin refs/heads/...返回成功但没有对应分支；不构造可用commit链接",
+      "github_publication_evidence": "2026-09-09本轮git ls-remote origin四个精确refs/heads成功但无匹配，仍未见GitHub发布，不构造可用commit链接",
       "owner_task": {
         "title": "查找90轮H65实验配置",
         "thread_id": "01a08058-1402-7b21-8c17-ec6c1ad522f7",
@@ -3377,7 +3377,7 @@
       "category": "related_task_repair",
       "github_commit": null,
       "github_branch_published": false,
-      "github_publication_evidence": "本轮git ls-remote origin refs/heads/...返回成功但没有对应分支；不构造可用commit链接",
+      "github_publication_evidence": "2026-09-09本轮git ls-remote origin四个精确refs/heads成功但无匹配，仍未见GitHub发布，不构造可用commit链接",
       "owner_task": {
         "title": "查找90轮H65实验配置",
         "thread_id": "01a08058-1402-7b21-8c17-ec6c1ad522f7",
@@ -3404,7 +3404,7 @@
       "category": "related_task_repair",
       "github_commit": null,
       "github_branch_published": false,
-      "github_publication_evidence": "本轮git ls-remote origin refs/heads/...返回成功但没有对应分支；不构造可用commit链接",
+      "github_publication_evidence": "2026-09-09本轮git ls-remote origin四个精确refs/heads成功但无匹配，仍未见GitHub发布，不构造可用commit链接",
       "owner_task": {
         "title": "查找90轮H65实验配置",
         "thread_id": "01a08058-1402-7b21-8c17-ec6c1ad522f7",
@@ -3430,8 +3430,8 @@
   "remote_supervisor": {
     "status": "ACTIVE",
     "root": "/data/run01/sczc063/yuzibo/projects/duca_multibranch_supervisor_recovery_20260907",
-    "receipt_age_seconds": 19,
-    "checked_at": "2026-09-09T00:21:32+00:00",
+    "receipt_age_seconds": 50,
+    "checked_at": "2026-09-09T01:15:17+00:00",
     "dispatcher_status": "BLOCKED",
     "dispatcher_mode": "plan",
     "entries": []
@@ -3448,20 +3448,20 @@
     "scope": "每60秒恢复只读队列轮询，旧source/queue/manifest/admission不变；旧日志和状态保留。不是当前修复队列的自动提交器。目录生成器现以180秒识别过期回执，不能仅因JSON可读就称ACTIVE"
   },
   "cluster_observation": {
-    "checked_at_cst": "2026-09-09 08:09 CST",
-    "public_gpu_available": 84,
+    "checked_at_cst": "2026-09-09 09:08 CST",
+    "public_gpu_available": 72,
     "public_gpu_total": 200,
     "gpu_count_basis": "scontrol CfgTRES/AllocTRES，排除DOWN/DRAIN/FAIL/UNKNOWN/FUTURE/POWERED_DOWN；公共余量不保证个人即时配额",
     "user_jobs_in_queue": 3,
-    "account_constraint": "08:09账户1 RUNNING/2 PENDING，均属其他项目；08:13 WorkDir核实其中GeoSparse评测1281224已FAILED，未接管。五项新训练及H65/ET五项独立评测均已完成，实验盘120.52GiB可用；没有本六路线GPU排队可解释其性能退化"
+    "account_constraint": "账户2 RUNNING/1 PENDING，不是本目录五项已完成训练或五项已完成独立评测；新1281300未核实WorkDir，不擅自归属或操作。实验盘120.45GiB可用。公共余量不保证个人即时配额，不能用排队解释已完成实验的降分"
   },
   "measurement_scope": "当前比较以官方 TAD mAP、固定输入/更新预算和机制消融为主；不把端到端延迟、吞吐量或显存作为强制验收指标",
   "baseline_reference_note": "12_BASELINE_IDENTITY_CORRECTION_20260907.md",
   "pro_audit_followup": "15_PRO_AUDIT_REPAIR_STATUS_20260908.md",
   "official_baseline_raw_identity": "14_OFFICIAL_BASELINE_RAW_IDENTITY_20260908.json",
   "performance_cause_audit": "13_PERFORMANCE_CAUSE_AUDIT_20260908.md",
-  "heartbeat_evidence": "41_HEARTBEAT_EVIDENCE_20260909_0806.json",
-  "performance_cause_audit_scope": "2026-09-09 08:08/08:09/08:13核查：H65三项独立终态1281175全部完成，63.8596%/64.2632%/57.4857%，原始收据及训练audit/sidecar/protocol、配置/预测/evaluator绑定通过，六项mAP与训练内终轮逐项完全一致。五项训练60次周期、最佳与ET独立成绩未变。当前修复对比最高CT均匀64.2720%，四相和ET近似开启仍低于各自匹配对照；单种子负结果不证明整个研究方向无效，也不能因receipt完整就宣称机制完整。未修改模型、新训练、调参或取消；其他缺失结果和历史90轮数值失败继续保留",
+  "heartbeat_evidence": "42_PERFORMANCE_CHECK_20260909.json",
+  "performance_cause_audit_scope": "2026-09-09 08:57/09:08核查：五项新训练及独立终态全部完成，成绩和原始收据身份未变；最高修复版CT均匀64.2720%，仍未超过65.6%。H65四相和ET近似开启均下降；源码新线索是H65开关同时改变采样评分与ST路径，并非只改配额，尚未完成因果定位。BAFDR终态评测、Evidence部分结果、Unified机制和历史90轮数值失败仍未解决；本轮未改模型、调参、提交或取消",
   "baseline_comparison_policy": "区分上游公开结果、历史共享复现和本次修改协议实测；官方 evaluator 与完整 receipt 不代表官方训练 recipe 已复现。比较提升前须对齐预训练、数据、batch/曝光、学习率、坐标、模型选择和后处理，不能用较低参考数值替代约69/65的既有锚点，也不能把约69/65规定为每次运行必须达到的分数",
   "result_policy": "历史strict6000结果仍需exact SHA、clean-tree、epoch59 EMA、实际6000次optimizer/scheduler/EMA更新、官方evaluator及自哈希receipt。新TEST_GUIDED_EXPLORATORY_EVAL5每5轮完整测试、按未四舍五入Avg-mAP选最佳EMA且允许测试集调参；所有尝试和曲线保留，终态EMA另列。必须披露测试集重复使用，不称独立泛化或与官方论文公平可比。推理不输入测试GT，原始官方配方与历史封闭实验不追溯改写，收据不替代真实机制验证",
   "test_guided_policy": "2026-09-08用户授权每5 epoch完整测试、最佳EMA和测试集调参；新实验单列，终态另报，不声称未见测试泛化。详见29_TEST_GUIDED_EVAL5_DEPLOYMENT_20260908.md",
